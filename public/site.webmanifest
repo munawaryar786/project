@@ -1,0 +1,21 @@
+{
+  "name": "Drivo — Accessible Mobility Platform",
+  "short_name": "Drivo",
+  "description": "Bratislava's #1 accessibility-first mobility platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#34D186",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}

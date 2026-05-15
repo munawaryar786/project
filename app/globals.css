@@ -1,0 +1,272 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-drivo-green: #34D186;
+  --color-drivo-green-dark: #2BB974;
+  --color-drivo-green-light: #E8FBF0;
+  --color-drivo-navy: #0C1B2A;
+  --color-drivo-navy-light: #162D44;
+  --color-drivo-blue: #1A73E8;
+  --color-drivo-blue-light: #E8F0FE;
+  --color-drivo-purple: #7C3AED;
+  --color-drivo-purple-light: #F3E8FF;
+  --color-drivo-amber: #F59E0B;
+  --color-drivo-amber-light: #FFF8E1;
+  --color-drivo-red: #EF4444;
+  --color-drivo-red-light: #FEF2F2;
+  --color-drivo-text: #1E293B;
+  --color-drivo-text-secondary: #64748B;
+  --color-drivo-text-muted: #94A3B8;
+  --color-drivo-bg: #FFFFFF;
+  --color-drivo-bg-soft: #F8FAFC;
+  --color-drivo-border: #E2E8F0;
+  --color-drivo-border-light: #F1F5F9;
+
+  --font-sans: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+
+  --radius-4xl: 32px;
+
+  --shadow-soft: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-card: 0 4px 16px rgba(0,0,0,0.06);
+  --shadow-elevated: 0 8px 32px rgba(0,0,0,0.08);
+  --shadow-hover: 0 12px 40px rgba(0,0,0,0.12);
+  --shadow-glow: 0 8px 24px rgba(52,209,134,0.3);
+  --shadow-glow-navy: 0 8px 24px rgba(12,27,42,0.2);
+
+  --animate-fade-up: fade-up 0.6s ease-out forwards;
+  --animate-fade-in: fade-in 0.4s ease-out forwards;
+  --animate-scale-in: scale-in 0.3s ease-out forwards;
+  --animate-float: float 6s ease-in-out infinite;
+
+  @keyframes fade-up {
+    0% { opacity: 0; transform: translateY(24px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fade-in {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+  }
+  @keyframes scale-in {
+    0% { opacity: 0; transform: scale(0.95); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+  }
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font-sans);
+  color: var(--color-drivo-text);
+  background: white;
+  font-size: 16px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--color-drivo-green);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+*:focus:not(:focus-visible) { outline: none; }
+::selection { background: rgba(52,209,134,0.2); color: var(--color-drivo-navy); }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+
+@utility container-main {
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+}
+
+@utility section {
+  padding-top: 5rem;
+  padding-bottom: 5rem;
+}
+
+@utility btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  background: var(--color-drivo-green);
+  color: white;
+  font-weight: 600;
+  border-radius: 1rem;
+  padding: 1rem 1.75rem;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  min-height: 52px;
+  box-shadow: var(--shadow-glow);
+  transition: all 0.2s;
+  &:hover { background: var(--color-drivo-green-dark); box-shadow: var(--shadow-hover); }
+  &:active { transform: scale(0.97); }
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+
+@utility btn-dark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  background: var(--color-drivo-navy);
+  color: white;
+  font-weight: 600;
+  border-radius: 1rem;
+  padding: 1rem 1.75rem;
+  font-size: 15px;
+  min-height: 52px;
+  transition: all 0.2s;
+  &:hover { background: var(--color-drivo-navy-light); }
+  &:active { transform: scale(0.97); }
+}
+
+@utility btn-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  background: transparent;
+  color: var(--color-drivo-text);
+  font-weight: 600;
+  border-radius: 1rem;
+  padding: 1rem 1.75rem;
+  font-size: 15px;
+  min-height: 52px;
+  border: 2px solid var(--color-drivo-border);
+  transition: all 0.2s;
+  &:hover { border-color: var(--color-drivo-navy); background: var(--color-drivo-bg-soft); }
+  &:active { transform: scale(0.97); }
+}
+
+@utility btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: var(--color-drivo-text);
+  font-weight: 500;
+  border-radius: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  font-size: 14px;
+  min-height: 44px;
+  transition: all 0.2s;
+  &:hover { background: var(--color-drivo-bg-soft); }
+}
+
+@utility input {
+  width: 100%;
+  border-radius: 1rem;
+  border: 2px solid var(--color-drivo-border);
+  background: white;
+  color: var(--color-drivo-text);
+  font-size: 15px;
+  padding: 1rem 1.25rem;
+  min-height: 52px;
+  transition: all 0.2s;
+  &::placeholder { color: var(--color-drivo-text-muted); }
+  &:focus { border-color: var(--color-drivo-green); box-shadow: 0 0 0 4px rgba(52,209,134,0.1); }
+}
+
+@utility card {
+  background: white;
+  border-radius: 1.5rem;
+  border: 1px solid var(--color-drivo-border-light);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-soft);
+}
+
+@utility card-elevated {
+  background: white;
+  border-radius: 1.5rem;
+  padding: 1.5rem;
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.3s;
+  &:hover { box-shadow: var(--shadow-elevated); }
+}
+
+@utility card-interactive {
+  background: white;
+  border-radius: 1.5rem;
+  border: 1px solid var(--color-drivo-border-light);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-soft);
+  transition: all 0.3s;
+  cursor: pointer;
+  &:hover { box-shadow: var(--shadow-card); transform: translateY(-2px); }
+}
+
+@utility pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 1rem;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.025em;
+}
+
+@utility pill-green {
+  background: var(--color-drivo-green-light);
+  color: var(--color-drivo-green-dark);
+}
+
+@utility pill-purple {
+  background: var(--color-drivo-purple-light);
+  color: var(--color-drivo-purple);
+}
+
+@utility pill-amber {
+  background: var(--color-drivo-amber-light);
+  color: #B45309;
+}
+
+@utility pill-navy {
+  background: rgba(12,27,42,0.05);
+  color: var(--color-drivo-navy);
+}
+
+@utility pill-red {
+  background: var(--color-drivo-red-light);
+  color: var(--color-drivo-red);
+}
+
+/* Print Styles for Booking Details */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .printable-booking,
+  .printable-booking * {
+    visibility: visible;
+  }
+
+  .printable-booking {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 20mm;
+    background: white;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  @page {
+    margin: 10mm;
+    size: A4;
+  }
+}

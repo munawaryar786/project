@@ -1,0 +1,271 @@
+// prisma/schema.prisma
+// Provider: MongoDB (production). Use `prisma db push` to sync schema.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// BOOKINGS
+// ============================================
+model Booking {
+  id         String @id @default(auto()) @map("_id") @db.ObjectId
+  bookingRef String @unique
+  status     String @default("PENDING")
+
+  serviceType String
+
+  pickupAddress  String
+  dropoffAddress String
+
+  pickupLat  Float?
+  pickupLng  Float?
+  dropoffLat Float?
+  dropoffLng Float?
+
+  scheduledDate  String
+  scheduledTime  String
+  passengerCount Int    @default(1)
+  luggageType    String @default("NONE")
+
+  wheelchairNeeded Boolean @default(false)
+
+  flightNumber String?
+  airline      String?
+  waitAndGreet Boolean @default(false)
+
+  customerName      String
+  customerEmail     String?
+  customerPhone     String
+  customerPhoneCode String  @default("+421")
+  languagePref      String  @default("slovak")
+  specialNotes      String?
+  phoneVerified     Boolean @default(false)
+
+  paymentMethod String
+  cashAgreed    Boolean @default(false)
+
+  sourceDomain String?
+
+  estimatedPrice  Float?
+  distanceKm      Float?
+  vehicleRequired String? @default("STANDARD")
+
+  driverId String? @db.ObjectId
+  driver   Driver? @relation(fields: [driverId], references: [id])
+
+  dispatchStatus String?   @default("NOT_STARTED")
+  acceptedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  otps    OTP[]
+  earning DriverEarning?
+
+  @@index([status])
+  @@index([driverId])
+  @@index([dispatchStatus])
+  @@index([createdAt])
+}
+
+// ============================================
+// OTP VERIFICATION
+// ============================================
+model OTP {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  code      String
+  phone     String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+
+  bookingId String  @db.ObjectId
+  booking   Booking @relation(fields: [bookingId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([bookingId, code])
+  @@index([expiresAt])
+}
+
+// ============================================
+// DRIVERS
+// ============================================
+model Driver {
+  id            String  @id @default(auto()) @map("_id") @db.ObjectId
+  fullName      String
+  phone         String  @unique
+  email         String? @unique
+  licenseNumber String?
+  status        String  @default("ACTIVE")
+
+  vehicleType  String?
+  vehiclePlate String?
+
+  currentLat         Float?
+  currentLng         Float?
+  lastLocationUpdate DateTime?
+  isOnTrip           Boolean   @default(false)
+  isOnline           Boolean   @default(false)
+
+  passwordHash String?
+
+  bookings        Booking[]
+  locationHistory DriverLocation[]
+  earnings        DriverEarning[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([isOnline])
+  @@index([isOnTrip])
+}
+
+// ============================================
+// DRIVER EARNINGS
+// ============================================
+model DriverEarning {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  bookingId String @unique @db.ObjectId
+  driverId  String @db.ObjectId
+
+  booking Booking @relation(fields: [bookingId], references: [id])
+  driver  Driver  @relation(fields: [driverId], references: [id])
+
+  bookingRef String
+
+  totalFare      Float
+  driverAmount   Float
+  platformAmount Float
+  commissionRate Float @default(20)
+
+  paymentMethod String
+
+  cashCollected Boolean @default(false)
+
+  payoutStatus  String @default("PENDING")
+  paymentStatus String @default("UNPAID")
+
+  notes String?
+
+  completedAt DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([driverId])
+  @@index([payoutStatus])
+  @@index([paymentStatus])
+  @@index([completedAt])
+  @@map("driver_earnings")
+}
+
+// ============================================
+// DRIVER LOCATION HISTORY
+// ============================================
+model DriverLocation {
+  id       String @id @default(auto()) @map("_id") @db.ObjectId
+  driverId String @db.ObjectId
+  driver   Driver @relation(fields: [driverId], references: [id])
+
+  lat     Float
+  lng     Float
+  speed   Float?
+  heading Float?
+
+  timestamp DateTime @default(now())
+
+  @@index([driverId, timestamp])
+  @@map("driver_locations")
+}
+
+// ============================================
+// RIDE REQUESTS
+// ============================================
+model RideRequest {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  bookingId String @db.ObjectId
+  driverId  String @db.ObjectId
+
+  status String @default("PENDING")
+
+  sentAt      DateTime  @default(now())
+  respondedAt DateTime?
+  expiresAt   DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([bookingId])
+  @@index([driverId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("ride_requests")
+}
+
+// ============================================
+// ADMIN USERS
+// ============================================
+model AdminUser {
+  id           String @id @default(auto()) @map("_id") @db.ObjectId
+  email        String @unique
+  passwordHash String
+  fullName     String
+  role         String @default("DISPATCHER")
+
+  createdAt DateTime @default(now())
+}
+
+// ============================================
+// VEHICLES
+// ============================================
+model Vehicle {
+  id                   String  @id @default(auto()) @map("_id") @db.ObjectId
+  plateNumber          String  @unique
+  type                 String
+  brand                String?
+  model                String?
+  year                 Int?
+  maxPassengers        Int     @default(4)
+  wheelchairAccessible Boolean @default(false)
+
+  isRental     Boolean @default(false)
+  rentalStatus String  @default("AVAILABLE")
+  weeklyRate   Float?
+
+  status String @default("ACTIVE")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================
+// CONTACT MESSAGES
+// ============================================
+model ContactMessage {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  email     String
+  subject   String
+  message   String
+  createdAt DateTime @default(now())
+}
+
+// ============================================
+// RENTAL INQUIRIES
+// ============================================
+model RentalInquiry {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  phone       String
+  vehicleType String
+  message     String?
+  status      String   @default("PENDING")
+  createdAt   DateTime @default(now())
+}
