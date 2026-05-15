@@ -162,14 +162,23 @@ export async function PATCH(request: NextRequest) {
     }
 
     const updatedRequest = await prisma.rideRequest.update({
-      where: { id: requestId },
-      data: { status: "REJECTED", respondedAt: new Date() },
-    });
+  where: { id: requestId },
+  data: { status: "REJECTED", respondedAt: new Date() },
+});
 
-    const previousRequests = await prisma.rideRequest.findMany({
-      where: { bookingId: rideRequest.bookingId },
-      select: { driverId: true },
-    });
+await prisma.booking.update({
+  where: {
+    id: rideRequest.bookingId
+  },
+  data: {
+    status: "SEARCHING_DRIVER"
+  }
+});
+
+const previousRequests = await prisma.rideRequest.findMany({
+  where: { bookingId: rideRequest.bookingId },
+  select: { driverId: true },
+});
 
     const excludedDriverIds = previousRequests.map((r) => r.driverId);
 

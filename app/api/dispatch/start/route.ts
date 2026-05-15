@@ -84,6 +84,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (["COMPLETED", "CANCELLED", "NO_SHOW"].includes(booking.status)) {
+  return NextResponse.json(
+    { error: "Cannot dispatch completed, cancelled, or no-show booking" },
+    { status: 400 }
+  );
+}
+
+if (
+  booking.status !== "PENDING" &&
+  booking.status !== "SEARCHING_DRIVER"
+) {
+  return NextResponse.json(
+    { error: "Booking cannot be dispatched" },
+    { status: 400 }
+  );
+}
+
     if (
       booking.dispatchStatus === "ACCEPTED" &&
       booking.driverId &&
