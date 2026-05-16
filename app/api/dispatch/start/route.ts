@@ -135,7 +135,8 @@ if (
 
     const excludedDriverIds = previousRequests.map((r) => r.driverId);
 
-    const drivers = await prisma.driver.findMany({
+    const drivers = await prisma.driver.findMany({ 
+    
       where: {
         status: "ACTIVE",
         isOnline: true,
@@ -148,6 +149,7 @@ if (
         phone: true,
         vehicleType: true,
         vehiclePlate: true,
+        vehicleCapacity: true,
         currentLat: true,
         currentLng: true,
         lastLocationUpdate: true,
@@ -156,11 +158,15 @@ if (
         status: true,
       },
     });
+    const capacityFilteredDrivers =
+  booking.passengerCount >= 6
+    ? drivers.filter((driver) => (driver.vehicleCapacity ?? 4) >= 6)
+    : drivers;
 
     const pickupLat = toNumber((booking as any).pickupLat);
     const pickupLng = toNumber((booking as any).pickupLng);
 
-    const rankedDrivers = drivers
+    const rankedDrivers = capacityFilteredDrivers
       .filter((driver) =>
         vehicleMatches(driver.vehicleType, booking.serviceType, booking.passengerCount)
       )
