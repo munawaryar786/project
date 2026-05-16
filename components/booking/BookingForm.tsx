@@ -56,6 +56,8 @@ export default function BookingForm({
   const [pickupCoords, setPickupCoords] = useState<Coords | null>(null);
   const [dropoffCoords, setDropoffCoords] = useState<Coords | null>(null);
 
+  const [rideMode, setRideMode] = useState<"now" | "schedule">("now");
+
   const [scheduledDate, setScheduledDate] = useState("");
   const [scheduledTime, setScheduledTime] = useState("");
   const [customerName, setCustomerName] = useState("");
@@ -521,7 +523,34 @@ export default function BookingForm({
               />
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+<div className="grid grid-cols-2 gap-3 mb-5">
+  <button
+    type="button"
+    onClick={() => setRideMode("now")}
+    className={`rounded-2xl p-4 border text-sm font-semibold transition ${
+      rideMode === "now"
+        ? "bg-drivo-green text-white border-drivo-green"
+        : "bg-white border-gray-200 text-gray-700"
+    }`}
+  >
+    ⚡ Ride Now
+  </button>
+
+  <button
+    type="button"
+    onClick={() => setRideMode("schedule")}
+    className={`rounded-2xl p-4 border text-sm font-semibold transition ${
+      rideMode === "schedule"
+        ? "bg-drivo-green text-white border-drivo-green"
+        : "bg-white border-gray-200 text-gray-700"
+    }`}
+  >
+    📅 Schedule
+  </button>
+</div>
+
+            {rideMode === "schedule" && (
+              <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">
                   📅 {t("booking.date")} *
@@ -549,9 +578,10 @@ export default function BookingForm({
                 />
               </div>
             </div>
-          </div>
+        )}
         </div>
-
+        </div>
+            
         <div className="card">
           <div className="flex items-center gap-3 mb-5">
             <span className="w-9 h-9 bg-drivo-green-light rounded-xl flex items-center justify-center text-[14px] font-bold text-drivo-green-dark">
