@@ -533,7 +533,7 @@ export default function BookingForm({
         : "bg-white border-gray-200 text-gray-700"
     }`}
   >
-    ⚡ Ride Now
+    ⚡ {t("booking.rideNow")}
   </button>
 
   <button
@@ -545,7 +545,7 @@ export default function BookingForm({
         : "bg-white border-gray-200 text-gray-700"
     }`}
   >
-    📅 Schedule
+    📅 {t("booking.scheduleRide")}
   </button>
 </div>
 

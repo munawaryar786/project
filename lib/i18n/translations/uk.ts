@@ -112,6 +112,8 @@ const uk = {
   "booking.dropoff": "Адреса призначення",
   "booking.dropoffPlaceholder": "Куди їдете?",
   "booking.date": "Дата",
+  "booking.rideNow": "Поїздка зараз",
+  "booking.scheduleRide": "Запланувати поїздку",
   "booking.time": "Час",
   "booking.passengers": "Пасажири",
   "booking.luggage": "Багаж",

@@ -120,6 +120,8 @@ const sk = {
   "booking.dropoff": "Cieľ cesty",
   "booking.dropoffPlaceholder": "Kam cestujete?",
   "booking.date": "Dátum",
+  "booking.rideNow": "Jazda teraz",
+  "booking.scheduleRide": "Naplánovať jazdu",
   "booking.time": "Čas",
   "booking.passengers": "Cestujúci",
   "booking.luggage": "Batožina",

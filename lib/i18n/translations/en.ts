@@ -119,6 +119,8 @@ const en = {
   "booking.dropoff": "Drop-off address",
   "booking.dropoffPlaceholder": "Where are you going?",
   "booking.date": "Date",
+  "booking.rideNow": "Ride Now",
+  "booking.scheduleRide": "Schedule Ride",
   "booking.time": "Time",
   "booking.passengers": "Passengers",
   "booking.luggage": "Luggage",

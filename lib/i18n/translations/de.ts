@@ -113,6 +113,8 @@ const de = {
   "booking.dropoff": "Zieladresse",
   "booking.dropoffPlaceholder": "Wohin fahren Sie?",
   "booking.date": "Datum",
+  "booking.rideNow": "Jetzt fahren",
+  "booking.scheduleRide": "Fahrt planen",
   "booking.time": "Zeit",
   "booking.passengers": "Passagiere",
   "booking.luggage": "Gepäck",
