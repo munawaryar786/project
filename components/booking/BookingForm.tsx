@@ -421,6 +421,7 @@ export default function BookingForm({
               type="button"
               onClick={() => {
                 setServiceType(s.value);
+                    setWheelchair(s.value === "accessible");
                 if (s.value !== "airport") {
                   setFlightNumber("");
                   setAirline("");
@@ -657,10 +658,15 @@ export default function BookingForm({
                   <input
                     type="checkbox"
                     checked={wheelchair}
-                    onChange={(e) => setWheelchair(e.target.checked)}
+                    disabled={serviceType !== "accessible"}
+onChange={(e) => {
+  if (serviceType === "accessible") {
+    setWheelchair(e.target.checked);
+  }
+}}
                     className="sr-only peer"
                   />
-                  <div className="w-12 h-7 bg-drivo-border rounded-full peer peer-checked:bg-drivo-green peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[22px] after:w-[22px] after:shadow-sm after:transition-all" />
+                  <div className="w-12 h-7 bg-drivo-border rounded-full peer peer-checked:bg-drivo-green peer-disabled:opacity-40 peer-disabled:cursor-not-allowed peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[22px] after:w-[22px] after:shadow-sm after:transition-all" />
                 </label>
               </div>
 
