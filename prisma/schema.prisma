@@ -106,6 +106,7 @@ model Driver {
 
   vehicleType  String?
   vehiclePlate String?
+  vehicleCapacity Int @default(4)
 
   currentLat         Float?
   currentLng         Float?
