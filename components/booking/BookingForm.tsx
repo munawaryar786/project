@@ -172,9 +172,11 @@ export default function BookingForm({
   const validateForm = () => {
     if (pickupAddress.trim().length < 3) return "Pickup address is required.";
     if (dropoffAddress.trim().length < 3) return "Drop-off address is required.";
-    if (!scheduledDate) return "Please select date.";
-    if (!scheduledTime) return "Please select time.";
-    if (scheduledDate < today) return "Past date is not allowed.";
+   if (rideMode === "schedule") {
+  if (!scheduledDate) return "Please select date.";
+  if (!scheduledTime) return "Please select time.";
+  if (scheduledDate < today) return "Past date is not allowed.";
+}
     if (customerName.trim().length < 2) return "Customer name is required.";
     if (customerPhone.trim().length < 6) return "Valid phone number is required.";
     if (passengers > 6) return "Maximum 6 passengers allowed.";
@@ -220,8 +222,11 @@ export default function BookingForm({
           pickupLng: resolvedPickupCoords?.lng ?? null,
           dropoffLat: resolvedDropoffCoords?.lat ?? null,
           dropoffLng: resolvedDropoffCoords?.lng ?? null,
-          scheduledDate,
-          scheduledTime,
+          scheduledDate: rideMode === "now" ? today : scheduledDate,
+scheduledTime:
+  rideMode === "now"
+    ? new Date().toTimeString().slice(0, 5)
+    : scheduledTime,
           passengerCount: passengers,
           luggageType: luggageMap[luggage],
           wheelchairNeeded: wheelchair,
