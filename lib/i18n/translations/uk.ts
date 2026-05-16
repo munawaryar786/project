@@ -41,9 +41,9 @@ const uk = {
   "services.senior.desc":
     "Особлива турбота про літніх пасажирів. Обслуговування від дверей до дверей.",
   "services.children.title": "Дитячий транспорт",
-  "services.children.tagline": "School Pick-up & Drop-off.",
+  "services.children.tagline": "Підвезення та забір дітей.",
   "services.children.desc":
-    "School Pick-up & Drop-off для дітей, включно з підтримкою особливих потреб.",
+    "Підвезення та забір дітей, включно з підтримкою особливих потреб.",
   "services.airport.title": "Трансфер до аеропорту",
   "services.airport.tagline": "Вчасно та професійно.",
   "services.airport.desc":

@@ -42,9 +42,9 @@ const de = {
   "services.senior.desc":
     "Besondere Betreuung für ältere Fahrgäste. Tür-zu-Tür-Service.",
   "services.children.title": "Kindertransport",
-  "services.children.tagline": "School Pick-up & Drop-off.",
+  "services.children.tagline": "Kinder Abholung & Rücktransport.",
   "services.children.desc":
-    "School Pick-up & Drop-off für Kinder, inklusive Unterstützung bei besonderen Bedürfnissen.",
+    "Kinder Abholung & Rücktransport für Kinder, inklusive Unterstützung bei besonderen Bedürfnissen.",
   "services.airport.title": "Flughafentransfers",
   "services.airport.tagline": "Pünktlich und professionell.",
   "services.airport.desc":

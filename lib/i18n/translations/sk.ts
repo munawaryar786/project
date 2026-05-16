@@ -43,9 +43,9 @@ const sk = {
   "services.senior.desc":
     "Špeciálna starostlivosť pre starších cestujúcich. Extra trpezlivosť, pomoc dvere-dvere.",
   "services.children.title": "Detský Transport",
-  "services.children.tagline": "School Pick-up & Drop-off.",
+  "services.children.tagline": "Vyzdvihnutie a odvoz detí.",
   "services.children.desc":
-    "School Pick-up & Drop-off pre deti, vrátane podpory pre osobitné potreby. Dôveryhodní, školení vodiči.",
+    "Služba vyzdvihnutia a odvozu detí, vrátane podpory pre osobitné potreby. Dôveryhodní, školení vodiči.",
   "services.airport.title": "Letiskové Transfery",
   "services.airport.tagline": "Včas a profesionálne.",
   "services.airport.desc":
