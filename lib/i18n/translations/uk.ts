@@ -22,7 +22,7 @@ const uk = {
   "services.taxi.tagline": "Швидко, безпечно, професійно.",
   "services.taxi.desc":
     "Надійне таксі в Братиславі та околицях.",
-  "services.accessible.title": "Доступний транспорт (ZŤP/PRM)",
+  "services.accessible.title": "Транспорт для людей з інвалідністю та літніх (ZŤP/PRM)",
   "services.accessible.tagline":
     "Гідність, терпіння та допомога на кожному кроці.",
   "services.accessible.desc":

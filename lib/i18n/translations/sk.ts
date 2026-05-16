@@ -25,7 +25,7 @@ const sk = {
   "services.taxi.tagline": "Rýchlo, bezpečne, profesionálne.",
   "services.taxi.desc":
     "Spoľahlivá taxi služba v Bratislave a okolí. Profesionálni vodiči, transparentné ceny.",
-  "services.accessible.title": "ZŤP / Handicap Transport",
+  "services.accessible.title": "ZŤP / Seniorská doprava",
   "services.accessible.tagline":
     "Dôstojnosť, trpezlivosť a pomoc na každom kroku.",
   "services.accessible.desc":

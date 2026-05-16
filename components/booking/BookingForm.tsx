@@ -335,15 +335,8 @@ export default function BookingForm({
       value: "accessible",
       label: t("services.accessible.title"),
       icon: "♿",
-      desc: "ZŤP / PRM",
+      desc: "ZŤP / Seniorská doprava",
       img: "/drivo-wav-wheelchair.jpeg",
-    },
-    {
-      value: "senior",
-      label: t("services.senior.title"),
-      icon: "👴",
-      desc: t("services.senior.tagline"),
-      img: "/drivo-senior-portrait.jpeg",
     },
     {
       value: "children",

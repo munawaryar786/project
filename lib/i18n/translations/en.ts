@@ -25,7 +25,7 @@ const en = {
   "services.taxi.tagline": "Fast, safe, professional.",
   "services.taxi.desc":
     "Reliable taxi service in Bratislava and surroundings. Professional drivers, transparent pricing.",
-  "services.accessible.title": "Accessible Transport (ZŤP/PRM)",
+  "services.accessible.title": "Accessible & Senior Transport (ZŤP/PRM)",
   "services.accessible.tagline":
     "Dignity, patience and assistance at every step.",
   "services.accessible.desc":
