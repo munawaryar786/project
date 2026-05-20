@@ -96,7 +96,7 @@ const en = {
     "Click 'Book a Ride', fill in the form and confirm via WhatsApp. The driver will contact you before the ride.",
   "faq.q2": "Do you have wheelchair-accessible vehicles?",
   "faq.a2":
-    "WAV vehicles with ramps will be available from April. Currently we have 7-seater vehicles for foldable wheelchairs.",
+    "WAV and accessible transport support is available with our trained drivers. Please contact us before booking so we can arrange the right assistance for your needs.",
   "faq.q3": "What payment methods do you accept?",
   "faq.a3":
     "We accept card payments (recommended), cash (with rules) and institution billing.",

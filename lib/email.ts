@@ -165,7 +165,7 @@ function buildCustomerConfirmationEmail(data: BookingEmailData): string {
             <td>
               <strong style="color: #553c9a; font-size: 14px;">♿ Wheelchair Assistance</strong>
               <p style="color: #553c9a; margin: 5px 0 0 0; font-size: 13px;">
-                Our trained driver will provide boarding assistance. WAV vehicles coming April 2025.
+                Our trained driver will provide boarding assistance. Accessible transport assistance available on request.
               </p>
             </td>
           </tr>

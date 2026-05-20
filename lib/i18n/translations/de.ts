@@ -72,7 +72,7 @@ const de = {
   "fleet.sevenSeaterWarning": "Max 5 Passagiere + großes Gepäck",
   "fleet.wav": "WAV Rollstuhlgerechtes Fahrzeug",
   "fleet.wavDesc": "Für Rollstühle mit Rampe",
-  "fleet.wavBadge": "BALD — April",
+  "fleet.wavBadge": "",
   "fleet.wavNote":
     "Kontaktieren Sie uns für aktuelle barrierefreie Optionen.",
 
@@ -92,7 +92,7 @@ const de = {
     "Klicken Sie auf 'Fahrt buchen', füllen Sie das Formular aus und bestätigen Sie per WhatsApp.",
   "faq.q2": "Haben Sie rollstuhlgerechte Fahrzeuge?",
   "faq.a2":
-    "WAV-Fahrzeuge mit Rampen werden ab April verfügbar sein. Derzeit haben wir 7-Sitzer für faltbare Rollstühle.",
+     "WAV- und barrierefreie Transportunterstützung ist mit unseren geschulten Fahrern verfügbar. Bitte kontaktieren Sie uns vor der Buchung, damit wir die passende Unterstützung organisieren können.",
   "faq.q3": "Welche Zahlungsmethoden akzeptieren Sie?",
   "faq.a3":
     "Wir akzeptieren Kartenzahlung (empfohlen), Bargeld (mit Regeln) und Rechnungsstellung.",

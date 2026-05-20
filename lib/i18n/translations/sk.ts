@@ -97,7 +97,7 @@ const sk = {
     "Kliknite na 'Objednať jazdu', vyplňte formulár a potvrďte cez WhatsApp. Vodič vás bude kontaktovať pred jazdou.",
   "faq.q2": "Máte bezbariérové vozidlá?",
   "faq.a2":
-    "WAV vozidlá s rampou budú dostupné od apríla. Aktuálne máme 7-miestne vozidlá pre skladacie invalidné vozíky.",
+   "WAV a dostupná preprava sú k dispozícii s našimi vyškolenými vodičmi. Pred rezerváciou nás prosím kontaktujte, aby sme zabezpečili správnu asistenciu podľa vašich potrieb.",
   "faq.q3": "Aké platobné metódy prijímate?",
   "faq.a3":
     "Prijímame platby kartou (odporúčané), hotovosťou (s pravidlami) a fakturáciou pre inštitúcie.",
