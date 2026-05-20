@@ -111,7 +111,6 @@ export default function BookPage() {
                     { i: '🛡️', t: t('trust.item1.title') },
                     { i: '♿', t: t('trust.item4.title') },
                     { i: '💳', t: t('booking.payment') },
-                    { i: '📍', t: t('booking.trackingComing', 'Real-time tracking coming soon') },
                     { i: '🔒', t: t('booking.gdprSecure', 'EU GDPR compliant. Encrypted.') },
                   ].map((x) => (
                     <div key={x.t} className="flex items-center gap-3">
