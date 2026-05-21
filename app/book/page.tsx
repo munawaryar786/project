@@ -60,16 +60,16 @@ export default function BookPage() {
             </div>
 
             {/* Progress Steps */}
-            <div className="flex items-center gap-3 mt-10">
+            <div className="mt-8 grid grid-cols-3 gap-2 sm:mt-10 sm:flex sm:items-center sm:gap-3">
               {[
                 { n: 1, l: t('booking.tripDetails'), icon: '📍' },
                 { n: 2, l: t('otp.title'), icon: '📱' },
                 { n: 3, l: t('confirmation.title'), icon: '✅' },
               ].map((s, i) => (
-                <div key={s.n} className="flex items-center gap-3">
-                  <div className="flex items-center gap-2 bg-drivo-green/20 rounded-full px-4 py-2">
-                    <span className="text-[14px]">{s.icon}</span>
-                    <span className="text-[13px] font-semibold text-drivo-green">{s.l}</span>
+                <div key={s.n} className="min-w-0 sm:flex sm:items-center sm:gap-3">
+                  <div className="flex min-h-[54px] flex-col items-center justify-center gap-1 rounded-2xl bg-drivo-green/20 px-2 py-2 text-center sm:min-h-0 sm:flex-row sm:rounded-full sm:px-4">
+                    <span className="text-[13px] sm:text-[14px]">{s.icon}</span>
+                    <span className="text-[11px] font-semibold leading-tight text-drivo-green sm:text-[13px]">{s.l}</span>
                   </div>
                   {i < 2 && <div className="w-6 h-0.5 bg-white/20 hidden sm:block" />}
                 </div>
@@ -144,8 +144,8 @@ export default function BookPage() {
                 <div className="flex items-center gap-3 mb-2">
                   <span className="text-2xl animate-float">🚐</span>
                   <div>
-                    <p className="text-[14px] font-bold text-drivo-navy">{t('fleet.wavBadge')}</p>
-                    <span className="pill-amber text-[10px]">{t('common.comingSoon')}</span>
+                    <p className="text-[14px] font-bold text-drivo-navy">{t('fleet.wavTitle')}</p>
+                    <span className="pill-amber text-[10px]">{t('fleet.wavBadge')}</span>
                   </div>
                 </div>
                 <p className="text-[12px] text-drivo-text-secondary">

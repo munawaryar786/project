@@ -529,11 +529,11 @@ scheduledTime:
               />
             )}
 
-<div className="grid grid-cols-2 gap-3 mb-5">
+<div className="mb-5 grid grid-cols-2 gap-2 sm:gap-3">
   <button
     type="button"
     onClick={() => setRideMode("now")}
-    className={`rounded-2xl p-4 border text-sm font-semibold transition ${
+    className={`flex min-h-[74px] items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-center text-sm font-semibold leading-tight transition sm:min-h-0 sm:p-4 ${
       rideMode === "now"
         ? "bg-drivo-green text-white border-drivo-green"
         : "bg-white border-gray-200 text-gray-700"
@@ -545,7 +545,7 @@ scheduledTime:
   <button
     type="button"
     onClick={() => setRideMode("schedule")}
-    className={`rounded-2xl p-4 border text-sm font-semibold transition ${
+    className={`flex min-h-[74px] items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-center text-sm font-semibold leading-tight transition sm:min-h-0 sm:p-4 ${
       rideMode === "schedule"
         ? "bg-drivo-green text-white border-drivo-green"
         : "bg-white border-gray-200 text-gray-700"

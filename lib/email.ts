@@ -165,7 +165,7 @@ function buildCustomerConfirmationEmail(data: BookingEmailData): string {
             <td>
               <strong style="color: #553c9a; font-size: 14px;">♿ Wheelchair Assistance</strong>
               <p style="color: #553c9a; margin: 5px 0 0 0; font-size: 13px;">
-                Our trained driver will provide boarding assistance and Accessible transport support available on request.
+                Our trained driver will provide boarding assistance and accessible transport support according to your needs.
               </p>
             </td>
           </tr>

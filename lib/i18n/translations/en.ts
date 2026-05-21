@@ -74,9 +74,11 @@ const en = {
   "fleet.sevenSeaterDesc": "Max 6 passengers, more luggage space",
   "fleet.sevenSeaterWarning": "Max 5 passengers + extra luggage",
   "fleet.wav": "WAV Wheelchair Accessible Vehicle",
-  "fleet.wavDesc": "For wheelchairs with ramp access",
-  "fleet.wavBadge": "",
-  "fleet.wavNote": "Contact us for current accessible transport options.",
+  "fleet.wavDesc":
+    "Our trained driver will provide boarding assistance and accessible transport support according to your needs.",
+  "fleet.wavBadge": "Available now",
+  "fleet.wavNote":
+    "Our trained driver will provide boarding assistance and accessible transport support according to your needs.",
 
   // Trust
   "trust.title": "Why Drivo?",
@@ -96,7 +98,7 @@ const en = {
     "Click 'Book a Ride', fill in the form and confirm via WhatsApp. The driver will contact you before the ride.",
   "faq.q2": "Do you have wheelchair-accessible vehicles?",
   "faq.a2":
-    "WAV and accessible transport support is available with our trained drivers. Please contact us before booking so we can arrange the right assistance for your needs.",
+    "Our trained driver will provide boarding assistance and accessible transport support according to your needs.",
   "faq.q3": "What payment methods do you accept?",
   "faq.a3":
     "We accept card payments (recommended), cash (with rules) and institution billing.",
@@ -323,8 +325,8 @@ const en = {
   "home.stats.services": "Services",
   "how.subtitle": "Book in 60 seconds",
   "fleet.subtitle": "Clean, comfortable vehicles for every ride",
-  "fleet.comingSoon": "",
-  "fleet.wavTitle": "",
+  "fleet.comingSoon": "Available now",
+  "fleet.wavTitle": "WAV accessible transport available",
   "home.promise.title": "Our promise",
   "home.promise.dignity": "Complete dignity",
   "home.promise.noRush": "No rushing, your pace",

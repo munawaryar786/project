@@ -87,7 +87,7 @@ function Hero() {
             </div>
 
             <div className="flex items-center gap-4 mb-10 rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm max-w-lg">
-              <div className="flex -space-x-3">
+              <div className="flex shrink-0 -space-x-2 pr-2 sm:-space-x-3 sm:pr-0">
                 {[
                   "https://i.pravatar.cc/48?img=1",
                   "https://i.pravatar.cc/48?img=2",
@@ -95,19 +95,19 @@ function Hero() {
                   "https://i.pravatar.cc/48?img=4",
                   "https://i.pravatar.cc/48?img=5",
                 ].map((src) => (
-                  <Image key={src} src={src} alt="" width={40} height={40} className="h-10 w-10 rounded-full border-2 border-drivo-navy object-cover" />
+                  <Image key={src} src={src} alt="" width={40} height={40} className="h-9 w-9 rounded-full border-2 border-drivo-navy object-cover sm:h-10 sm:w-10" />
                 ))}
               </div>
-              <div>
-                <div className="text-[15px] font-bold text-white">2,400+ {t("home.stats.riders")}</div>
-                <div className="text-[13px] text-white/55">{t("hero.reviewsLine")}</div>
+              <div className="min-w-0 pl-1 sm:pl-0">
+                <div className="text-[14px] font-bold leading-snug text-white sm:text-[15px]">2,400+ {t("home.stats.riders")}</div>
+                <div className="text-[12px] leading-snug text-white/55 sm:text-[13px]">{t("hero.reviewsLine")}</div>
               </div>
             </div>
 
-            <div className="grid grid-cols-4 gap-6 max-w-md">
+            <div className="grid max-w-md grid-cols-[1.25fr_1fr_1fr_.8fr] gap-4 sm:grid-cols-4 sm:gap-6">
               {stats.map(([value, suffix, label]) => (
-                <div key={label}>
-                  <div className="text-[24px] font-extrabold text-white"><Counter end={value} suffix={suffix} /></div>
+                <div key={label} className="min-w-0">
+                  <div className="whitespace-nowrap text-[22px] font-extrabold leading-none text-white sm:text-[24px]"><Counter end={value} suffix={suffix} /></div>
                   <div className="text-[11px] text-white/40 mt-0.5">{label}</div>
                 </div>
               ))}

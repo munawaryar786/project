@@ -71,10 +71,11 @@ const de = {
   "fleet.sevenSeaterDesc": "Max 6 Passagiere, mehr Gepäckraum",
   "fleet.sevenSeaterWarning": "Max 5 Passagiere + großes Gepäck",
   "fleet.wav": "WAV Rollstuhlgerechtes Fahrzeug",
-  "fleet.wavDesc": "Für Rollstühle mit Rampe",
-  "fleet.wavBadge": "",
+  "fleet.wavDesc":
+    "Unser geschulter Fahrer bietet Einstiegshilfe und Unterstützung für barrierefreien Transport entsprechend Ihren Bedürfnissen.",
+  "fleet.wavBadge": "Jetzt verfügbar",
   "fleet.wavNote":
-    "Kontaktieren Sie uns für aktuelle barrierefreie Optionen.",
+    "Unser geschulter Fahrer bietet Einstiegshilfe und Unterstützung für barrierefreien Transport entsprechend Ihren Bedürfnissen.",
 
   "trust.title": "Warum Drivo?",
   "trust.item1.title": "Lizenzierte und geschulte Fahrer",
@@ -92,7 +93,7 @@ const de = {
     "Klicken Sie auf 'Fahrt buchen', füllen Sie das Formular aus und bestätigen Sie per WhatsApp.",
   "faq.q2": "Haben Sie rollstuhlgerechte Fahrzeuge?",
   "faq.a2":
-     "WAV- und barrierefreie Transportunterstützung ist mit unseren geschulten Fahrern verfügbar. Bitte kontaktieren Sie uns vor der Buchung, damit wir die passende Unterstützung organisieren können.",
+     "Unser geschulter Fahrer bietet Einstiegshilfe und Unterstützung für barrierefreien Transport entsprechend Ihren Bedürfnissen.",
   "faq.q3": "Welche Zahlungsmethoden akzeptieren Sie?",
   "faq.a3":
     "Wir akzeptieren Kartenzahlung (empfohlen), Bargeld (mit Regeln) und Rechnungsstellung.",
@@ -307,8 +308,8 @@ const de = {
   "home.stats.services": "Services",
   "how.subtitle": "In 60 Sekunden buchen",
   "fleet.subtitle": "Saubere, komfortable Fahrzeuge fuer jede Fahrt",
-  "fleet.comingSoon": "Kommt 2026",
-  "fleet.wavTitle": "WAV-Fahrzeuge kommen bald",
+  "fleet.comingSoon": "Jetzt verfügbar",
+  "fleet.wavTitle": "WAV-barrierefreier Transport verfügbar",
   "home.promise.title": "Unser Versprechen",
   "home.promise.dignity": "Volle Wuerde",
   "home.promise.noRush": "Kein Druck, Ihr Tempo",

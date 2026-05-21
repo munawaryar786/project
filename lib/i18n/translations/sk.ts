@@ -74,10 +74,11 @@ const sk = {
   "fleet.sevenSeaterDesc": "Max 6 cestujúcich, väčší priestor pre batožinu",
   "fleet.sevenSeaterWarning": "Max 5 cestujúcich + väčšia batožina",
   "fleet.wav": "WAV Bezbariérové vozidlo",
-  "fleet.wavDesc": "Pre invalidné vozíky s rampou",
-  "fleet.wavBadge": "ČOSKORO — Apríl",
+  "fleet.wavDesc":
+    "Náš vyškolený vodič poskytne asistenciu pri nastupovaní a podporu bezbariérovej dopravy podľa vašich potrieb.",
+  "fleet.wavBadge": "Dostupné teraz",
   "fleet.wavNote":
-    "Kontaktujte nás pre aktuálne možnosti prístupného transportu.",
+    "Náš vyškolený vodič poskytne asistenciu pri nastupovaní a podporu bezbariérovej dopravy podľa vašich potrieb.",
 
   // Trust
   "trust.title": "Prečo Drivo?",
@@ -97,7 +98,7 @@ const sk = {
     "Kliknite na 'Objednať jazdu', vyplňte formulár a potvrďte cez WhatsApp. Vodič vás bude kontaktovať pred jazdou.",
   "faq.q2": "Máte bezbariérové vozidlá?",
   "faq.a2":
-   "WAV a dostupná preprava sú k dispozícii s našimi vyškolenými vodičmi. Pred rezerváciou nás prosím kontaktujte, aby sme zabezpečili správnu asistenciu podľa vašich potrieb.",
+   "Náš vyškolený vodič poskytne asistenciu pri nastupovaní a podporu bezbariérovej dopravy podľa vašich potrieb.",
   "faq.q3": "Aké platobné metódy prijímate?",
   "faq.a3":
     "Prijímame platby kartou (odporúčané), hotovosťou (s pravidlami) a fakturáciou pre inštitúcie.",
@@ -325,8 +326,8 @@ const sk = {
   "home.stats.services": "Služby",
   "how.subtitle": "Objednajte za 60 sekúnd",
   "fleet.subtitle": "Čisté a pohodlné vozidlá pre každú jazdu",
-  "fleet.comingSoon": "Pripravujeme v roku 2026",
-  "fleet.wavTitle": "WAV vozidlá už čoskoro",
+  "fleet.comingSoon": "Dostupné teraz",
+  "fleet.wavTitle": "WAV bezbariérová doprava je dostupná",
   "home.promise.title": "Náš záväzok",
   "home.promise.dignity": "Úplná dôstojnosť",
   "home.promise.noRush": "Bez náhlenia, vaším tempom",
