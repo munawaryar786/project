@@ -35,10 +35,20 @@ export default function RouteMap({ pickupAddress, dropoffAddress, onRouteInfo }:
   const [routeInfo, setRouteInfo] = useState<{ distanceKm: number; durationMin: number; priceEstimate: number } | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
 
-  const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY || "",
-    region: "sk",
-  });
+  const { isLoaded, loadError } = useJsApiLoader({
+  id: "google-map-script",
+  googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
+  libraries: ["places"],
+  region: "SK",
+});
+
+if (loadError) {
+  return (
+    <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-red-700">
+      Google Maps failed to load. Check API key / domain restriction.
+    </div>
+  );
+}
 
   const geocodeAddress = useCallback((address: string, type: "pickup" | "dropoff") => {
     if (!isLoaded || !address) return;
