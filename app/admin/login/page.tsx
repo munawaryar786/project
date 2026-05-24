@@ -36,7 +36,7 @@ localStorage.setItem("drivo-admin-access-token", data.accessToken || data.token)
 localStorage.setItem("drivo-admin-refresh-token", data.refreshToken || "");
 localStorage.setItem("drivo-admin-user", JSON.stringify(data.user || data.admin));
 
-router.push("/admin/dashboard");
+window.location.href = "/admin/dashboard";
     } catch (err: unknown) {
       setError(t("login.invalid"));
       console.error("Login error:", err);
