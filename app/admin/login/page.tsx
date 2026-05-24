@@ -27,14 +27,16 @@ export default function AdminLoginPage() {
 
       const data = await response.json();
 
-      if (response.ok && data.success) {
-        localStorage.setItem("drivo-admin-access-token", data.accessToken);
-        localStorage.setItem("drivo-admin-refresh-token", data.refreshToken);
-        localStorage.setItem("drivo-admin-user", JSON.stringify(data.user));
-        router.push("/admin/dashboard");
-      } else {
-        setError(data.error || t("login.invalid"));
-      }
+      if (!response.ok) {
+  setError(data.error || t("login.invalid"));
+  return;
+}
+
+localStorage.setItem("drivo-admin-access-token", data.accessToken || data.token);
+localStorage.setItem("drivo-admin-refresh-token", data.refreshToken || "");
+localStorage.setItem("drivo-admin-user", JSON.stringify(data.user || data.admin));
+
+router.push("/admin/dashboard");
     } catch (err: unknown) {
       setError(t("login.invalid"));
       console.error("Login error:", err);
