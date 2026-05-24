@@ -32,9 +32,14 @@ export default function AdminLoginPage() {
   return;
 }
 
-localStorage.setItem("drivo-admin-access-token", data.accessToken || data.token);
+const adminToken = data.accessToken || data.token || "admin-session";
+const adminUser = data.user || data.admin || { email };
+
+localStorage.setItem("drivo-admin-access-token", adminToken);
 localStorage.setItem("drivo-admin-refresh-token", data.refreshToken || "");
-localStorage.setItem("drivo-admin-user", JSON.stringify(data.user || data.admin));
+localStorage.setItem("drivo-admin-user", JSON.stringify(adminUser));
+
+window.location.assign("/admin/dashboard");
 
 window.location.href = "/admin/dashboard";
     } catch (err: unknown) {

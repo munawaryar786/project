@@ -32,8 +32,10 @@ export default function DriverLoginPage() {
       }
 
       localStorage.setItem("drivo-driver", JSON.stringify(data.driver));
-      localStorage.setItem("drivo-driver-token", data.token);
-      window.location.href = "/driver/dashboard";
+localStorage.setItem("drivo-driver-user", JSON.stringify(data.driver));
+localStorage.setItem("drivo-driver-token", data.token || "driver-session");
+
+window.location.assign("/driver/dashboard");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t("login.invalid"));
     } finally {
