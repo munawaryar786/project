@@ -9,7 +9,11 @@ async function main() {
 
   const admin = await prisma.adminUser.upsert({
     where: { email: "admin@drivo.sk" },
-    update: {},
+    update: {
+      passwordHash: adminPassword,
+      fullName: "Drivo Admin",
+      role: "SUPER_ADMIN",
+    },
     create: {
       email: "admin@drivo.sk",
       passwordHash: adminPassword,
@@ -18,13 +22,23 @@ async function main() {
     },
   });
 
-  console.log("✅ Admin created:", admin.email);
+  console.log("✅ Admin ready:", admin.email);
 
-  // DRIVER
+  // TEST DRIVER
   const driverPassword = await bcrypt.hash("Driver123!", 10);
 
-  const driver = await prisma.driver.create({
-    data: {
+  const driver = await prisma.driver.upsert({
+    where: {
+      phone: "+421123456789",
+    },
+    update: {
+      passwordHash: driverPassword,
+      fullName: "Test Driver",
+      status: "APPROVED",
+      isOnline: true,
+      isOnTrip: false,
+    },
+    create: {
       fullName: "Test Driver",
       phone: "+421123456789",
       status: "APPROVED",
@@ -34,11 +48,18 @@ async function main() {
     },
   });
 
-  console.log("✅ Driver created:", driver.phone);
+  console.log("✅ Test driver ready:", driver.phone);
+
+  console.log("\nLogin details:");
+  console.log("Admin: admin@drivo.sk / Admin123!");
+  console.log("Driver: +421123456789 / Driver123!");
 }
 
 main()
-  .catch(console.error)
+  .catch((error) => {
+    console.error("❌ Seed failed:", error);
+    process.exit(1);
+  })
   .finally(async () => {
     await prisma.$disconnect();
   });
