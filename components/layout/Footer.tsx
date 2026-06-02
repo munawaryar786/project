@@ -114,11 +114,11 @@ export default function Footer() {
               </a>
 
               <a
-                href="mailto:info@drivo.sk"
+                href="mailto:info.drivo.sk@gmail.com"
                 className="flex items-center gap-2 transition-colors hover:text-white"
               >
                 <span className="text-[16px]">📧</span>
-                info@drivo.sk
+                info.drivo.sk@gmail.com
               </a>
 
               <a
