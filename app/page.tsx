@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import AddressAutocomplete from "@/components/booking/AddressAutocomplete";
 import Link from "next/link";
 import Image from "next/image";
 import Header from "@/components/layout/Header";
@@ -50,7 +52,66 @@ function Counter({ end, suffix = "", duration = 1600 }: { end: number; suffix?: 
 
 function Hero() {
   const { t } = useLanguage();
+  const router = useRouter();
+
   const [passengers, setPassengers] = useState(2);
+  const [pickupAddress, setPickupAddress] = useState("");
+  const [dropoffAddress, setDropoffAddress] = useState("");
+  const [rideMode, setRideMode] = useState<"now" | "schedule">("now");
+  const [scheduledDate, setScheduledDate] = useState("");
+  const [scheduledTime, setScheduledTime] = useState("");
+  const [locating, setLocating] = useState(false);
+
+  const useCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert("Location is not supported on this device.");
+      return;
+    }
+
+    setLocating(true);
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+
+        try {
+          const res = await fetch(
+            `/api/addresses/reverse?lat=${latitude}&lng=${longitude}`
+          );
+          const data = await res.json();
+
+          setPickupAddress(
+            data.address || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+          );
+        } catch {
+          setPickupAddress(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+        } finally {
+          setLocating(false);
+        }
+      },
+      () => {
+        setLocating(false);
+        alert("Please allow location permission.");
+      }
+    );
+  };
+
+  const continueToBooking = () => {
+    localStorage.setItem(
+      "drivo_booking_draft",
+      JSON.stringify({
+        pickupAddress,
+        dropoffAddress,
+        passengers,
+        rideMode,
+        scheduledDate,
+        scheduledTime,
+      })
+    );
+
+    router.push("/book");
+  };
+
   const stats = [
     [2400, "+", t("home.stats.riders")],
     [50, "+", t("home.stats.drivers")],
@@ -120,19 +181,84 @@ function Hero() {
                 <h2 className="text-[18px] font-bold text-drivo-text">{t("booking.title")}</h2>
                 <span className="pill-green text-[11px]">{t("booking.quick")}</span>
               </div>
+
               <div className="space-y-4">
-                <input type="text" placeholder={t("booking.pickupPlaceholder")} className="input" />
-                <input type="text" placeholder={t("booking.dropoffPlaceholder")} className="input" />
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">{t("booking.date")}</label>
-                    <input type="date" className="input text-[14px]" />
-                  </div>
-                  <div>
-                    <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">{t("booking.time")}</label>
-                    <input type="time" className="input text-[14px]" />
-                  </div>
+                <div className="relative">
+                  <AddressAutocomplete
+                    id="home-pickup"
+                    label=""
+                    value={pickupAddress}
+                    onChange={setPickupAddress}
+                    placeholder={t("booking.pickupPlaceholder")}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={useCurrentLocation}
+                    className="absolute right-3 top-3 text-[13px] font-semibold text-drivo-green hover:underline"
+                    aria-label="Use current location"
+                  >
+                    {locating ? "..." : "📍"}
+                  </button>
                 </div>
+
+                <AddressAutocomplete
+                  id="home-dropoff"
+                  label=""
+                  value={dropoffAddress}
+                  onChange={setDropoffAddress}
+                  placeholder={t("booking.dropoffPlaceholder")}
+                />
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRideMode("now")}
+                    className={`rounded-2xl border p-3 text-sm font-semibold ${
+                      rideMode === "now"
+                        ? "bg-drivo-green text-white border-drivo-green"
+                        : "bg-white text-drivo-text border-drivo-border"
+                    }`}
+                  >
+                    ⚡ {t("booking.rideNow")}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRideMode("schedule")}
+                    className={`rounded-2xl border p-3 text-sm font-semibold ${
+                      rideMode === "schedule"
+                        ? "bg-drivo-green text-white border-drivo-green"
+                        : "bg-white text-drivo-text border-drivo-border"
+                    }`}
+                  >
+                    📅 {t("booking.scheduleRide")}
+                  </button>
+                </div>
+
+                {rideMode === "schedule" && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">{t("booking.date")}</label>
+                      <input
+                        type="date"
+                        value={scheduledDate}
+                        onChange={(e) => setScheduledDate(e.target.value)}
+                        className="input text-[14px]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">{t("booking.time")}</label>
+                      <input
+                        type="time"
+                        value={scheduledTime}
+                        onChange={(e) => setScheduledTime(e.target.value)}
+                        className="input text-[14px]"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">{t("booking.passengers")}</label>
                   <div className="flex items-center gap-3">
@@ -142,7 +268,11 @@ function Hero() {
                     <span className="text-[12px] text-drivo-text-muted ml-auto">{t("booking.maxPassengers")} 6</span>
                   </div>
                 </div>
-                <Link href="/book" className="btn-primary w-full text-[16px]">{t("nav.book")}</Link>
+
+                <button type="button" onClick={continueToBooking} className="btn-primary w-full text-[16px]">
+                  {t("nav.book")}
+                </button>
+
                 <p className="text-center text-[12px] text-drivo-text-muted">{t("booking.or")} <a href={WHATSAPP_URL} className="text-drivo-green font-semibold hover:underline">{t("common.whatsapp")}</a></p>
               </div>
             </div>

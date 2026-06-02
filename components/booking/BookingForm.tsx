@@ -80,6 +80,40 @@ export default function BookingForm({
   }, [step]);
 
   const today = useMemo(() => new Date().toISOString().split("T")[0], []);
+useEffect(() => {
+  const draftRaw = localStorage.getItem("drivo_booking_draft");
+  if (!draftRaw) return;
+
+  try {
+    const draft = JSON.parse(draftRaw);
+
+    if (typeof draft.pickupAddress === "string") {
+      setPickupAddress(draft.pickupAddress);
+    }
+
+    if (typeof draft.dropoffAddress === "string") {
+      setDropoffAddress(draft.dropoffAddress);
+    }
+
+    if (typeof draft.passengers === "number") {
+      setPassengers(Math.min(6, Math.max(1, draft.passengers)));
+    }
+
+    if (draft.rideMode === "now" || draft.rideMode === "schedule") {
+      setRideMode(draft.rideMode);
+    }
+
+    if (typeof draft.scheduledDate === "string") {
+      setScheduledDate(draft.scheduledDate);
+    }
+
+    if (typeof draft.scheduledTime === "string") {
+      setScheduledTime(draft.scheduledTime);
+    }
+  } catch {
+    localStorage.removeItem("drivo_booking_draft");
+  }
+}, []);
 
   const serviceMap: Record<string, string> = {
     standard: "STANDARD",
