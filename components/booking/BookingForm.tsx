@@ -55,6 +55,7 @@ export default function BookingForm({
   const [dropoffAddress, setDropoffAddress] = useState("");
   const [pickupCoords, setPickupCoords] = useState<Coords | null>(null);
   const [dropoffCoords, setDropoffCoords] = useState<Coords | null>(null);
+  const [locatingPickup, setLocatingPickup] = useState(false);
 
   const [rideMode, setRideMode] = useState<"now" | "schedule">("now");
 
@@ -201,6 +202,60 @@ useEffect(() => {
       console.error("Failed to resolve address coordinates:", err);
       return null;
     }
+  };
+
+  const useCurrentPickupLocation = () => {
+    if (!navigator.geolocation) {
+      setError("Location is not supported on this device.");
+      return;
+    }
+
+    setLocatingPickup(true);
+    setError("");
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+
+        setPickupCoords({
+          lat: latitude,
+          lng: longitude,
+        });
+
+        try {
+          const res = await fetch(
+            `/api/addresses/reverse?lat=${latitude}&lng=${longitude}`,
+            { cache: "no-store" }
+          );
+
+          const data = await safeJson(res);
+
+          if (isRecord(data) && typeof data.address === "string") {
+            setPickupAddress(data.address);
+            onPickupChange?.(data.address);
+          } else {
+            const coordsText = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+            setPickupAddress(coordsText);
+            onPickupChange?.(coordsText);
+          }
+        } catch {
+          const coordsText = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+          setPickupAddress(coordsText);
+          onPickupChange?.(coordsText);
+        } finally {
+          setLocatingPickup(false);
+        }
+      },
+      () => {
+        setLocatingPickup(false);
+        setError("Please allow location permission.");
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      }
+    );
   };
 
   const validateForm = () => {
@@ -529,17 +584,29 @@ scheduledTime:
           </div>
 
           <div className="space-y-4">
-            <AddressAutocomplete
-              id="pickup"
-              label={`📍 ${t("booking.pickup")} *`}
-              value={pickupAddress}
-              onChange={(v) => {
-                setPickupAddress(v);
-                setPickupCoords(null);
-                onPickupChange?.(v);
-              }}
-              placeholder={t("booking.pickupPlaceholder")}
-            />
+            <div className="relative">
+              <AddressAutocomplete
+                id="pickup"
+                label={`📍 ${t("booking.pickup")} *`}
+                value={pickupAddress}
+                onChange={(v) => {
+                  setPickupAddress(v);
+                  setPickupCoords(null);
+                  onPickupChange?.(v);
+                }}
+                placeholder={t("booking.pickupPlaceholder")}
+              />
+
+              <button
+                type="button"
+                onClick={useCurrentPickupLocation}
+                className="absolute right-3 top-[38px] z-10 rounded-full bg-white px-2 py-1 text-[13px] font-semibold text-drivo-green shadow-sm hover:bg-drivo-green-light"
+                aria-label="Use current location"
+                title="Use current location"
+              >
+                {locatingPickup ? "..." : "📍"}
+              </button>
+            </div>
 
             <AddressAutocomplete
               id="dropoff"
