@@ -330,7 +330,10 @@ function WAVBanner() {
       <div className="bg-gradient-to-r from-drivo-navy to-drivo-navy-light rounded-3xl overflow-hidden shadow-glow-navy">
         <div className="grid items-center md:grid-cols-[1fr,240px]">
           <div className="p-8 md:p-10">
-            <span className="pill-amber text-[11px] mb-4 inline-flex">{t("fleet.comingSoon")}</span>
+            <span className="pill-amber text-[11px] mb-4 inline-flex items-center gap-2">
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-drivo-amber/20 text-[12px] text-drivo-amber">✓</span>
+              {t("fleet.comingSoon")}
+            </span>
             <h3 className="text-[22px] font-bold text-white mb-2">{t("fleet.wavTitle")}</h3>
             <p className="text-[14px] text-white/50 max-w-md mb-5">{t("fleet.wavDesc")}</p>
             <Link href="/accessible-transport" className="btn-primary bg-white text-drivo-navy hover:bg-gray-100 shadow-none">{t("common.learnMore")}</Link>

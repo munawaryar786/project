@@ -2,55 +2,99 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { NAV_LINKS, PHONE_RAW, WHATSAPP_URL } from "@/lib/constants";
 import BrandLogo from "@/components/shared/BrandLogo";
 import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
+import { WHATSAPP_URL } from "@/lib/constants";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
-const HEADER_SERVICES = [
-  {
-    href: "/taxi",
-    icon: "🚕",
-    title: "header.services.standard",
-    desc: "services.taxi.desc",
-  },
-  {
-    href: "/airport",
-    icon: "✈️",
-    title: "header.services.airport",
-    desc: "services.airport.desc",
-  },
-  {
-    href: "/accessible-transport",
-    icon: "♿",
-    title: "header.services.specialized",
-    desc: "services.accessible.desc",
-  },
-  {
-    href: "/seniors",
-    icon: "👴",
-    title: "header.services.seniorAccessible",
-    desc: "services.senior.desc",
-  },
-  {
-    href: "/children",
-    icon: "👧",
-    title: "header.services.children",
-    desc: "services.children.desc",
-  },
-  {
-    href: "/car-rental",
-    icon: "🔑",
-    title: "header.services.rental",
-    desc: "services.rental.desc",
-  },
+type IconProps = {
+  className?: string;
+};
+
+function ChevronDownIcon({ className = "h-4 w-4" }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ArrowRightIcon({ className = "h-4 w-4" }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M4.2 10H15.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M11.8 6L15.8 10L11.8 14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ServiceIcon({ kind, className = "h-5 w-5" }: { kind: "taxi" | "airport" | "accessible" | "senior" | "children" | "rental"; className?: string }) {
+  const common = { className, "aria-hidden": true };
+
+  switch (kind) {
+    case "taxi":
+      return (
+        <svg {...common} viewBox="0 0 24 24" fill="none">
+          <path d="M5 16L6.6 10.8C6.9 9.8 7.8 9 8.9 9H15.1C16.2 9 17.1 9.8 17.4 10.8L19 16" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          <rect x="4" y="12" width="16" height="6" rx="2.2" stroke="currentColor" strokeWidth="1.6" />
+          <path d="M7 18V20M17 18V20M8 7.5L9 5.8C9.4 5.3 9.9 5 10.5 5H13.5C14.1 5 14.6 5.3 15 5.8L16 7.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+      );
+    case "airport":
+      return (
+        <svg {...common} viewBox="0 0 24 24" fill="none">
+          <path d="M3 13.3L21 8.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+          <path d="M10 11L13.7 5.2C14 4.7 14.7 4.6 15.2 4.9C15.6 5.1 15.8 5.6 15.7 6L14.6 10.1L19.4 11.4C20.1 11.6 20.4 12.4 20.1 13C19.9 13.5 19.4 13.8 18.9 13.8H14.1L12.7 18.1C12.5 18.7 11.8 19 11.2 18.7C10.7 18.5 10.5 17.9 10.6 17.4L11.2 13.8L7.8 14.8L6.2 17C5.8 17.5 5.1 17.6 4.6 17.2C4.2 16.8 4.1 16.2 4.5 15.7L5.7 13.8L3.9 13.9C3.4 13.9 3 13.6 3 13.3Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+        </svg>
+      );
+    case "accessible":
+      return (
+        <svg {...common} viewBox="0 0 24 24" fill="none">
+          <circle cx="12.2" cy="5.4" r="1.8" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M11 8.8L9.2 12.2H13L14.1 15.1C14.7 16.8 16.3 18 18.1 18H19" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M10.8 10.1H15.6M10.5 15.7C9.6 16.7 8.3 17.3 6.8 17.3C4.1 17.3 2 15.2 2 12.5C2 9.8 4.1 7.7 6.8 7.7C7.5 7.7 8.2 7.8 8.8 8.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      );
+    case "senior":
+      return (
+        <svg {...common} viewBox="0 0 24 24" fill="none">
+          <circle cx="9" cy="6" r="2.2" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M8 9.2V14.2M8 14.2L5.5 21M8 14.2L12 18M12 18L14 21M12 18L17 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M16.5 8V21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      );
+    case "children":
+      return (
+        <svg {...common} viewBox="0 0 24 24" fill="none">
+          <circle cx="8" cy="6.2" r="2" stroke="currentColor" strokeWidth="1.5" />
+          <circle cx="15.7" cy="7.2" r="1.7" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M7.8 9.4L6.8 14.4L9.6 17.4L10.5 21M6.8 14.4L4.2 17.1M6.8 14.4L10.7 13.2L13.5 10.6M15.5 9.4L14.7 13L17 15.5L18 20" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...common} viewBox="0 0 24 24" fill="none">
+          <rect x="5" y="7" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
+          <path d="M9 7V5.8C9 5.1 9.6 4.5 10.3 4.5H15.2C15.7 4.5 16.1 4.7 16.4 5.1L18.2 7.4M8.5 11.5H13.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      );
+  }
+}
+
+const SERVICES = [
+  { href: "/taxi", kind: "taxi" as const, title: "header.services.standard", desc: "services.taxi.desc" },
+  { href: "/airport", kind: "airport" as const, title: "header.services.airport", desc: "services.airport.desc" },
+  { href: "/accessible-transport", kind: "accessible" as const, title: "header.services.specialized", desc: "services.accessible.desc" },
+  { href: "/seniors", kind: "senior" as const, title: "header.services.seniorAccessible", desc: "services.senior.desc" },
+  { href: "/children", kind: "children" as const, title: "header.services.children", desc: "services.children.desc" },
+  { href: "/car-rental", kind: "rental" as const, title: "header.services.rental", desc: "services.rental.desc" },
 ];
 
-const NAV_KEYS: Record<string, string> = {
-  "/about": "nav.about",
-  "/faq": "nav.faq",
-  "/contact": "nav.contact",
-};
+const NAV_LINKS = [
+  { href: "/about", key: "nav.about" },
+  { href: "/faq", key: "nav.faq" },
+  { href: "/contact", key: "nav.contact" },
+];
 
 export default function Header() {
   const { t } = useLanguage();
@@ -59,7 +103,7 @@ export default function Header() {
   const [servicesOpen, setServicesOpen] = useState(false);
 
   useEffect(() => {
-    const handler = () => setScrolled(window.scrollY > 20);
+    const handler = () => setScrolled(window.scrollY > 18);
     handler();
     window.addEventListener("scroll", handler);
     return () => window.removeEventListener("scroll", handler);
@@ -72,73 +116,46 @@ export default function Header() {
     };
   }, [open]);
 
-  const headerTone = scrolled ? "dark" : "light";
+  const navTone = scrolled ? "text-drivo-text" : "text-white";
+  const shellTone = scrolled
+    ? "border-b border-drivo-border/80 bg-white/86 shadow-[0_12px_40px_rgba(4,26,43,0.08)] backdrop-blur-xl"
+    : "bg-transparent";
+  const logoVariant = scrolled ? "dark" : "light";
 
   return (
-    <header
-      className={`fixed left-0 right-0 top-0 z-50 transition-all duration-300 ${
-        scrolled
-          ? "border-b border-drivo-border-light bg-white/90 shadow-soft backdrop-blur-xl"
-          : "bg-transparent"
-      }`}
-    >
+    <header className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${shellTone}`}>
       <div className="container-main">
-        <div className="flex h-[72px] items-center justify-between">
+        <div className="flex h-[78px] items-center justify-between gap-4">
           <Link href="/" aria-label="Drivo home" className="flex items-center">
-            <BrandLogo className="h-12 w-32 sm:w-36" />
+            <BrandLogo variant={logoVariant} className="h-12 w-36 sm:h-14 sm:w-40" />
           </Link>
 
-          <nav className="hidden items-center gap-1 lg:flex">
-            <div
-              className="relative"
-              onMouseEnter={() => setServicesOpen(true)}
-              onMouseLeave={() => setServicesOpen(false)}
-            >
+          <nav className="hidden items-center gap-1 xl:flex">
+            <div className="relative" onMouseEnter={() => setServicesOpen(true)} onMouseLeave={() => setServicesOpen(false)}>
               <button
-                className={`btn-ghost ${
-                  scrolled ? "text-drivo-text" : "text-white/90 hover:bg-white/10"
-                }`}
+                type="button"
+                className={`inline-flex min-h-[46px] items-center gap-2 rounded-full px-4 text-sm font-semibold transition ${navTone} ${scrolled ? "hover:bg-drivo-bg-soft" : "hover:bg-white/10"}`}
               >
                 {t("nav.services")}
-                <svg
-                  className={`h-4 w-4 transition-transform ${
-                    servicesOpen ? "rotate-180" : ""
-                  }`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
+                <ChevronDownIcon className={`h-4 w-4 transition-transform ${servicesOpen ? "rotate-180" : ""}`} />
               </button>
 
               {servicesOpen && (
-                <div className="absolute left-1/2 top-full w-[420px] -translate-x-1/2 pt-3 animate-scale-in">
-                  <div className="rounded-3xl border border-drivo-border-light bg-white p-2 shadow-elevated">
-                    {HEADER_SERVICES.map((service) => (
+                <div className="absolute left-1/2 top-full w-[520px] -translate-x-1/2 pt-4">
+                  <div className="grid grid-cols-2 gap-2 rounded-[28px] border border-drivo-border/70 bg-white p-3 shadow-[0_26px_70px_rgba(4,26,43,0.16)]">
+                    {SERVICES.map((service) => (
                       <Link
                         key={service.href}
                         href={service.href}
-                        className="group flex items-center gap-3.5 rounded-2xl px-4 py-3 transition-colors hover:bg-drivo-bg-soft"
+                        className="group flex items-start gap-3 rounded-3xl border border-transparent px-4 py-3 transition hover:border-drivo-border hover:bg-drivo-bg-soft"
                       >
-                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-drivo-bg-soft text-2xl transition-colors group-hover:bg-white">
-                          <span className="text-[20px] leading-none">{service.icon}</span>
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,rgba(45,181,177,0.12),rgba(63,214,205,0.22))] text-drivo-teal">
+                          <ServiceIcon kind={service.kind} className="h-5 w-5" />
                         </span>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[14px] font-semibold text-drivo-text">
-                              {t(service.title)}
-                            </span>
-                          </div>
-                          <span className="text-[12px] text-drivo-text-muted">
-                            {t(service.desc)}
-                          </span>
-                        </div>
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold text-drivo-text">{t(service.title)}</span>
+                          <span className="mt-1 block text-xs leading-5 text-drivo-text-secondary">{t(service.desc)}</span>
+                        </span>
                       </Link>
                     ))}
                   </div>
@@ -150,174 +167,99 @@ export default function Header() {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`btn-ghost ${
-                  scrolled ? "" : "text-white/90 hover:bg-white/10"
-                }`}
+                className={`inline-flex min-h-[46px] items-center rounded-full px-4 text-sm font-medium transition ${navTone} ${scrolled ? "hover:bg-drivo-bg-soft" : "hover:bg-white/10"}`}
               >
-                {t(NAV_KEYS[link.href], link.name)}
+                {t(link.key)}
               </Link>
             ))}
           </nav>
 
-          <div className="hidden items-center gap-3 lg:flex">
-            <LanguageSwitcher tone={headerTone} />
+          <div className="hidden items-center gap-2 lg:flex">
+            <LanguageSwitcher tone={scrolled ? "dark" : "light"} />
             <Link
               href="/driver/login"
-              className={`btn-ghost text-[13px] ${
+              className={`inline-flex min-h-[46px] items-center rounded-full px-4 text-sm font-semibold transition ${
                 scrolled
-                  ? "text-drivo-text-secondary"
-                  : "text-white/70 hover:bg-white/10"
+                  ? "text-drivo-text-secondary hover:bg-drivo-bg-soft hover:text-drivo-text"
+                  : "text-white hover:bg-white/10"
               }`}
             >
               {t("nav.driverPortal")}
             </Link>
-            <Link href="/book" className="btn-primary px-6 py-3 text-[14px]">
-              {t("nav.book")}
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2.5}
-                  d="M17 8l4 4m0 0l-4 4m4-4H3"
-                />
-              </svg>
+            <Link href="/book" className="btn-primary rounded-full px-6">
+              {t("cta.bookNow")}
+              <ArrowRightIcon />
             </Link>
           </div>
 
           <div className="flex items-center gap-2 lg:hidden">
-            <LanguageSwitcher tone={headerTone} />
-            <a
-              href={`tel:+${PHONE_RAW}`}
-              className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${
-                scrolled
-                  ? "bg-drivo-green-light text-drivo-green-dark"
-                  : "bg-white/15 text-white"
-              }`}
-              aria-label="Call"
-            >
-              <svg
-                className="h-5 w-5"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"
-                />
-              </svg>
-            </a>
+            <LanguageSwitcher tone={scrolled ? "dark" : "light"} />
             <button
+              type="button"
               onClick={() => setOpen((value) => !value)}
-              className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${
+              className={`inline-flex h-11 w-11 items-center justify-center rounded-full border transition ${
                 scrolled
-                  ? "text-drivo-text hover:bg-drivo-bg-soft"
-                  : "bg-white/15 text-white"
+                  ? "border-drivo-border bg-white text-drivo-text"
+                  : "border-white/20 bg-white/10 text-white"
               }`}
-              aria-label="Menu"
+              aria-label="Toggle menu"
+              aria-expanded={open}
             >
-              {open ? (
-                <svg
-                  className="h-5 w-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              ) : (
-                <svg
-                  className="h-5 w-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 6h16M4 12h16M4 18h16"
-                  />
-                </svg>
-              )}
+              <span className="flex flex-col gap-1.5">
+                <span className={`h-0.5 w-4 rounded-full bg-current transition ${open ? "translate-y-2 rotate-45" : ""}`} />
+                <span className={`h-0.5 w-4 rounded-full bg-current transition ${open ? "opacity-0" : ""}`} />
+                <span className={`h-0.5 w-4 rounded-full bg-current transition ${open ? "-translate-y-2 -rotate-45" : ""}`} />
+              </span>
             </button>
           </div>
         </div>
       </div>
 
       {open && (
-        <div className="fixed inset-0 top-[72px] z-40 overflow-y-auto bg-white animate-fade-in lg:hidden">
-          <div className="container-main space-y-2 py-6">
-            <p className="mb-2 px-4 text-[11px] font-bold uppercase tracking-widest text-drivo-text-muted">
-              {t("nav.services")}
-            </p>
-            {HEADER_SERVICES.map((service) => (
-              <Link
-                key={service.href}
-                href={service.href}
-                onClick={() => setOpen(false)}
-                className="flex items-center gap-3.5 rounded-2xl px-4 py-3.5 transition-colors hover:bg-drivo-bg-soft"
-              >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-drivo-bg-soft text-xl">
-                  <span className="text-[20px] leading-none">{service.icon}</span>
-                </span>
-                <div>
-                  <span className="block text-[15px] font-semibold text-drivo-text">
-                    {t(service.title)}
+        <div className="border-t border-white/10 bg-[linear-gradient(180deg,#051d31_0%,#08263b_100%)] px-5 py-5 lg:hidden">
+          <div className="container-main space-y-3 px-0">
+            <div className="grid gap-2 rounded-[28px] border border-white/10 bg-white/6 p-3 backdrop-blur-sm">
+              {SERVICES.map((service) => (
+                <Link
+                  key={service.href}
+                  href={service.href}
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-3 rounded-2xl px-3 py-3 text-white transition hover:bg-white/8"
+                >
+                  <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 text-drivo-aqua">
+                    <ServiceIcon kind={service.kind} className="h-5 w-5" />
                   </span>
-                  <span className="text-[12px] text-drivo-text-muted">
-                    {t(service.desc)}
+                  <span>
+                    <span className="block text-sm font-semibold">{t(service.title)}</span>
+                    <span className="block text-xs text-white/60">{t(service.desc)}</span>
                   </span>
-                </div>
+                </Link>
+              ))}
+            </div>
+
+            <div className="grid gap-2 rounded-[28px] border border-white/10 bg-white/6 p-3 backdrop-blur-sm">
+              {NAV_LINKS.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setOpen(false)}
+                  className="rounded-2xl px-3 py-3 text-sm font-medium text-white transition hover:bg-white/8"
+                >
+                  {t(link.key)}
+                </Link>
+              ))}
+              <Link href="/driver/login" onClick={() => setOpen(false)} className="rounded-2xl px-3 py-3 text-sm font-medium text-white transition hover:bg-white/8">
+                {t("nav.driverPortal")}
               </Link>
-            ))}
+            </div>
 
-            <div className="my-4 border-t border-drivo-border-light" />
-
-            {NAV_LINKS.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setOpen(false)}
-                className="block rounded-2xl px-4 py-3.5 text-[15px] font-medium text-drivo-text hover:bg-drivo-bg-soft"
-              >
-                {t(NAV_KEYS[link.href], link.name)}
+            <div className="flex flex-col gap-3">
+              <LanguageSwitcher tone="dark" />
+              <Link href="/book" onClick={() => setOpen(false)} className="btn-primary w-full justify-center rounded-full">
+                {t("cta.bookNow")}
               </Link>
-            ))}
-
-            <Link
-              href="/driver/login"
-              onClick={() => setOpen(false)}
-              className="block rounded-2xl px-4 py-3.5 text-[15px] font-medium text-drivo-text-secondary hover:bg-drivo-bg-soft"
-            >
-              🚗 {t("nav.driverPortal")}
-            </Link>
-
-            <div className="space-y-3 pt-4">
-              <Link
-                href="/book"
-                onClick={() => setOpen(false)}
-                className="btn-primary w-full"
-              >
-                {t("nav.book")} →
-              </Link>
-              <a
-                href={WHATSAPP_URL}
-                className="btn-outline w-full border-green-200 text-green-600 hover:bg-green-50"
-              >
-                💬 {t("common.whatsapp")}
+              <a href={WHATSAPP_URL} className="btn-outline w-full justify-center rounded-full border-white/15 bg-white/5 text-white hover:bg-white/10">
+                {t("common.whatsapp")}
               </a>
             </div>
           </div>

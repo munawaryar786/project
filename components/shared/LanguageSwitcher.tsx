@@ -36,8 +36,8 @@ export default function LanguageSwitcher({
 
   const triggerClass =
     tone === "light"
-      ? "border-white/20 bg-white/10 text-white hover:bg-white/15"
-      : "border-drivo-border-light bg-white text-drivo-text hover:bg-drivo-bg-soft";
+      ? "border-white/18 bg-white/12 text-white shadow-[0_10px_30px_rgba(4,26,43,0.18)] hover:bg-white/18"
+      : "border-drivo-border-light bg-white text-drivo-text shadow-[0_10px_24px_rgba(4,26,43,0.08)] hover:bg-drivo-bg-soft";
 
   return (
     <div className={`relative ${className}`} ref={ref}>

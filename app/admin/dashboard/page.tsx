@@ -19,7 +19,7 @@ interface Booking {
   customerPhoneCode: string;
   paymentMethod: string;
   estimatedPrice?: number | null;
-  driver?: any | null;
+  driver?: { fullName?: string } | null;
   createdAt: string;
 }
 
@@ -64,9 +64,9 @@ export default function AdminDashboard() {
   const fetchStats = async () => {
     try {
       const res = await fetch("/api/admin/stats", { cache: "no-store" });
-      const data: any = await safeJson(res);
+      const data = (await safeJson(res)) as DashboardStats;
       setStats(data);
-      setLastUpdated(new Date().toLocaleTimeString());
+      setLastUpdated(new Date().toLocaleTimeString("sk-SK"));
     } catch (err) {
       console.error("Failed to fetch stats:", err);
     } finally {
@@ -85,12 +85,10 @@ export default function AdminDashboard() {
         ).length,
       searchingDispatches:
         stats?.searchingDispatches ??
-        recentBookings.filter((b) => b.dispatchStatus === "SEARCHING_DRIVER")
-          .length,
+        recentBookings.filter((b) => b.dispatchStatus === "SEARCHING_DRIVER").length,
       noDriverAvailable:
         stats?.noDriverAvailable ??
-        recentBookings.filter((b) => b.dispatchStatus === "NO_DRIVER_AVAILABLE")
-          .length,
+        recentBookings.filter((b) => b.dispatchStatus === "NO_DRIVER_AVAILABLE").length,
       todayRevenue:
         stats?.todayRevenue ??
         recentBookings
@@ -101,60 +99,30 @@ export default function AdminDashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex h-64 items-center justify-center rounded-[32px] border border-drivo-border bg-white shadow-soft">
         <div className="text-center">
-          <div className="text-4xl animate-pulse mb-2">📊</div>
-          <p className="text-gray-500">Načítavam dashboard...</p>
+          <div className="mx-auto mb-3 h-12 w-12 animate-pulse rounded-2xl bg-[linear-gradient(135deg,rgba(31,167,163,0.2),rgba(67,211,203,0.35))]" />
+          <p className="text-drivo-text-secondary">Načítavam dashboard...</p>
         </div>
       </div>
     );
   }
 
   const statCards = [
-    {
-      label: "Dnešné rezervácie",
-      value: stats?.todayBookings || 0,
-      icon: "📅",
-      color: "bg-blue-50 text-blue-700 border-blue-200",
-    },
-    {
-      label: "Čakajúce",
-      value: stats?.pendingBookings || 0,
-      icon: "🆕",
-      color: "bg-amber-50 text-amber-700 border-amber-200",
-    },
-    {
-      label: "Aktívne jazdy",
-      value: computed.activeRides,
-      icon: "🚦",
-      color: "bg-cyan-50 text-cyan-700 border-cyan-200",
-    },
-    {
-      label: "Hľadá vodiča",
-      value: computed.searchingDispatches,
-      icon: "📡",
-      color: "bg-indigo-50 text-indigo-700 border-indigo-200",
-    },
-    {
-      label: "Dokončené",
-      value: stats?.completedBookings || 0,
-      icon: "✅",
-      color: "bg-green-50 text-green-700 border-green-200",
-    },
-    {
-      label: "Vodiči",
-      value: stats?.totalDrivers || 0,
-      icon: "🚗",
-      color: "bg-teal-50 text-teal-700 border-teal-200",
-    },
+    { label: "Dnešné rezervácie", value: stats?.todayBookings || 0, code: "TD", color: "bg-drivo-blue-light text-drivo-blue border-drivo-aqua/20" },
+    { label: "Čakajúce", value: stats?.pendingBookings || 0, code: "PN", color: "bg-drivo-amber-light text-drivo-amber border-drivo-amber/20" },
+    { label: "Aktívne jazdy", value: computed.activeRides, code: "AR", color: "bg-drivo-green-light text-drivo-teal border-drivo-aqua/20" },
+    { label: "Hľadá vodiča", value: computed.searchingDispatches, code: "DV", color: "bg-drivo-purple-light text-drivo-purple border-drivo-purple/20" },
+    { label: "Dokončené", value: stats?.completedBookings || 0, code: "OK", color: "bg-drivo-green-light text-drivo-teal border-drivo-aqua/20" },
+    { label: "Vodiči", value: stats?.totalDrivers || 0, code: "DR", color: "bg-drivo-bg-soft text-drivo-navy border-drivo-border" },
   ];
 
   return (
     <div>
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <h1 className="text-3xl font-black tracking-tight text-drivo-navy">Admin Dashboard</h1>
+          <p className="mt-1 text-sm text-drivo-text-secondary">
             Prevádzkový prehľad Drivo • Aktualizované: {lastUpdated || "—"}
           </p>
         </div>
@@ -162,55 +130,49 @@ export default function AdminDashboard() {
         <div className="flex gap-2">
           <button
             onClick={fetchStats}
-            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold rounded-xl transition-colors"
+            className="rounded-2xl border border-drivo-border bg-white px-4 py-2 text-sm font-semibold text-drivo-text transition hover:bg-drivo-bg-soft"
           >
-            🔄 Obnoviť
+            Obnoviť
           </button>
 
           <Link
             href="/admin/bookings"
-            className="px-4 py-2 bg-green-700 hover:bg-green-800 text-white text-sm font-semibold rounded-xl transition-colors"
+            className="rounded-2xl bg-[linear-gradient(135deg,#1fa7a3_0%,#43d3cb_100%)] px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-95"
           >
-            📋 Rezervácie
+            Rezervácie
           </Link>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
         {statCards.map((card) => (
-          <div
-            key={card.label}
-            className={`p-4 rounded-xl border-2 ${card.color}`}
-          >
-            <div className="text-2xl mb-1">{card.icon}</div>
-            <div className="text-2xl font-bold">{card.value}</div>
-            <div className="text-xs font-medium mt-1">{card.label}</div>
+          <div key={card.label} className={`rounded-[26px] border p-4 shadow-soft ${card.color}`}>
+            <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/70 text-xs font-black tracking-[0.2em]">
+              {card.code}
+            </div>
+            <div className="text-2xl font-black">{card.value}</div>
+            <div className="mt-1 text-xs font-medium">{card.label}</div>
           </div>
         ))}
       </div>
 
-      <div className="grid md:grid-cols-4 gap-4 mb-8">
-        <MiniCard label="Online vodiči" value={stats?.onlineDrivers ?? "—"} icon="🟢" />
-        <MiniCard label="Bez vodiča" value={computed.noDriverAvailable} icon="⚠️" />
-        <MiniCard label="Zrušené" value={stats?.cancelledBookings || 0} icon="❌" />
-        <MiniCard label="Dnešný obrat" value={`€${computed.todayRevenue.toFixed(2)}`} icon="💶" />
+      <div className="mb-8 grid gap-4 md:grid-cols-4">
+        <MiniCard label="Online vodiči" value={stats?.onlineDrivers ?? "—"} code="ON" />
+        <MiniCard label="Bez vodiča" value={computed.noDriverAvailable} code="ND" />
+        <MiniCard label="Zrušené" value={stats?.cancelledBookings || 0} code="CN" />
+        <MiniCard label="Dnešný obrat" value={`€${computed.todayRevenue.toFixed(2)}`} code="RV" />
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+      <div className="overflow-hidden rounded-[30px] border border-drivo-border bg-white shadow-soft">
+        <div className="flex items-center justify-between border-b border-drivo-border-light p-5">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">
-              🆕 Najnovšie rezervácie
-            </h2>
-            <p className="text-xs text-gray-400 mt-1">
+            <h2 className="text-lg font-bold text-drivo-navy">Najnovšie rezervácie</h2>
+            <p className="mt-1 text-xs text-drivo-text-muted">
               Booking, dispatch, payment a driver status
             </p>
           </div>
 
-          <Link
-            href="/admin/bookings"
-            className="text-sm text-green-700 hover:text-green-800 font-medium"
-          >
+          <Link href="/admin/bookings" className="text-sm font-medium text-drivo-teal hover:text-drivo-navy">
             Zobraziť všetko →
           </Link>
         </div>
@@ -219,30 +181,24 @@ export default function AdminDashboard() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-gray-50 border-b border-gray-100">
-                  <th className="text-left p-3 font-semibold text-gray-600">Ref</th>
-                  <th className="text-left p-3 font-semibold text-gray-600">Status</th>
-                  <th className="text-left p-3 font-semibold text-gray-600">Dispatch</th>
-                  <th className="text-left p-3 font-semibold text-gray-600">Service</th>
-                  <th className="text-left p-3 font-semibold text-gray-600">Customer</th>
-                  <th className="text-left p-3 font-semibold text-gray-600">Date</th>
-                  <th className="text-left p-3 font-semibold text-gray-600">Route</th>
-                  <th className="text-left p-3 font-semibold text-gray-600">Driver</th>
-                  <th className="text-left p-3 font-semibold text-gray-600">Payment</th>
+                <tr className="border-b border-drivo-border-light bg-drivo-bg-soft">
+                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">Ref</th>
+                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">Status</th>
+                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">Dispatch</th>
+                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">Service</th>
+                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">Customer</th>
+                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">Date</th>
+                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">Route</th>
+                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">Driver</th>
+                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">Payment</th>
                 </tr>
               </thead>
 
               <tbody>
                 {recentBookings.map((booking) => (
-                  <tr
-                    key={booking.id}
-                    className="border-b border-gray-50 hover:bg-gray-50 transition-colors"
-                  >
+                  <tr key={booking.id} className="border-b border-drivo-border-light/70 transition-colors hover:bg-drivo-bg-soft/70">
                     <td className="p-3">
-                      <Link
-                        href={`/admin/bookings?id=${booking.id}`}
-                        className="font-mono text-xs text-green-700 hover:underline"
-                      >
+                      <Link href={`/admin/bookings?id=${booking.id}`} className="font-mono text-xs text-drivo-teal hover:underline">
                         {booking.bookingRef}
                       </Link>
                     </td>
@@ -250,19 +206,19 @@ export default function AdminDashboard() {
                     <td className="p-3"><DispatchBadge status={booking.dispatchStatus} /></td>
                     <td className="p-3"><ServiceBadge type={booking.serviceType} /></td>
                     <td className="p-3">
-                      <div className="font-medium text-gray-900">{booking.customerName}</div>
-                      <div className="text-xs text-gray-500">
+                      <div className="font-medium text-drivo-navy">{booking.customerName}</div>
+                      <div className="text-xs text-drivo-text-secondary">
                         {booking.customerPhoneCode}{booking.customerPhone}
                       </div>
                     </td>
-                    <td className="p-3 text-gray-600 whitespace-nowrap">
+                    <td className="p-3 whitespace-nowrap text-drivo-text-secondary">
                       <div>{booking.scheduledDate}</div>
-                      <div className="text-xs text-gray-400">{booking.scheduledTime}</div>
+                      <div className="text-xs text-drivo-text-muted">{booking.scheduledTime}</div>
                     </td>
-                    <td className="p-3 text-gray-600 max-w-[220px] truncate">
+                    <td className="max-w-[220px] truncate p-3 text-drivo-text-secondary">
                       {booking.pickupAddress} → {booking.dropoffAddress}
                     </td>
-                    <td className="p-3 text-xs text-gray-600">
+                    <td className="p-3 text-xs text-drivo-text-secondary">
                       {booking.driver?.fullName || "—"}
                     </td>
                     <td className="p-3"><PaymentBadge method={booking.paymentMethod} /></td>
@@ -273,8 +229,10 @@ export default function AdminDashboard() {
           </div>
         ) : (
           <div className="p-12 text-center">
-            <div className="text-4xl mb-3">📋</div>
-            <p className="text-gray-500">Zatiaľ žiadne rezervácie.</p>
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-3xl bg-drivo-bg-soft text-sm font-black tracking-[0.24em] text-drivo-teal">
+              BK
+            </div>
+            <p className="text-drivo-text-secondary">Zatiaľ žiadne rezervácie.</p>
           </div>
         )}
       </div>
@@ -282,38 +240,32 @@ export default function AdminDashboard() {
   );
 }
 
-function MiniCard({
-  label,
-  value,
-  icon,
-}: {
-  label: string;
-  value: string | number;
-  icon: string;
-}) {
+function MiniCard({ label, value, code }: { label: string; value: string | number; code: string }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
-      <div className="text-xl mb-1">{icon}</div>
-      <div className="text-xl font-bold text-gray-900">{value}</div>
-      <div className="text-xs text-gray-500 font-medium mt-1">{label}</div>
+    <div className="rounded-[26px] border border-drivo-border bg-white p-4 shadow-soft">
+      <div className="mb-2 inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-drivo-bg-soft text-[11px] font-black tracking-[0.2em] text-drivo-teal">
+        {code}
+      </div>
+      <div className="text-xl font-black text-drivo-navy">{value}</div>
+      <div className="mt-1 text-xs font-medium text-drivo-text-secondary">{label}</div>
     </div>
   );
 }
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
-    PENDING: "bg-amber-100 text-amber-700",
-    CONFIRMED: "bg-blue-100 text-blue-700",
-    ASSIGNED: "bg-purple-100 text-purple-700",
-    DRIVER_ENROUTE: "bg-indigo-100 text-indigo-700",
-    IN_PROGRESS: "bg-cyan-100 text-cyan-700",
-    COMPLETED: "bg-green-100 text-green-700",
-    CANCELLED: "bg-red-100 text-red-700",
+    PENDING: "bg-drivo-amber-light text-drivo-amber",
+    CONFIRMED: "bg-drivo-blue-light text-drivo-blue",
+    ASSIGNED: "bg-drivo-purple-light text-drivo-purple",
+    DRIVER_ENROUTE: "bg-drivo-blue-light text-drivo-teal",
+    IN_PROGRESS: "bg-drivo-green-light text-drivo-teal",
+    COMPLETED: "bg-drivo-green-light text-drivo-teal",
+    CANCELLED: "bg-red-50 text-red-700",
     NO_SHOW: "bg-gray-100 text-gray-700",
   };
 
   return (
-    <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold ${styles[status] || "bg-gray-100 text-gray-600"}`}>
+    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${styles[status] || "bg-gray-100 text-gray-600"}`}>
       {status}
     </span>
   );
@@ -323,52 +275,40 @@ function DispatchBadge({ status }: { status?: string | null }) {
   const value = status || "NOT_STARTED";
   const styles: Record<string, string> = {
     NOT_STARTED: "bg-gray-100 text-gray-600",
-    SEARCHING_DRIVER: "bg-blue-100 text-blue-700",
-    ACCEPTED: "bg-green-100 text-green-700",
-    NO_DRIVER_AVAILABLE: "bg-red-100 text-red-700",
+    SEARCHING_DRIVER: "bg-drivo-blue-light text-drivo-blue",
+    ACCEPTED: "bg-drivo-green-light text-drivo-teal",
+    NO_DRIVER_AVAILABLE: "bg-red-50 text-red-700",
   };
 
   return (
-    <span className={`inline-flex px-2 py-1 rounded-full text-xs font-semibold ${styles[value] || "bg-gray-100 text-gray-600"}`}>
+    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${styles[value] || "bg-gray-100 text-gray-600"}`}>
       {value}
     </span>
   );
 }
 
 function ServiceBadge({ type }: { type: string }) {
-  const labels: Record<string, { icon: string; label: string }> = {
-    STANDARD: { icon: "🚕", label: "Taxi" },
-    ACCESSIBLE: { icon: "♿", label: "ZŤP" },
-    SENIOR: { icon: "👴", label: "Senior" },
-    CHILDREN: { icon: "👶", label: "Children" },
-    AIRPORT: { icon: "✈️", label: "Airport" },
+  const labels: Record<string, string> = {
+    STANDARD: "Taxi",
+    ACCESSIBLE: "ZŤP",
+    SENIOR: "Senior",
+    CHILDREN: "Children",
+    AIRPORT: "Airport",
   };
 
-  const item = labels[type] || { icon: "🚗", label: type };
-
-  return (
-    <span className="text-xs font-medium">
-      {item.icon} {item.label}
-    </span>
-  );
+  return <span className="text-xs font-semibold text-drivo-text">{labels[type] || type}</span>;
 }
 
 function PaymentBadge({ method }: { method: string }) {
   const styles: Record<string, string> = {
-    CARD: "bg-green-50 text-green-700",
-    CASH: "bg-amber-50 text-amber-700",
-    INVOICE: "bg-blue-50 text-blue-700",
-  };
-
-  const icons: Record<string, string> = {
-    CARD: "💳",
-    CASH: "💵",
-    INVOICE: "🏢",
+    CARD: "bg-drivo-green-light text-drivo-teal",
+    CASH: "bg-drivo-amber-light text-drivo-amber",
+    INVOICE: "bg-drivo-blue-light text-drivo-blue",
   };
 
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${styles[method] || "bg-gray-100 text-gray-600"}`}>
-      {icons[method] || "💰"} {method}
+    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${styles[method] || "bg-gray-100 text-gray-600"}`}>
+      {method}
     </span>
   );
 }

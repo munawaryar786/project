@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import BrandLogo from "@/components/shared/BrandLogo";
 import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { PHONE_NUMBER, WHATSAPP_URL } from "@/lib/constants";
@@ -32,10 +33,10 @@ export default function DriverLoginPage() {
       }
 
       localStorage.setItem("drivo-driver", JSON.stringify(data.driver));
-localStorage.setItem("drivo-driver-user", JSON.stringify(data.driver));
-localStorage.setItem("drivo-driver-token", data.token || "driver-session");
+      localStorage.setItem("drivo-driver-user", JSON.stringify(data.driver));
+      localStorage.setItem("drivo-driver-token", data.token || "driver-session");
 
-window.location.assign("/driver/dashboard");
+      window.location.assign("/driver/dashboard");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t("login.invalid"));
     } finally {
@@ -44,97 +45,118 @@ window.location.assign("/driver/dashboard");
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-800 via-green-700 to-green-900 px-4">
-      <div className="absolute right-4 top-4">
+    <div className="relative min-h-screen overflow-hidden bg-[linear-gradient(135deg,#041a2b_0%,#062338_45%,#0d5c68_100%)] px-4 py-10">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(63,214,205,0.22),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(31,129,147,0.2),transparent_32%)]" />
+      <div className="absolute right-4 top-4 z-10">
         <LanguageSwitcher tone="dark" />
       </div>
 
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-2xl font-extrabold text-green-800">
-            D
+      <div className="relative mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-6xl items-center justify-center">
+        <div className="grid w-full overflow-hidden rounded-[36px] border border-white/10 bg-white/[0.08] shadow-[0_30px_80px_rgba(3,14,24,0.38)] backdrop-blur-xl lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="hidden p-10 text-white lg:flex lg:flex-col lg:justify-between">
+            <div>
+              <p className="inline-flex rounded-full border border-white/[0.14] bg-white/[0.08] px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-drivo-aqua">
+                Driver Portal
+              </p>
+              <h1 className="mt-6 max-w-md text-5xl font-black leading-[1.02]">
+                Premium dispatch, cleaner workflow, faster response.
+              </h1>
+              <p className="mt-5 max-w-lg text-base leading-8 text-white/[0.68]">
+                DRIVO keeps your assigned rides, live availability, and ride requests in one calm, accessible workspace.
+              </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              {[
+                ["24/7", "Live dispatch"],
+                ["GPS", "Location updates"],
+                ["SK", "Slovak-first flow"],
+              ].map(([value, label]) => (
+                <div key={label} className="rounded-[28px] border border-white/10 bg-white/[0.08] p-5">
+                  <div className="text-2xl font-black text-white">{value}</div>
+                  <div className="mt-2 text-sm text-white/60">{label}</div>
+                </div>
+              ))}
+            </div>
           </div>
-          <h1 className="text-3xl font-bold text-white">DRIVO</h1>
-          <p className="text-green-100 mt-1">{t("login.driverPortal")}</p>
-        </div>
 
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-1">{t("login.signIn")}</h2>
-          <p className="text-sm text-gray-500 mb-6">{t("login.driverOnly")}</p>
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label htmlFor="phone" className="block text-sm font-semibold text-gray-700 mb-1.5">
-                {t("common.phone")}
-              </label>
-              <input
-                id="phone"
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+421 912 345 678"
-                required
-                className="w-full h-12 px-4 border-2 border-gray-200 rounded-xl text-base focus:border-green-500 focus:ring-2 focus:ring-green-200 outline-none transition-all"
-                autoComplete="tel"
-              />
+          <div className="bg-white p-6 sm:p-8 lg:p-10">
+            <BrandLogo className="h-16 w-44" />
+            <div className="mt-8">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-drivo-teal">
+                {t("login.driverPortal")}
+              </p>
+              <h2 className="mt-3 text-3xl font-black tracking-tight text-drivo-navy">
+                {t("login.signIn")}
+              </h2>
+              <p className="mt-2 text-sm leading-7 text-drivo-text-secondary">
+                {t("login.driverOnly")}
+              </p>
             </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-semibold text-gray-700 mb-1.5">
-                {t("common.password")}
-              </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="********"
-                required
-                className="w-full h-12 px-4 border-2 border-gray-200 rounded-xl text-base focus:border-green-500 focus:ring-2 focus:ring-green-200 outline-none transition-all"
-                autoComplete="current-password"
-              />
+            <form onSubmit={handleLogin} className="mt-8 space-y-5">
+              <div>
+                <label htmlFor="phone" className="mb-2 block text-sm font-semibold text-drivo-text">
+                  {t("common.phone")}
+                </label>
+                <input
+                  id="phone"
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+421 912 345 678"
+                  required
+                  autoComplete="tel"
+                  className="input rounded-[20px]"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="password" className="mb-2 block text-sm font-semibold text-drivo-text">
+                  {t("common.password")}
+                </label>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="********"
+                  required
+                  autoComplete="current-password"
+                  className="input rounded-[20px]"
+                />
+              </div>
+
+              {error && (
+                <div className="rounded-[22px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                  {error}
+                </div>
+              )}
+
+              <button type="submit" disabled={loading} className="btn-primary w-full justify-center rounded-[20px]">
+                {loading ? t("login.signingIn") : t("login.signIn")}
+              </button>
+            </form>
+
+            <div className="mt-8 rounded-[26px] border border-drivo-border bg-drivo-bg-soft px-5 py-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-drivo-text-muted">{t("login.noAccount")}</p>
+              <div className="mt-3 flex flex-wrap gap-4 text-sm font-semibold">
+                <a href={`tel:${PHONE_NUMBER}`} className="text-drivo-teal transition hover:text-drivo-navy">
+                  {t("common.callUs")}
+                </a>
+                <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="text-drivo-teal transition hover:text-drivo-navy">
+                  {t("common.whatsapp")}
+                </a>
+              </div>
             </div>
 
-            {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-xl">
-                <p className="text-sm text-red-700 font-medium">{error}</p>
+            {process.env.NODE_ENV === "development" && (
+              <div className="mt-5 rounded-[22px] border border-drivo-aqua/30 bg-drivo-aqua/10 px-4 py-3 text-sm text-drivo-teal">
+                Dev: add a driver in Admin, then use their phone + password "driver123".
               </div>
             )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full h-12 bg-green-700 hover:bg-green-800 text-white font-bold rounded-xl text-base transition-colors disabled:opacity-50"
-            >
-              {loading ? t("login.signingIn") : t("login.signIn")}
-            </button>
-          </form>
-
-          <div className="mt-6 pt-4 border-t border-gray-100">
-            <p className="text-xs text-gray-400 text-center">{t("login.noAccount")}</p>
-            <div className="mt-4 flex justify-center gap-4">
-              <a href={`tel:${PHONE_NUMBER}`} className="text-xs text-green-700 hover:text-green-800 font-medium">
-                {t("common.callUs")}
-              </a>
-              <a
-                href={WHATSAPP_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-green-700 hover:text-green-800 font-medium"
-              >
-                {t("common.whatsapp")}
-              </a>
-            </div>
           </div>
         </div>
-
-        {process.env.NODE_ENV === "development" && (
-          <div className="mt-4 p-3 bg-white/10 rounded-xl text-center">
-            <p className="text-xs text-green-100">
-              Dev: add a driver in Admin, then use their phone + password "driver123".
-            </p>
-          </div>
-        )}
       </div>
     </div>
   );

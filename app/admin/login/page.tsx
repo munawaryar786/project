@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import BrandLogo from "@/components/shared/BrandLogo";
 
 export default function AdminLoginPage() {
   const { t } = useLanguage();
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -28,105 +27,121 @@ export default function AdminLoginPage() {
       const data = await response.json();
 
       if (!response.ok) {
-  setError(data.error || t("login.invalid"));
-  return;
-}
+        setError(data.error || t("login.invalid"));
+        return;
+      }
 
-const adminToken = data.accessToken || data.token || "admin-session";
-const adminUser = data.user || data.admin || { email };
+      const adminToken = data.accessToken || data.token || "admin-session";
+      const adminUser = data.user || data.admin || { email };
 
-localStorage.setItem("drivo-admin-access-token", adminToken);
-localStorage.setItem("drivo-admin-refresh-token", data.refreshToken || "");
-localStorage.setItem("drivo-admin-user", JSON.stringify(adminUser));
+      localStorage.setItem("drivo-admin-access-token", adminToken);
+      localStorage.setItem("drivo-admin-refresh-token", data.refreshToken || "");
+      localStorage.setItem("drivo-admin-user", JSON.stringify(adminUser));
 
-window.location.assign("/admin/dashboard");
-
-window.location.href = "/admin/dashboard";
+      window.location.assign("/admin/dashboard");
     } catch (err: unknown) {
       setError(t("login.invalid"));
       console.error("Login error:", err);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-900 via-green-800 to-green-900 px-4">
-      <div className="absolute right-4 top-4">
+    <div className="relative min-h-screen overflow-hidden bg-[linear-gradient(135deg,#031522_0%,#06283d_52%,#0f6877_100%)] px-4 py-10">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(67,227,217,0.16),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(20,108,126,0.22),transparent_34%)]" />
+      <div className="absolute right-4 top-4 z-10">
         <LanguageSwitcher tone="dark" />
       </div>
 
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-2xl font-extrabold text-green-900">
-            D
-          </div>
-          <h1 className="text-3xl font-bold text-white">DRIVO</h1>
-          <p className="text-green-100 mt-1">{t("login.adminPanel")}</p>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-2xl p-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-1">{t("login.signIn")}</h2>
-          <p className="text-sm text-gray-500 mb-6">{t("login.adminOnly")}</p>
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label htmlFor="email" className="block text-sm font-semibold text-gray-700 mb-1.5">
-                {t("common.email")}
-              </label>
-              <input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@drivo.sk"
-                required
-                className="w-full h-12 px-4 border-2 border-gray-200 rounded-xl text-base focus:border-green-500 focus:ring-2 focus:ring-green-200 outline-none transition-all"
-                autoComplete="email"
-              />
+      <div className="relative mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-6xl items-center justify-center">
+        <div className="grid w-full overflow-hidden rounded-[36px] border border-white/10 bg-white/8 shadow-[0_30px_80px_rgba(3,14,24,0.38)] backdrop-blur-xl lg:grid-cols-[0.95fr_1.05fr]">
+          <div className="bg-white p-6 sm:p-8 lg:p-10">
+            <BrandLogo className="h-16 w-44" />
+            <div className="mt-8">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-drivo-teal">
+                Admin Control
+              </p>
+              <h1 className="mt-3 text-3xl font-black tracking-tight text-drivo-navy">
+                Secure DRIVO operations access
+              </h1>
+              <p className="mt-2 text-sm leading-7 text-drivo-text-secondary">
+                Sign in to manage bookings, drivers, dispatch, and daily operations without changing any platform workflow.
+              </p>
             </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-semibold text-gray-700 mb-1.5">
-                {t("common.password")}
-              </label>
-              <input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="********"
-                required
-                className="w-full h-12 px-4 border-2 border-gray-200 rounded-xl text-base focus:border-green-500 focus:ring-2 focus:ring-green-200 outline-none transition-all"
-                autoComplete="current-password"
-              />
-            </div>
-
-            {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-xl">
-                <p className="text-sm text-red-700 font-medium">{error}</p>
+            <form onSubmit={handleLogin} className="mt-8 space-y-5">
+              <div>
+                <label htmlFor="email" className="mb-2 block text-sm font-semibold text-drivo-text">
+                  Email
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="admin@drivo.sk"
+                  required
+                  className="input rounded-[20px]"
+                  autoComplete="email"
+                />
               </div>
-            )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full h-12 bg-green-700 hover:bg-green-800 text-white font-bold rounded-xl text-base transition-colors disabled:opacity-50"
-            >
-              {loading ? t("login.signingIn") : t("login.signIn")}
-            </button>
-          </form>
+              <div>
+                <label htmlFor="password" className="mb-2 block text-sm font-semibold text-drivo-text">
+                  {t("common.password")}
+                </label>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="********"
+                  required
+                  className="input rounded-[20px]"
+                  autoComplete="current-password"
+                />
+              </div>
 
-          <div className="mt-6 pt-4 border-t border-gray-100 text-center">
-            <p className="text-xs text-gray-400">{t("login.noAccount")}</p>
+              {error && (
+                <div className="rounded-[22px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                  {error}
+                </div>
+              )}
+
+              <button type="submit" disabled={loading} className="btn-primary w-full justify-center rounded-[20px]">
+                {loading ? t("login.signingIn") : t("login.signIn")}
+              </button>
+            </form>
+          </div>
+
+          <div className="hidden p-10 text-white lg:flex lg:flex-col lg:justify-between">
+            <div>
+              <p className="inline-flex rounded-full border border-white/14 bg-white/8 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-drivo-aqua">
+                Premium Mobility Platform
+              </p>
+              <h2 className="mt-6 max-w-md text-5xl font-black leading-[1.02]">
+                One brand system across customer, driver, and admin surfaces.
+              </h2>
+              <p className="mt-5 max-w-lg text-base leading-8 text-white/68">
+                The admin workspace now visually aligns with DRIVO's navy and aqua identity while preserving the existing booking, OTP, payment, and dispatch logic.
+              </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              {[
+                ["Bookings", "Live overview"],
+                ["Drivers", "Availability control"],
+                ["Dispatch", "Operational clarity"],
+              ].map(([title, desc]) => (
+                <div key={title} className="rounded-[28px] border border-white/10 bg-white/8 p-5">
+                  <div className="text-lg font-bold text-white">{title}</div>
+                  <div className="mt-2 text-sm text-white/60">{desc}</div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-
-        {process.env.NODE_ENV === "development" && (
-          <div className="mt-4 p-3 bg-white/10 rounded-xl text-center">
-            <p className="text-xs text-green-100">Dev: admin@drivo.sk / Drivo2025!</p>
-          </div>
-        )}
       </div>
     </div>
   );
