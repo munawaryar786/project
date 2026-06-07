@@ -216,7 +216,7 @@ export default function Header() {
       </div>
 
       {open && (
-        <div className="border-t border-white/10 bg-[linear-gradient(180deg,#051d31_0%,#08263b_100%)] px-5 py-5 lg:hidden">
+  <div className="max-h-[calc(100vh-78px)] overflow-y-auto border-t border-white/10 bg-[linear-gradient(180deg,#051d31_0%,#08263b_100%)] px-5 py-5 lg:hidden">
           <div className="container-main space-y-3 px-0">
             <div className="grid gap-2 rounded-[28px] border border-white/10 bg-white/6 p-3 backdrop-blur-sm">
               {SERVICES.map((service) => (
@@ -253,7 +253,7 @@ export default function Header() {
               </Link>
             </div>
 
-            <div className="flex flex-col gap-3">
+            <div className="sticky bottom-0 flex flex-col gap-3 rounded-[28px] border border-white/10 bg-[#061f33]/95 p-3 pb-5 backdrop-blur-md">
               <LanguageSwitcher tone="dark" />
               <Link href="/book" onClick={() => setOpen(false)} className="btn-primary w-full justify-center rounded-full">
                 {t("cta.bookNow")}

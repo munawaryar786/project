@@ -178,7 +178,8 @@ export default function Footer() {
             <div className="mt-5 space-y-3 text-sm text-white/66">
               <p className="flex items-center gap-3">
                 <FooterIcon kind="location" />
-                Bratislava, Slovakia
+                Broskyňová ulica 2388/2C
+Rovinka 900 41
               </p>
 
               <a href={`tel:+${PHONE_RAW}`} className="flex items-center gap-3 transition hover:text-white">

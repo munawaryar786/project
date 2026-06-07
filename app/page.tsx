@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import AddressAutocomplete from "@/components/booking/AddressAutocomplete";
 import Link from "next/link";
 import Image from "next/image";
 import Header from "@/components/layout/Header";
@@ -52,65 +50,6 @@ function Counter({ end, suffix = "", duration = 1600 }: { end: number; suffix?: 
 
 function Hero() {
   const { t } = useLanguage();
-  const router = useRouter();
-
-  const [passengers, setPassengers] = useState(2);
-  const [pickupAddress, setPickupAddress] = useState("");
-  const [dropoffAddress, setDropoffAddress] = useState("");
-  const [rideMode, setRideMode] = useState<"now" | "schedule">("now");
-  const [scheduledDate, setScheduledDate] = useState("");
-  const [scheduledTime, setScheduledTime] = useState("");
-  const [locating, setLocating] = useState(false);
-
-  const useCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      alert("Location is not supported on this device.");
-      return;
-    }
-
-    setLocating(true);
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-
-        try {
-          const res = await fetch(
-            `/api/addresses/reverse?lat=${latitude}&lng=${longitude}`
-          );
-          const data = await res.json();
-
-          setPickupAddress(
-            data.address || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
-          );
-        } catch {
-          setPickupAddress(`${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
-        } finally {
-          setLocating(false);
-        }
-      },
-      () => {
-        setLocating(false);
-        alert("Please allow location permission.");
-      }
-    );
-  };
-
-  const continueToBooking = () => {
-    localStorage.setItem(
-      "drivo_booking_draft",
-      JSON.stringify({
-        pickupAddress,
-        dropoffAddress,
-        passengers,
-        rideMode,
-        scheduledDate,
-        scheduledTime,
-      })
-    );
-
-    router.push("/book");
-  };
 
   const stats = [
     [2400, "+", t("home.stats.riders")],
@@ -120,34 +59,49 @@ function Hero() {
   ] as const;
 
   return (
-    <section className="relative min-h-screen bg-drivo-navy overflow-hidden">
+    <section className="relative min-h-screen overflow-hidden bg-drivo-navy">
       <div className="absolute inset-0">
-        <Image src="https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=1920&q=80" alt="" fill priority sizes="100vw" className="object-cover opacity-20" />
+        <Image
+          src="https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=1920&q=80"
+          alt=""
+          fill
+          priority
+          sizes="100vw"
+          className="object-cover opacity-20"
+        />
         <div className="absolute inset-0 bg-gradient-to-r from-drivo-navy via-drivo-navy/95 to-drivo-navy/70" />
       </div>
 
-      <div className="relative container-main pt-32 md:pt-40 pb-20">
-        <div className="grid lg:grid-cols-[1fr,440px] gap-12 lg:gap-16 items-start">
+      <div className="relative container-main pt-32 pb-20 md:pt-40">
+        <div className="grid gap-12 lg:gap-16 items-start">
           <div className="max-w-2xl animate-fade-up">
-            <div className="pill bg-white/10 text-white/80 backdrop-blur-sm border border-white/10 mb-8">
-              <span className="w-1.5 h-1.5 bg-drivo-green rounded-full animate-pulse" />
+            <div className="pill mb-8 border border-white/10 bg-white/10 text-white/80 backdrop-blur-sm">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-drivo-green" />
               {t("hero.badge2")}
             </div>
 
-            <h1 className="text-[40px] md:text-[56px] lg:text-[64px] font-extrabold text-white leading-[1.05] tracking-tight mb-6">
+            <h1 className="mb-6 text-[40px] font-extrabold leading-[1.05] tracking-tight text-white md:text-[56px] lg:text-[64px]">
               {t("hero.title")}
             </h1>
 
-            <p className="text-[17px] md:text-[19px] text-white/60 leading-relaxed mb-10 max-w-lg">
+            <p className="mb-10 max-w-lg text-[17px] leading-relaxed text-white/60 md:text-[19px]">
               {t("hero.subtitle")}
             </p>
 
-            <div className="flex flex-col sm:flex-row gap-4 mb-10">
-              <Link href="/book" className="btn-primary text-[16px] px-8">{t("cta.bookNow")}</Link>
-              <a href={WHATSAPP_URL} className="btn-outline border-white/20 text-white hover:bg-white/10">{t("common.whatsapp")}</a>
+            <div className="mb-10 flex flex-col gap-4 sm:flex-row">
+              <Link href="/book" className="btn-primary px-8 text-[16px]">
+                {t("cta.bookNow")}
+              </Link>
+
+              <a
+                href={WHATSAPP_URL}
+                className="btn-outline border-white/20 text-white hover:bg-white/10"
+              >
+                {t("common.whatsapp")}
+              </a>
             </div>
 
-            <div className="flex items-center gap-4 mb-10 rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm max-w-lg">
+            <div className="mb-10 flex max-w-lg items-center gap-4 rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
               <div className="flex shrink-0 -space-x-2 pr-2 sm:-space-x-3 sm:pr-0">
                 {[
                   "https://i.pravatar.cc/48?img=1",
@@ -156,125 +110,38 @@ function Hero() {
                   "https://i.pravatar.cc/48?img=4",
                   "https://i.pravatar.cc/48?img=5",
                 ].map((src) => (
-                  <Image key={src} src={src} alt="" width={40} height={40} className="h-9 w-9 rounded-full border-2 border-drivo-navy object-cover sm:h-10 sm:w-10" />
+                  <Image
+                    key={src}
+                    src={src}
+                    alt=""
+                    width={40}
+                    height={40}
+                    className="h-9 w-9 rounded-full border-2 border-drivo-navy object-cover sm:h-10 sm:w-10"
+                  />
                 ))}
               </div>
+
               <div className="min-w-0 pl-1 sm:pl-0">
-                <div className="text-[14px] font-bold leading-snug text-white sm:text-[15px]">2,400+ {t("home.stats.riders")}</div>
-                <div className="text-[12px] leading-snug text-white/55 sm:text-[13px]">{t("hero.reviewsLine")}</div>
+                <div className="text-[14px] font-bold leading-snug text-white sm:text-[15px]">
+                  2,400+ {t("home.stats.riders")}
+                </div>
+                <div className="text-[12px] leading-snug text-white/55 sm:text-[13px]">
+                  {t("hero.reviewsLine")}
+                </div>
               </div>
             </div>
 
             <div className="grid max-w-md grid-cols-[1.25fr_1fr_1fr_.8fr] gap-4 sm:grid-cols-4 sm:gap-6">
               {stats.map(([value, suffix, label]) => (
                 <div key={label} className="min-w-0">
-                  <div className="whitespace-nowrap text-[22px] font-extrabold leading-none text-white sm:text-[24px]"><Counter end={value} suffix={suffix} /></div>
-                  <div className="text-[11px] text-white/40 mt-0.5">{label}</div>
+                  <div className="whitespace-nowrap text-[22px] font-extrabold leading-none text-white sm:text-[24px]">
+                    <Counter end={value} suffix={suffix} />
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-white/40">
+                    {label}
+                  </div>
                 </div>
               ))}
-            </div>
-          </div>
-
-          <div className="animate-fade-up" style={{ animationDelay: "0.15s" }}>
-            <div className="bg-white rounded-4xl shadow-elevated p-7 md:p-8">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-[18px] font-bold text-drivo-text">{t("booking.title")}</h2>
-                <span className="pill-green text-[11px]">{t("booking.quick")}</span>
-              </div>
-
-              <div className="space-y-4">
-                <div className="relative">
-                  <AddressAutocomplete
-                    id="home-pickup"
-                    label=""
-                    value={pickupAddress}
-                    onChange={setPickupAddress}
-                    placeholder={t("booking.pickupPlaceholder")}
-                  />
-
-                  <button
-                    type="button"
-                    onClick={useCurrentLocation}
-                    className="absolute right-3 top-3 text-[13px] font-semibold text-drivo-green hover:underline"
-                    aria-label="Use current location"
-                  >
-                    {locating ? "..." : "📍"}
-                  </button>
-                </div>
-
-                <AddressAutocomplete
-                  id="home-dropoff"
-                  label=""
-                  value={dropoffAddress}
-                  onChange={setDropoffAddress}
-                  placeholder={t("booking.dropoffPlaceholder")}
-                />
-
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setRideMode("now")}
-                    className={`rounded-2xl border p-3 text-sm font-semibold ${
-                      rideMode === "now"
-                        ? "bg-drivo-green text-white border-drivo-green"
-                        : "bg-white text-drivo-text border-drivo-border"
-                    }`}
-                  >
-                    ⚡ {t("booking.rideNow")}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setRideMode("schedule")}
-                    className={`rounded-2xl border p-3 text-sm font-semibold ${
-                      rideMode === "schedule"
-                        ? "bg-drivo-green text-white border-drivo-green"
-                        : "bg-white text-drivo-text border-drivo-border"
-                    }`}
-                  >
-                    📅 {t("booking.scheduleRide")}
-                  </button>
-                </div>
-
-                {rideMode === "schedule" && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">{t("booking.date")}</label>
-                      <input
-                        type="date"
-                        value={scheduledDate}
-                        onChange={(e) => setScheduledDate(e.target.value)}
-                        className="input text-[14px]"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">{t("booking.time")}</label>
-                      <input
-                        type="time"
-                        value={scheduledTime}
-                        onChange={(e) => setScheduledTime(e.target.value)}
-                        className="input text-[14px]"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">{t("booking.passengers")}</label>
-                  <div className="flex items-center gap-3">
-                    <button type="button" onClick={() => setPassengers(Math.max(1, passengers - 1))} className="w-11 h-11 rounded-xl bg-drivo-bg-soft text-drivo-text font-medium text-lg">-</button>
-                    <span className="text-[20px] font-bold text-drivo-text w-8 text-center">{passengers}</span>
-                    <button type="button" onClick={() => setPassengers(Math.min(6, passengers + 1))} className="w-11 h-11 rounded-xl bg-drivo-bg-soft text-drivo-text font-medium text-lg">+</button>
-                    <span className="text-[12px] text-drivo-text-muted ml-auto">{t("booking.maxPassengers")} 6</span>
-                  </div>
-                </div>
-
-                <button type="button" onClick={continueToBooking} className="btn-primary w-full text-[16px]">
-                  {t("nav.book")}
-                </button>
-
-                <p className="text-center text-[12px] text-drivo-text-muted">{t("booking.or")} <a href={WHATSAPP_URL} className="text-drivo-green font-semibold hover:underline">{t("common.whatsapp")}</a></p>
-              </div>
             </div>
           </div>
         </div>

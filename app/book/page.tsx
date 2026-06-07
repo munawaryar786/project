@@ -39,26 +39,8 @@ export default function BookPage() {
                 <h1 className="text-[32px] md:text-[42px] font-extrabold text-white mb-3 tracking-tight">
                   {t('booking.title')}
                 </h1>
-                <p className="text-[16px] text-white/50 max-w-lg">
-                  {t('booking.pageIntro', 'Fill in your details below. We will match you with the right driver for your needs.')}
-                </p>
               </div>
-
-              {/* Trust Badges */}
-              <div className="flex flex-wrap gap-3">
-                {[
-                  { icon: '🛡️', text: t('booking.badgeSecure', 'Secure') },
-                  { icon: '⚡', text: t('booking.badgeInstant', 'Instant') },
-                  { icon: '♿', text: t('booking.badgeAccessible', 'Accessible') },
-                ].map((b) => (
-                  <div key={b.text} className="flex items-center gap-2 bg-white/10 backdrop-blur-sm rounded-xl px-4 py-2 border border-white/10">
-                    <span>{b.icon}</span>
-                    <span className="text-[13px] text-white/70 font-medium">{b.text}</span>
-                  </div>
-                ))}
               </div>
-            </div>
-
             {/* Progress Steps */}
             <div className="mt-8 grid grid-cols-3 gap-2 sm:mt-10 sm:flex sm:items-center sm:gap-3">
               {[

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
-import './globals.css';
+// @ts-ignore: Global CSS import type declarations are not available in this environment.
+import "./globals.css";
 import { LanguageProvider } from "@/lib/i18n/LanguageContext";
 export const metadata: Metadata = {
   title: {
