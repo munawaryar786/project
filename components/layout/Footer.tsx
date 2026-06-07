@@ -178,7 +178,7 @@ export default function Footer() {
             <div className="mt-5 space-y-3 text-sm text-white/66">
               <p className="flex items-center gap-3">
                 <FooterIcon kind="location" />
-                Broskyňová ulica 2388/2C
+                Broskyňová ulica 2388/2C,
 Rovinka 900 41
               </p>
 
