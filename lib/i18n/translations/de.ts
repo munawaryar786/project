@@ -126,7 +126,7 @@ const de = {
   "booking.contactDetails": "Kontaktdaten",
   "booking.name": "Vollständiger Name",
   "booking.phone": "Telefon",
-  "booking.email": "E-Mail (optional)",
+  "booking.email": "E-Mail",
   "booking.language": "Bevorzugte Sprache",
   "booking.notes": "Besondere Hinweise",
   "booking.notesPlaceholder": "Was sollte der Fahrer wissen...",

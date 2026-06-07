@@ -133,7 +133,7 @@ const sk = {
   "booking.contactDetails": "Kontaktné údaje",
   "booking.name": "Meno a priezvisko",
   "booking.phone": "Telefón",
-  "booking.email": "Email (nepovinné)",
+  "booking.email": "Email",
   "booking.language": "Preferovaný jazyk",
   "booking.notes": "Špeciálne poznámky",
   "booking.notesPlaceholder": "Niečo, čo by mal vodič vedieť...",

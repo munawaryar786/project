@@ -33,6 +33,10 @@ function readError(data: unknown, fallback: string) {
   return isRecord(data) && typeof data.error === "string" ? data.error : fallback;
 }
 
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 export default function BookingForm({
   onPickupChange,
   onDropoffChange,
@@ -259,6 +263,8 @@ useEffect(() => {
   };
 
   const validateForm = () => {
+    const trimmedEmail = customerEmail.trim();
+
     if (pickupAddress.trim().length < 3) return "Pickup address is required.";
     if (dropoffAddress.trim().length < 3) return "Drop-off address is required.";
    if (rideMode === "schedule") {
@@ -267,6 +273,8 @@ useEffect(() => {
   if (scheduledDate < today) return "Past date is not allowed.";
 }
     if (customerName.trim().length < 2) return "Customer name is required.";
+    if (!trimmedEmail) return "Customer email is required.";
+    if (!isValidEmail(trimmedEmail)) return "Valid email address is required.";
     if (customerPhone.trim().length < 6) return "Valid phone number is required.";
     if (passengers > 6) return "Maximum 6 passengers allowed.";
     if (passengers >= 6 && luggage !== "none") {
@@ -291,6 +299,7 @@ useEffect(() => {
     setLoading(true);
 
     try {
+      const trimmedEmail = customerEmail.trim();
       const resolvedPickupCoords =
         pickupCoords || (await resolveAddressCoords(pickupAddress));
       const resolvedDropoffCoords =
@@ -323,7 +332,7 @@ scheduledTime:
           airline: airline.trim() || null,
           waitAndGreet,
           customerName: customerName.trim(),
-          customerEmail: customerEmail.trim() || null,
+          customerEmail: trimmedEmail,
           customerPhone: customerPhone.trim(),
           customerPhoneCode: phoneCode,
           languagePref,
@@ -872,8 +881,9 @@ onChange={(e) => {
                 type="email"
                 value={customerEmail}
                 onChange={(e) => setCustomerEmail(e.target.value)}
-                placeholder={t("booking.email")}
+                placeholder={`${t("booking.email")} *`}
                 className="input"
+                required
               />
             </div>
 

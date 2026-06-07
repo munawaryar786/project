@@ -126,7 +126,7 @@ const uk = {
   "booking.contactDetails": "Контактні дані",
   "booking.name": "Повне ім'я",
   "booking.phone": "Телефон",
-  "booking.email": "Email (необов'язково)",
+  "booking.email": "Email",
   "booking.language": "Бажана мова",
   "booking.notes": "Спеціальні примітки",
   "booking.notesPlaceholder": "Що водій повинен знати...",

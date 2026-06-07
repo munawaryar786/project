@@ -133,7 +133,7 @@ const en = {
   "booking.contactDetails": "Contact Details",
   "booking.name": "Full name",
   "booking.phone": "Phone",
-  "booking.email": "Email (optional)",
+  "booking.email": "Email",
   "booking.language": "Preferred language",
   "booking.notes": "Special notes",
   "booking.notesPlaceholder": "Anything the driver should know...",
