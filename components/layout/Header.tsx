@@ -216,55 +216,76 @@ export default function Header() {
       </div>
 
       {open && (
-  <div className="max-h-[calc(100vh-78px)] overflow-y-auto border-t border-white/10 bg-[linear-gradient(180deg,#051d31_0%,#08263b_100%)] px-5 py-5 lg:hidden">
-          <div className="container-main space-y-3 px-0">
-            <div className="grid gap-2 rounded-[28px] border border-white/10 bg-white/6 p-3 backdrop-blur-sm">
-              {SERVICES.map((service) => (
-                <Link
-                  key={service.href}
-                  href={service.href}
-                  onClick={() => setOpen(false)}
-                  className="flex items-center gap-3 rounded-2xl px-3 py-3 text-white transition hover:bg-white/8"
-                >
-                  <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 text-drivo-aqua">
-                    <ServiceIcon kind={service.kind} className="h-5 w-5" />
-                  </span>
-                  <span>
-                    <span className="block text-sm font-semibold">{t(service.title)}</span>
-                    <span className="block text-xs text-white/60">{t(service.desc)}</span>
-                  </span>
-                </Link>
-              ))}
-            </div>
+  <div className="fixed inset-x-0 top-[78px] bottom-0 z-40 overflow-y-auto overscroll-contain border-t border-white/10 bg-[linear-gradient(180deg,#051d31_0%,#08263b_100%)] px-5 py-5 pb-28 lg:hidden">
+    <div className="container-main space-y-3 px-0">
+      <div className="grid gap-2 rounded-[28px] border border-white/10 bg-white/6 p-3 backdrop-blur-sm">
+        {SERVICES.map((service) => (
+          <Link
+            key={service.href}
+            href={service.href}
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-3 rounded-2xl px-3 py-3 text-white transition hover:bg-white/8"
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 text-drivo-aqua">
+              <ServiceIcon kind={service.kind} className="h-5 w-5" />
+            </span>
+            <span>
+              <span className="block text-sm font-semibold">{t(service.title)}</span>
+              <span className="block text-xs text-white/60">{t(service.desc)}</span>
+            </span>
+          </Link>
+        ))}
+      </div>
 
-            <div className="grid gap-2 rounded-[28px] border border-white/10 bg-white/6 p-3 backdrop-blur-sm">
-              {NAV_LINKS.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  onClick={() => setOpen(false)}
-                  className="rounded-2xl px-3 py-3 text-sm font-medium text-white transition hover:bg-white/8"
-                >
-                  {t(link.key)}
-                </Link>
-              ))}
-              <Link href="/driver/login" onClick={() => setOpen(false)} className="rounded-2xl px-3 py-3 text-sm font-medium text-white transition hover:bg-white/8">
-                {t("nav.driverPortal")}
-              </Link>
-            </div>
+      <div className="grid gap-2 rounded-[28px] border border-white/10 bg-white/6 p-3 backdrop-blur-sm">
+        {NAV_LINKS.map((link) => (
+          <Link
+            key={link.href}
+            href={link.href}
+            onClick={() => setOpen(false)}
+            className="rounded-2xl px-3 py-3 text-sm font-medium text-white transition hover:bg-white/8"
+          >
+            {t(link.key)}
+          </Link>
+        ))}
 
-            <div className="sticky bottom-0 flex flex-col gap-3 rounded-[28px] border border-white/10 bg-[#061f33]/95 p-3 pb-5 backdrop-blur-md">
-              <LanguageSwitcher tone="dark" />
-              <Link href="/book" onClick={() => setOpen(false)} className="btn-primary w-full justify-center rounded-full">
-                {t("cta.bookNow")}
-              </Link>
-              <a href={WHATSAPP_URL} className="btn-outline w-full justify-center rounded-full border-white/15 bg-white/5 text-white hover:bg-white/10">
-                {t("common.whatsapp")}
-              </a>
-            </div>
-          </div>
-        </div>
-      )}
+        <Link
+          href="/driver/login"
+          onClick={() => setOpen(false)}
+          className="rounded-2xl px-3 py-3 text-sm font-medium text-white transition hover:bg-white/8"
+        >
+          {t("nav.driverPortal")}
+        </Link>
+      </div>
+
+      <div className="mt-4 flex flex-col gap-3 rounded-[28px] border border-white/10 bg-[#061f33]/95 p-3 pb-6 backdrop-blur-md">
+        <Link
+          href="/driver/login"
+          onClick={() => setOpen(false)}
+          className="btn-outline w-full justify-center rounded-full border-white/15 bg-white/5 text-white hover:bg-white/10"
+        >
+          {t("nav.driverPortal")}
+        </Link>
+
+        <Link
+          href="/book"
+          onClick={() => setOpen(false)}
+          className="btn-primary w-full justify-center rounded-full"
+        >
+          {t("cta.bookNow")}
+        </Link>
+
+        <a
+          href={WHATSAPP_URL}
+          onClick={() => setOpen(false)}
+          className="btn-outline w-full justify-center rounded-full border-white/15 bg-white/5 text-white hover:bg-white/10"
+        >
+          {t("common.whatsapp")}
+        </a>
+      </div>
+    </div>
+  </div>
+)}
     </header>
   );
 }
