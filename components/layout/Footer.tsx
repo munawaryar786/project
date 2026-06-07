@@ -83,7 +83,7 @@ function FooterIcon({ kind }: { kind: "taxi" | "airport" | "accessible" | "senio
     default:
       return (
         <span className="inline-flex h-8 w-8 items-center justify-center rounded-2xl bg-white/8 text-[11px] font-semibold uppercase tracking-[0.22em] text-drivo-aqua">
-          {kind.slice(0, 1)}
+          {String(kind).slice(0, 1)}
         </span>
       );
   }
