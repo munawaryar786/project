@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import BrandLogo from "@/components/shared/BrandLogo";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 interface Booking {
   id: string;
@@ -37,6 +38,7 @@ interface RideRequest {
 
 export default function DriverDashboard() {
   const router = useRouter();
+  const { t } = useLanguage();
 
   const [driver, setDriver] = useState<any>(null);
   const [isOnline, setIsOnline] = useState(false);
@@ -50,6 +52,17 @@ export default function DriverDashboard() {
   const [requestUpdating, setRequestUpdating] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
+  const [financial, setFinancial] = useState({
+    dailyEarnings: 0,
+    weeklyEarnings: 0,
+    monthlyEarnings: 0,
+    totalEarnings: 0,
+    performanceScore: 0,
+    feedbackSummary: "",
+    rideCount: 0,
+  });
   const [updating, setUpdating] = useState<string | null>(null);
   const [expandedBooking, setExpandedBooking] = useState<string | null>(null);
   const [showCashModal, setShowCashModal] = useState<string | null>(null);
@@ -73,11 +86,10 @@ export default function DriverDashboard() {
     setDriver(parsed);
     setIsOnline(Boolean(parsed.isOnline));
 
-    fetchBookings(parsed.id);
-    fetchRideRequests(parsed.id);
+    fetchDriverData(parsed.id);
 
     const interval = setInterval(() => {
-      fetchRideRequests(parsed.id);
+      fetchDriverData(parsed.id, true);
     }, 5000);
 
     return () => clearInterval(interval);
@@ -185,6 +197,40 @@ export default function DriverDashboard() {
       }
     } catch (err) {
       console.error("Failed to fetch ride requests:", err);
+    }
+  };
+
+  const fetchFinancial = async (driverId: string) => {
+    const res = await fetch(`/api/driver/financial-overview?driverId=${driverId}`, {
+      cache: "no-store",
+    });
+    const data: any = await safeJson(res);
+
+    if (!res.ok) {
+      throw new Error(data.error || t("driverPortal.refreshFailed"));
+    }
+
+    setFinancial(data.financial || financial);
+  };
+
+  const fetchDriverData = async (driverId: string, silent = false) => {
+    if (!silent) {
+      setRefreshing(true);
+      setRefreshError("");
+    }
+
+    try {
+      await Promise.all([
+        fetchBookings(driverId),
+        fetchRideRequests(driverId),
+        fetchFinancial(driverId),
+      ]);
+    } catch (err: any) {
+      const message = err?.message || t("driverPortal.refreshFailed");
+      setRefreshError(message);
+      if (!silent) alert(message);
+    } finally {
+      if (!silent) setRefreshing(false);
     }
   };
 
@@ -417,16 +463,37 @@ export default function DriverDashboard() {
         <StatCard label="Hotové" value={completedBookings.length} tone="green" />
       </div>
 
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <MoneyCard label={t("driverPortal.dailyEarnings")} value={financial.dailyEarnings} />
+        <MoneyCard label={t("driverPortal.weeklyEarnings")} value={financial.weeklyEarnings} />
+        <MoneyCard label={t("driverPortal.monthlyEarnings")} value={financial.monthlyEarnings} />
+        <MoneyCard label={t("driverPortal.totalEarnings")} value={financial.totalEarnings} />
+        <StatCard label={t("driverPortal.performanceScore")} value={financial.performanceScore} tone="blue" suffix="%" />
+        <StatCard label={t("driverPortal.rideCount")} value={financial.rideCount} tone="green" />
+        <div className="col-span-2 rounded-2xl border border-gray-200 bg-white p-3">
+          <div className="text-xs font-bold text-gray-500">{t("driverPortal.feedback")}</div>
+          <div className="mt-1 text-sm font-semibold text-gray-800">
+            {financial.feedbackSummary || t("driverPortal.noFeedback")}
+          </div>
+        </div>
+      </div>
+
+      {refreshError && (
+        <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-700">
+          {refreshError}
+        </div>
+      )}
+
       <button
         onClick={() => {
           if (driver) {
-            fetchBookings(driver.id);
-            fetchRideRequests(driver.id);
+            fetchDriverData(driver.id);
           }
         }}
+        disabled={refreshing}
         className="w-full mb-6 py-3 bg-white border border-gray-200 rounded-2xl text-sm font-bold text-gray-600 hover:bg-gray-50 transition-colors"
       >
-        🔄 Obnoviť
+        {refreshing ? t("driverPortal.refreshing") : t("driverPortal.refresh")}
       </button>
 
       {showCashModal && (
@@ -946,10 +1013,12 @@ function StatCard({
   label,
   value,
   tone,
+  suffix = "",
 }: {
   label: string;
   value: number;
   tone: "amber" | "blue" | "green";
+  suffix?: string;
 }) {
   const styles = {
     amber: "bg-amber-50 border-amber-200 text-amber-700",
@@ -959,8 +1028,19 @@ function StatCard({
 
   return (
     <div className={`border rounded-2xl p-3 text-center ${styles[tone]}`}>
-      <div className="text-2xl font-black">{value}</div>
+      <div className="text-2xl font-black">{value}{suffix}</div>
       <div className="text-xs font-bold">{label}</div>
+    </div>
+  );
+}
+
+function MoneyCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-3 text-center">
+      <div className="text-xl font-black text-gray-900">
+        EUR {Number(value || 0).toFixed(2)}
+      </div>
+      <div className="text-xs font-bold text-gray-500">{label}</div>
     </div>
   );
 }

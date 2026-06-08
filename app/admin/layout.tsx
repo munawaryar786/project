@@ -78,6 +78,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       icon: "VH",
       active: pathname.startsWith("/admin/vehicles"),
     },
+    {
+      href: "/admin/pricing",
+      label: t("admin.pricing"),
+      icon: "PR",
+      active: pathname.startsWith("/admin/pricing"),
+    },
+    {
+      href: "/admin/financial",
+      label: t("admin.financial"),
+      icon: "FN",
+      active: pathname.startsWith("/admin/financial"),
+    },
   ];
 
   const handleLogout = () => {

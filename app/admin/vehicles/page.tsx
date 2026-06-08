@@ -1,5 +1,7 @@
 "use client";
-import { useState, useEffect } from "react";
+
+import { useEffect, useMemo, useState } from "react";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 interface Vehicle {
   id: string;
@@ -14,352 +16,417 @@ interface Vehicle {
   rentalStatus: string;
   weeklyRate: number | null;
   status: string;
-  createdAt: string;
+  currentMileageKm: number | null;
+  serviceNotes: string | null;
+  nextServiceDate: string | null;
+  stkValidUntil: string | null;
+  weeklyRentalPrice: number | null;
+  dailyRentalPrice: number | null;
+  baseRidePrice: number | null;
+  drivers?: { id: string; fullName: string }[];
 }
 
 const VEHICLE_TYPES = ["STANDARD", "MINIVAN", "WAV", "DELIVERY", "PREMIUM"];
 const STATUSES = ["ACTIVE", "INACTIVE", "MAINTENANCE"];
 const RENTAL_STATUSES = ["AVAILABLE", "RENTED", "RESERVED"];
 
-const typeLabel: Record<string, string> = {
-  STANDARD: "🚕 Standard Taxi",
-  MINIVAN: "🚐 7-Seater",
-  WAV: "♿ WAV Vehicle",
-  DELIVERY: "📦 Delivery",
-  PREMIUM: "⭐ Premium",
+const emptyForm = {
+  plateNumber: "",
+  type: "STANDARD",
+  brand: "",
+  model: "",
+  year: "",
+  maxPassengers: "4",
+  wheelchairAccessible: false,
+  isRental: false,
+  rentalStatus: "AVAILABLE",
+  status: "ACTIVE",
+  currentMileageKm: "",
+  serviceNotes: "",
+  nextServiceDate: "",
+  stkValidUntil: "",
+  weeklyRentalPrice: "",
+  dailyRentalPrice: "",
+  baseRidePrice: "",
 };
 
-const statusColor: Record<string, string> = {
-  ACTIVE: "bg-green-100 text-green-700",
-  INACTIVE: "bg-gray-100 text-gray-500",
-  MAINTENANCE: "bg-amber-100 text-amber-700",
-};
+const inputClass =
+  "h-10 w-full rounded-xl border border-gray-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-300";
 
-const rentalColor: Record<string, string> = {
-  AVAILABLE: "bg-blue-100 text-blue-700",
-  RENTED: "bg-green-100 text-green-700",
-  RESERVED: "bg-purple-100 text-purple-700",
-};
+function toDateInput(value: string | null) {
+  if (!value) return "";
+  return value.slice(0, 10);
+}
+
+function money(value: number | null | undefined) {
+  return value == null ? "-" : `EUR ${Number(value).toFixed(2)}`;
+}
 
 export default function AdminVehiclesPage() {
+  const { t } = useLanguage();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const [filter, setFilter] = useState("ALL");
   const [search, setSearch] = useState("");
+  const [editing, setEditing] = useState<Vehicle | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState(emptyForm);
 
-  // Mock data — later replace with real API call
-  useEffect(() => {
-    setTimeout(() => {
-      setVehicles([
-        {
-          id: "v1",
-          plateNumber: "BA-123-AB",
-          type: "STANDARD",
-          brand: "Škoda",
-          model: "Octavia",
-          year: 2022,
-          maxPassengers: 4,
-          wheelchairAccessible: false,
-          isRental: false,
-          rentalStatus: "AVAILABLE",
-          weeklyRate: null,
-          status: "ACTIVE",
-          createdAt: new Date().toISOString(),
-        },
-        {
-          id: "v2",
-          plateNumber: "BA-456-CD",
-          type: "MINIVAN",
-          brand: "Volkswagen",
-          model: "Transporter",
-          year: 2021,
-          maxPassengers: 7,
-          wheelchairAccessible: false,
-          isRental: false,
-          rentalStatus: "AVAILABLE",
-          weeklyRate: null,
-          status: "ACTIVE",
-          createdAt: new Date().toISOString(),
-        },
-        {
-          id: "v3",
-          plateNumber: "BA-789-EF",
-          type: "DELIVERY",
-          brand: "Renault",
-          model: "Kangoo",
-          year: 2023,
-          maxPassengers: 2,
-          wheelchairAccessible: false,
-          isRental: true,
-          rentalStatus: "RENTED",
-          weeklyRate: 120,
-          status: "ACTIVE",
-          createdAt: new Date().toISOString(),
-        },
-        {
-          id: "v4",
-          plateNumber: "BA-321-GH",
-          type: "WAV",
-          brand: "Ford",
-          model: "Tourneo",
-          year: 2024,
-          maxPassengers: 5,
-          wheelchairAccessible: true,
-          isRental: false,
-          rentalStatus: "RESERVED",
-          weeklyRate: null,
-          status: "MAINTENANCE",
-          createdAt: new Date().toISOString(),
-        },
-      ]);
+  const fetchVehicles = async () => {
+    setError("");
+    try {
+      const res = await fetch("/api/admin/vehicles", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || t("adminVehicles.errors.fetch"));
+      setVehicles(data.vehicles || []);
+    } catch (err: any) {
+      setError(err?.message || t("adminVehicles.errors.fetch"));
+    } finally {
       setLoading(false);
-    }, 600);
+    }
+  };
+
+  useEffect(() => {
+    fetchVehicles();
   }, []);
 
-  const filtered = vehicles.filter((v) => {
-    const matchType = filter === "ALL" || v.type === filter;
-    const matchSearch =
-      !search ||
-      v.plateNumber.toLowerCase().includes(search.toLowerCase()) ||
-      (v.brand || "").toLowerCase().includes(search.toLowerCase()) ||
-      (v.model || "").toLowerCase().includes(search.toLowerCase());
-    return matchType && matchSearch;
+  const stats = useMemo(
+    () => ({
+      total: vehicles.length,
+      active: vehicles.filter((vehicle) => vehicle.status === "ACTIVE").length,
+      rental: vehicles.filter((vehicle) => vehicle.isRental).length,
+      maintenance: vehicles.filter((vehicle) => vehicle.status === "MAINTENANCE").length,
+    }),
+    [vehicles]
+  );
+
+  const filtered = vehicles.filter((vehicle) => {
+    const query = search.toLowerCase();
+    const matchesSearch =
+      !query ||
+      vehicle.plateNumber.toLowerCase().includes(query) ||
+      `${vehicle.brand || ""} ${vehicle.model || ""}`.toLowerCase().includes(query);
+    return (filter === "ALL" || vehicle.type === filter) && matchesSearch;
   });
 
-  const stats = {
-    total: vehicles.length,
-    active: vehicles.filter((v) => v.status === "ACTIVE").length,
-    wav: vehicles.filter((v) => v.wheelchairAccessible).length,
-    rental: vehicles.filter((v) => v.isRental).length,
+  const openCreate = () => {
+    setEditing(null);
+    setForm(emptyForm);
+    setError("");
+    setShowForm(true);
+  };
+
+  const openEdit = (vehicle: Vehicle) => {
+    setEditing(vehicle);
+    setForm({
+      plateNumber: vehicle.plateNumber,
+      type: vehicle.type,
+      brand: vehicle.brand || "",
+      model: vehicle.model || "",
+      year: vehicle.year ? String(vehicle.year) : "",
+      maxPassengers: String(vehicle.maxPassengers || 4),
+      wheelchairAccessible: vehicle.wheelchairAccessible,
+      isRental: vehicle.isRental,
+      rentalStatus: vehicle.rentalStatus || "AVAILABLE",
+      status: vehicle.status || "ACTIVE",
+      currentMileageKm: vehicle.currentMileageKm != null ? String(vehicle.currentMileageKm) : "",
+      serviceNotes: vehicle.serviceNotes || "",
+      nextServiceDate: toDateInput(vehicle.nextServiceDate),
+      stkValidUntil: toDateInput(vehicle.stkValidUntil),
+      weeklyRentalPrice:
+        vehicle.weeklyRentalPrice != null
+          ? String(vehicle.weeklyRentalPrice)
+          : vehicle.weeklyRate != null
+          ? String(vehicle.weeklyRate)
+          : "",
+      dailyRentalPrice: vehicle.dailyRentalPrice != null ? String(vehicle.dailyRentalPrice) : "",
+      baseRidePrice: vehicle.baseRidePrice != null ? String(vehicle.baseRidePrice) : "",
+    });
+    setError("");
+    setShowForm(true);
+  };
+
+  const submitVehicle = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError("");
+
+    if (!form.plateNumber.trim() || !form.type || !form.model.trim()) {
+      setError(t("adminVehicles.errors.required"));
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        ...form,
+        year: form.year ? Number(form.year) : null,
+        maxPassengers: Number(form.maxPassengers || 4),
+        currentMileageKm: form.currentMileageKm ? Number(form.currentMileageKm) : null,
+        weeklyRentalPrice: form.weeklyRentalPrice ? Number(form.weeklyRentalPrice) : null,
+        weeklyRate: form.weeklyRentalPrice ? Number(form.weeklyRentalPrice) : null,
+        dailyRentalPrice: form.dailyRentalPrice ? Number(form.dailyRentalPrice) : null,
+        baseRidePrice: form.baseRidePrice ? Number(form.baseRidePrice) : null,
+      };
+
+      const res = await fetch(
+        editing ? `/api/admin/vehicles/${editing.id}` : "/api/admin/vehicles",
+        {
+          method: editing ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || t("adminVehicles.errors.save"));
+
+      setShowForm(false);
+      setEditing(null);
+      await fetchVehicles();
+    } catch (err: any) {
+      setError(err?.message || t("adminVehicles.errors.save"));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div>
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">🚐 Vehicles</h1>
-          <p className="text-sm text-gray-500 mt-1">Fleet management — {stats.total} total vehicles</p>
+          <h1 className="text-2xl font-bold text-gray-900">{t("adminVehicles.title")}</h1>
+          <p className="mt-1 text-sm text-gray-500">{t("adminVehicles.subtitle")}</p>
         </div>
         <button
-          onClick={() => setShowForm(true)}
-          className="bg-green-700 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-green-800 transition-colors flex items-center gap-2"
+          onClick={openCreate}
+          className="rounded-xl bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800"
         >
-          + Add Vehicle
+          {t("adminVehicles.add")}
         </button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        {[
-          { label: "Total Fleet", value: stats.total, icon: "🚗", color: "bg-blue-50 border-blue-100" },
-          { label: "Active", value: stats.active, icon: "✅", color: "bg-green-50 border-green-100" },
-          { label: "WAV Ready", value: stats.wav, icon: "♿", color: "bg-purple-50 border-purple-100" },
-          { label: "For Rental", value: stats.rental, icon: "🔑", color: "bg-amber-50 border-amber-100" },
-        ].map((s) => (
-          <div key={s.label} className={`${s.color} border rounded-2xl p-4`}>
-            <div className="text-2xl mb-1">{s.icon}</div>
-            <div className="text-2xl font-bold text-gray-900">{s.value}</div>
-            <div className="text-xs text-gray-500">{s.label}</div>
-          </div>
-        ))}
+      {error && (
+        <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          {error}
+        </div>
+      )}
+
+      <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
+        <OverviewCard label={t("adminVehicles.totalFleet")} value={stats.total} />
+        <OverviewCard label={t("adminVehicles.active")} value={stats.active} />
+        <OverviewCard label={t("adminVehicles.rental")} value={stats.rental} />
+        <OverviewCard label={t("adminVehicles.maintenance")} value={stats.maintenance} />
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-5">
+      <div className="mb-5 flex flex-col gap-3 md:flex-row">
         <input
-          type="text"
-          placeholder="Search plate, brand, model..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="border border-gray-200 rounded-xl px-4 py-2.5 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-green-300"
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder={t("adminVehicles.search")}
+          className="h-11 flex-1 rounded-xl border border-gray-200 px-4 text-sm"
         />
-        <div className="flex gap-2 flex-wrap">
-          {["ALL", ...VEHICLE_TYPES].map((t) => (
-            <button
-              key={t}
-              onClick={() => setFilter(t)}
-              className={`px-3 py-2 rounded-xl text-xs font-semibold transition-colors ${
-                filter === t
-                  ? "bg-green-700 text-white"
-                  : "bg-white border border-gray-200 text-gray-500 hover:bg-gray-50"
-              }`}
-            >
-              {t === "ALL" ? "All Types" : typeLabel[t] || t}
-            </button>
+        <select
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          className="h-11 rounded-xl border border-gray-200 px-3 text-sm"
+        >
+          <option value="ALL">{t("adminVehicles.allTypes")}</option>
+          {VEHICLE_TYPES.map((type) => (
+            <option key={type} value={type}>
+              {type}
+            </option>
           ))}
-        </div>
+        </select>
       </div>
 
-      {/* WAV Notice */}
-<div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-5 flex items-start gap-3">
-  <span className="text-xl">🚐</span>
-  <div>
-    <p className="text-sm font-semibold text-amber-800">
-      WAV Vehicles
-    </p>
-  </div>
-</div>
-
-      {/* Vehicles Table / Cards */}
-      {loading ? (
-        <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center">
-          <div className="text-3xl mb-3 animate-spin">⚙️</div>
-          <p className="text-gray-400 text-sm">Loading vehicles...</p>
+      <div className="mb-6 overflow-hidden rounded-2xl border border-gray-200 bg-white">
+        <div className="border-b border-gray-100 px-5 py-4">
+          <h2 className="font-bold text-gray-900">{t("adminVehicles.fleetOverview")}</h2>
         </div>
-      ) : filtered.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center">
-          <div className="text-4xl mb-3">🔍</div>
-          <p className="text-gray-500">No vehicles found</p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-          {/* Desktop Table */}
-          <div className="hidden md:block overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-100">
+        {loading ? (
+          <div className="p-10 text-center text-sm text-gray-500">{t("common.loading")}</div>
+        ) : filtered.length === 0 ? (
+          <div className="p-10 text-center text-sm text-gray-500">{t("adminVehicles.empty")}</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500">
                 <tr>
-                  {["Plate", "Type", "Vehicle", "Passengers", "Rental", "Status", "Actions"].map((h) => (
-                    <th key={h} className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wide px-5 py-3.5">
-                      {h}
-                    </th>
-                  ))}
+                  <th className="px-4 py-3">{t("adminVehicles.plate")}</th>
+                  <th className="px-4 py-3">{t("adminVehicles.vehicle")}</th>
+                  <th className="px-4 py-3">{t("adminVehicles.mileage")}</th>
+                  <th className="px-4 py-3">{t("adminVehicles.service")}</th>
+                  <th className="px-4 py-3">{t("adminVehicles.pricing")}</th>
+                  <th className="px-4 py-3">{t("adminVehicles.assigned")}</th>
+                  <th className="px-4 py-3">{t("adminVehicles.status")}</th>
+                  <th className="px-4 py-3">{t("adminVehicles.actions")}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
-                {filtered.map((v) => (
-                  <tr key={v.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-5 py-4">
-                      <span className="font-mono font-bold text-gray-900 text-sm">{v.plateNumber}</span>
-                    </td>
-                    <td className="px-5 py-4">
-                      <span className="text-sm text-gray-700">{typeLabel[v.type] || v.type}</span>
-                      {v.wheelchairAccessible && (
-                        <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">WAV</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="text-sm font-medium text-gray-900">
-                        {v.brand} {v.model}
+              <tbody className="divide-y divide-gray-100">
+                {filtered.map((vehicle) => (
+                  <tr key={vehicle.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-mono font-bold">{vehicle.plateNumber}</td>
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-gray-900">
+                        {vehicle.brand} {vehicle.model}
                       </div>
-                      <div className="text-xs text-gray-400">{v.year}</div>
+                      <div className="text-xs text-gray-500">
+                        {vehicle.type} · {vehicle.year || "-"} · {vehicle.maxPassengers} seats
+                      </div>
                     </td>
-                    <td className="px-5 py-4">
-                      <span className="text-sm text-gray-700">Max {v.maxPassengers}</span>
+                    <td className="px-4 py-3">{vehicle.currentMileageKm ?? "-"} km</td>
+                    <td className="px-4 py-3 text-xs text-gray-600">
+                      <div>{vehicle.serviceNotes || "-"}</div>
+                      <div>{t("adminVehicles.nextService")}: {toDateInput(vehicle.nextServiceDate) || "-"}</div>
+                      <div>{t("adminVehicles.stk")}: {toDateInput(vehicle.stkValidUntil) || "-"}</div>
                     </td>
-                    <td className="px-5 py-4">
-                      {v.isRental ? (
-                        <div>
-                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${rentalColor[v.rentalStatus] || "bg-gray-100 text-gray-500"}`}>
-                            {v.rentalStatus}
-                          </span>
-                          {v.weeklyRate && (
-                            <div className="text-xs text-gray-400 mt-1">€{v.weeklyRate}/week</div>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-400">—</span>
-                      )}
+                    <td className="px-4 py-3 text-xs">
+                      <div>{t("adminVehicles.weekly")}: {money(vehicle.weeklyRentalPrice ?? vehicle.weeklyRate)}</div>
+                      <div>{t("adminVehicles.daily")}: {money(vehicle.dailyRentalPrice)}</div>
+                      <div>{t("adminVehicles.baseRide")}: {money(vehicle.baseRidePrice)}</div>
                     </td>
-                    <td className="px-5 py-4">
-                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusColor[v.status] || "bg-gray-100 text-gray-500"}`}>
-                        {v.status}
+                    <td className="px-4 py-3 text-xs text-gray-600">
+                      {vehicle.drivers?.length
+                        ? vehicle.drivers.map((driver) => driver.fullName).join(", ")
+                        : "-"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700">
+                        {vehicle.status}
                       </span>
                     </td>
-                    <td className="px-5 py-4">
-                      <div className="flex gap-2">
-                        <button className="text-xs text-blue-600 hover:text-blue-800 font-medium">Edit</button>
-                        <button className="text-xs text-gray-400 hover:text-gray-600 font-medium">History</button>
-                      </div>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => openEdit(vehicle)}
+                        className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                      >
+                        {t("common.edit", "Edit")}
+                      </button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        )}
+      </div>
 
-          {/* Mobile Cards */}
-          <div className="md:hidden divide-y divide-gray-100">
-            {filtered.map((v) => (
-              <div key={v.id} className="p-4">
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <span className="font-mono font-bold text-gray-900">{v.plateNumber}</span>
-                    {v.wheelchairAccessible && (
-                      <span className="ml-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">WAV ♿</span>
-                    )}
-                  </div>
-                  <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${statusColor[v.status]}`}>
-                    {v.status}
-                  </span>
-                </div>
-                <p className="text-sm text-gray-700">{typeLabel[v.type]} · {v.brand} {v.model} ({v.year})</p>
-                <p className="text-xs text-gray-400 mt-1">Max {v.maxPassengers} passengers</p>
-                {v.isRental && v.weeklyRate && (
-                  <p className="text-xs text-green-600 font-semibold mt-1">Rental — €{v.weeklyRate}/week · {v.rentalStatus}</p>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Add Vehicle Modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-xl font-bold text-gray-900">Add New Vehicle</h2>
-              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900">
+                {editing ? t("adminVehicles.editTitle") : t("adminVehicles.addTitle")}
+              </h2>
+              <button onClick={() => setShowForm(false)} className="text-xl text-gray-400">
+                x
+              </button>
             </div>
-            <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); setShowForm(false); }}>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">Plate Number *</label>
-                  <input type="text" placeholder="BA-000-XX" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-300" required />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">Vehicle Type *</label>
-                  <select className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-300" required>
-                    {VEHICLE_TYPES.map((t) => <option key={t} value={t}>{typeLabel[t] || t}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">Brand</label>
-                  <input type="text" placeholder="e.g. Škoda" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-300" />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">Model</label>
-                  <input type="text" placeholder="e.g. Octavia" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-300" />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">Year</label>
-                  <input type="number" placeholder="2024" min="2010" max="2026" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-300" />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold text-gray-500 block mb-1">Max Passengers</label>
-                  <input type="number" placeholder="4" min="1" max="9" className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-300" />
-                </div>
+
+            <form onSubmit={submitVehicle} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Field label={t("adminVehicles.plate")} required>
+                <input required value={form.plateNumber} onChange={(e) => setForm({ ...form, plateNumber: e.target.value })} className={inputClass} />
+              </Field>
+              <Field label={t("adminVehicles.type")} required>
+                <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className={inputClass}>
+                  {VEHICLE_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+                </select>
+              </Field>
+              <Field label={t("adminVehicles.brand")}>
+                <input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} className={inputClass} />
+              </Field>
+              <Field label={t("adminVehicles.model")} required>
+                <input required value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} className={inputClass} />
+              </Field>
+              <Field label={t("adminVehicles.year")}>
+                <input type="number" value={form.year} onChange={(e) => setForm({ ...form, year: e.target.value })} className={inputClass} />
+              </Field>
+              <Field label={t("adminVehicles.passengers")}>
+                <input type="number" min="1" value={form.maxPassengers} onChange={(e) => setForm({ ...form, maxPassengers: e.target.value })} className={inputClass} />
+              </Field>
+              <Field label={t("adminVehicles.status")}>
+                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className={inputClass}>
+                  {STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                </select>
+              </Field>
+              <Field label={t("adminVehicles.mileage")}>
+                <input type="number" min="0" value={form.currentMileageKm} onChange={(e) => setForm({ ...form, currentMileageKm: e.target.value })} className={inputClass} />
+              </Field>
+              <Field label={t("adminVehicles.nextService")}>
+                <input type="date" value={form.nextServiceDate} onChange={(e) => setForm({ ...form, nextServiceDate: e.target.value })} className={inputClass} />
+              </Field>
+              <Field label={t("adminVehicles.stk")}>
+                <input type="date" value={form.stkValidUntil} onChange={(e) => setForm({ ...form, stkValidUntil: e.target.value })} className={inputClass} />
+              </Field>
+              <Field label={t("adminVehicles.weekly")}>
+                <input type="number" min="0" step="0.01" value={form.weeklyRentalPrice} onChange={(e) => setForm({ ...form, weeklyRentalPrice: e.target.value })} className={inputClass} />
+              </Field>
+              <Field label={t("adminVehicles.daily")}>
+                <input type="number" min="0" step="0.01" value={form.dailyRentalPrice} onChange={(e) => setForm({ ...form, dailyRentalPrice: e.target.value })} className={inputClass} />
+              </Field>
+              <Field label={t("adminVehicles.baseRide")}>
+                <input type="number" min="0" step="0.01" value={form.baseRidePrice} onChange={(e) => setForm({ ...form, baseRidePrice: e.target.value })} className={inputClass} />
+              </Field>
+              <Field label={t("adminVehicles.rentalStatus")}>
+                <select value={form.rentalStatus} onChange={(e) => setForm({ ...form, rentalStatus: e.target.value })} className={inputClass}>
+                  {RENTAL_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                </select>
+              </Field>
+              <div className="md:col-span-2">
+                <label className="mb-1 block text-xs font-semibold text-gray-600">{t("adminVehicles.service")}</label>
+                <textarea value={form.serviceNotes} onChange={(e) => setForm({ ...form, serviceNotes: e.target.value })} className="min-h-24 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm" />
               </div>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" className="w-4 h-4 accent-green-600" />
-                  <span className="text-sm text-gray-700">Wheelchair Accessible (WAV)</span>
+              <div className="flex flex-wrap gap-5 md:col-span-2">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                  <input type="checkbox" checked={form.wheelchairAccessible} onChange={(e) => setForm({ ...form, wheelchairAccessible: e.target.checked })} />
+                  {t("adminVehicles.wav")}
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" className="w-4 h-4 accent-green-600" />
-                  <span className="text-sm text-gray-700">For Rental</span>
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                  <input type="checkbox" checked={form.isRental} onChange={(e) => setForm({ ...form, isRental: e.target.checked })} />
+                  {t("adminVehicles.forRental")}
                 </label>
               </div>
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setShowForm(false)} className="flex-1 border border-gray-200 rounded-xl py-2.5 text-sm font-medium text-gray-500 hover:bg-gray-50">Cancel</button>
-                <button type="submit" className="flex-1 bg-green-700 text-white rounded-xl py-2.5 text-sm font-semibold hover:bg-green-800">Add Vehicle</button>
+              <div className="flex gap-3 md:col-span-2">
+                <button type="button" onClick={() => setShowForm(false)} className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-600">
+                  {t("common.cancel")}
+                </button>
+                <button disabled={saving} type="submit" className="flex-1 rounded-xl bg-green-700 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+                  {saving ? t("common.loading") : t("common.save")}
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function OverviewCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white p-4">
+      <div className="text-2xl font-bold text-gray-900">{value}</div>
+      <div className="mt-1 text-xs font-semibold text-gray-500">{label}</div>
+    </div>
+  );
+}
+
+function Field({
+  label,
+  required,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-semibold text-gray-600">
+        {label} {required ? "*" : ""}
+      </span>
+      {children}
+    </label>
   );
 }

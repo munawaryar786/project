@@ -30,6 +30,7 @@ export async function POST(request: NextRequest) {
     const driver =
       await prisma.driver.findUnique({
         where: { phone },
+        include: { vehicle: true },
       });
 
     if (!driver) {
@@ -96,6 +97,10 @@ export async function POST(request: NextRequest) {
           phone: driver.phone,
           vehicleType:
             driver.vehicleType,
+          vehiclePlate:
+            driver.vehiclePlate,
+          vehicle:
+            driver.vehicle,
           isOnline:
             driver.isOnline,
         },

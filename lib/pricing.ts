@@ -8,6 +8,16 @@ export const PRICING_RATES = {
   MAX_PASSENGERS_MINIVAN: 6, // 7-seater vehicles
 };
 
+export interface PricingRates {
+  BASE_FARE: number;
+  PER_KM: number;
+  AIRPORT_SURCHARGE: number;
+  MINIMUM_FARE: number;
+  WAV_SURCHARGE: number;
+  MAX_PASSENGERS_STANDARD: number;
+  MAX_PASSENGERS_MINIVAN: number;
+}
+
 export interface PriceEstimateRequest {
   serviceType: string;
   pickupAddress: string;
@@ -39,7 +49,10 @@ function mockCalculateDistance(pickup: string, dropoff: string): number {
  * Validates payload (passengers + luggage) vs vehicle capacity
  * and estimates price based on distance and service.
  */
-export function estimateBookingPrice(req: PriceEstimateRequest): PriceEstimateResponse {
+export function estimateBookingPrice(
+  req: PriceEstimateRequest,
+  rates: PricingRates = PRICING_RATES
+): PriceEstimateResponse {
   const warnings: string[] = [];
   let vehicleRequired: "STANDARD" | "MINIVAN" | "WAV" = "STANDARD";
   
@@ -49,10 +62,10 @@ export function estimateBookingPrice(req: PriceEstimateRequest): PriceEstimateRe
     if (req.passengerCount > 4) {
       warnings.push("WAV vehicles can typically hold 1 wheelchair + up to 3 regular passengers. Dispatch may contact you.");
     }
-  } else if (req.passengerCount > PRICING_RATES.MAX_PASSENGERS_STANDARD) {
+  } else if (req.passengerCount > rates.MAX_PASSENGERS_STANDARD) {
     vehicleRequired = "MINIVAN";
-    if (req.passengerCount > PRICING_RATES.MAX_PASSENGERS_MINIVAN) {
-      warnings.push(`Warning: Maximum passenger capacity is ${PRICING_RATES.MAX_PASSENGERS_MINIVAN}.`);
+    if (req.passengerCount > rates.MAX_PASSENGERS_MINIVAN) {
+      warnings.push(`Warning: Maximum passenger capacity is ${rates.MAX_PASSENGERS_MINIVAN}.`);
     }
   }
 
@@ -70,7 +83,7 @@ export function estimateBookingPrice(req: PriceEstimateRequest): PriceEstimateRe
   const distanceKm = mockCalculateDistance(req.pickupAddress, req.dropoffAddress);
 
   // 3. Price Calculation
-  let estimatedPrice = PRICING_RATES.BASE_FARE + (distanceKm * PRICING_RATES.PER_KM);
+  let estimatedPrice = rates.BASE_FARE + (distanceKm * rates.PER_KM);
 
   // Minivan surcharge
   if (vehicleRequired === "MINIVAN") estimatedPrice *= 1.2;
@@ -79,11 +92,11 @@ export function estimateBookingPrice(req: PriceEstimateRequest): PriceEstimateRe
   if (req.serviceType === "AIRPORT" || 
       req.pickupAddress.toLowerCase().includes("airport") || 
       req.dropoffAddress.toLowerCase().includes("airport")) {
-    estimatedPrice += PRICING_RATES.AIRPORT_SURCHARGE;
+    estimatedPrice += rates.AIRPORT_SURCHARGE;
   }
 
   // Ensure minimum fare
-  estimatedPrice = Math.max(estimatedPrice, PRICING_RATES.MINIMUM_FARE);
+  estimatedPrice = Math.max(estimatedPrice, rates.MINIMUM_FARE);
 
   return {
     estimatedPrice: parseFloat(estimatedPrice.toFixed(2)),
@@ -101,21 +114,22 @@ export function calculatePriceFromDistance(
   distanceKm: number,
   serviceType: string,
   passengerCount: number,
-  vehicleRequired: "STANDARD" | "MINIVAN" | "WAV"
+  vehicleRequired: "STANDARD" | "MINIVAN" | "WAV",
+  rates: PricingRates = PRICING_RATES
 ): number {
   // Base fare + distance
-  let estimatedPrice = PRICING_RATES.BASE_FARE + (distanceKm * PRICING_RATES.PER_KM);
+  let estimatedPrice = rates.BASE_FARE + (distanceKm * rates.PER_KM);
 
   // Minivan surcharge
   if (vehicleRequired === "MINIVAN") estimatedPrice *= 1.2;
 
   // Airport surcharge
   if (serviceType === "AIRPORT") {
-    estimatedPrice += PRICING_RATES.AIRPORT_SURCHARGE;
+    estimatedPrice += rates.AIRPORT_SURCHARGE;
   }
 
   // Ensure minimum fare
-  estimatedPrice = Math.max(estimatedPrice, PRICING_RATES.MINIMUM_FARE);
+  estimatedPrice = Math.max(estimatedPrice, rates.MINIMUM_FARE);
 
   return parseFloat(estimatedPrice.toFixed(2));
 }

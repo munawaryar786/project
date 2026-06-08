@@ -104,6 +104,8 @@ model Driver {
   licenseNumber String?
   status        String  @default("ACTIVE")
 
+  vehicleId String?  @db.ObjectId
+  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id])
   vehicleType  String?
   vehiclePlate String?
   vehicleCapacity Int @default(4)
@@ -126,6 +128,7 @@ model Driver {
   @@index([status])
   @@index([isOnline])
   @@index([isOnTrip])
+  @@index([vehicleId])
 }
 
 // ============================================
@@ -240,7 +243,34 @@ model Vehicle {
   rentalStatus String  @default("AVAILABLE")
   weeklyRate   Float?
 
-  status String @default("ACTIVE")
+  currentMileageKm Int?
+  serviceNotes     String?
+  nextServiceDate  DateTime?
+  stkValidUntil    DateTime?
+  weeklyRentalPrice Float?
+  dailyRentalPrice  Float?
+  baseRidePrice     Float?
+
+  status  String   @default("ACTIVE")
+  drivers Driver[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================
+// PRICING SETTINGS
+// ============================================
+model PricingSettings {
+  id                    String @id @default(auto()) @map("_id") @db.ObjectId
+  key                   String @unique @default("default")
+  standardTaxiBasePrice Float  @default(3)
+  pricePerKm            Float  @default(1.5)
+  airportTransferPrice  Float  @default(5)
+  tourismTransferPrice  Float  @default(0)
+  weeklyVehicleRentalPrice Float @default(120)
+  dailyVehicleRentalPrice  Float @default(25)
+  minimumFare           Float  @default(5)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

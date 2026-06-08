@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { estimateBookingPrice } from "@/lib/pricing";
+import { estimateBookingPrice, PRICING_RATES } from "@/lib/pricing";
+import { prisma } from "@/lib/prisma";
 
 const EstimateSchema = z.object({
   serviceType: z.enum(["STANDARD", "ACCESSIBLE", "SENIOR", "CHILDREN", "AIRPORT"]),
@@ -24,8 +25,22 @@ export async function POST(request: NextRequest) {
       );
     }
     
+    const settings = await prisma.pricingSettings.findUnique({
+      where: { key: "default" },
+    });
+
+    const rates = settings
+      ? {
+          ...PRICING_RATES,
+          BASE_FARE: settings.standardTaxiBasePrice,
+          PER_KM: settings.pricePerKm,
+          AIRPORT_SURCHARGE: settings.airportTransferPrice,
+          MINIMUM_FARE: settings.minimumFare,
+        }
+      : PRICING_RATES;
+
     // Calculate estimate based on pricing rules and constraints
-    const estimate = estimateBookingPrice(parsed.data);
+    const estimate = estimateBookingPrice(parsed.data, rates);
     
     return NextResponse.json({
       success: true,
