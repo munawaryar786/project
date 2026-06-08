@@ -300,6 +300,9 @@ useEffect(() => {
 
     try {
       const trimmedEmail = customerEmail.trim();
+      if (trimmedEmail !== customerEmail) {
+        setCustomerEmail(trimmedEmail);
+      }
       const resolvedPickupCoords =
         pickupCoords || (await resolveAddressCoords(pickupAddress));
       const resolvedDropoffCoords =
@@ -881,7 +884,7 @@ onChange={(e) => {
                 type="email"
                 value={customerEmail}
                 onChange={(e) => setCustomerEmail(e.target.value)}
-                placeholder={`${t("booking.email")} *`}
+                placeholder={t("booking.email")}
                 className="input"
                 required
               />

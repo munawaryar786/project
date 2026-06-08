@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPaymentSession, verifyWebhookSignature } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
-import { sendPaymentReceipt, sendCustomerConfirmation } from "@/lib/email";
+import {
+  bookingToEmailData,
+  sendBookingCompletionEmails,
+  sendPaymentReceipt,
+} from "@/lib/email";
 
 // Processed events store to prevent duplicate processing (use Redis in production)
 const processedEvents = new Set<string>();
@@ -96,7 +100,7 @@ async function handleCheckoutCompleted(session: any) {
     }
 
     // Update booking status to CONFIRMED
-    await prisma.booking.update({
+    const confirmedBooking = await prisma.booking.update({
       where: { id: String(bookingId) },
       data: { status: "CONFIRMED" },
     });
@@ -104,49 +108,16 @@ async function handleCheckoutCompleted(session: any) {
     console.log(`📋 Booking ${bookingId} status updated to CONFIRMED`);
 
     // Send payment receipt
-    if (booking.customerEmail) {
+    if (confirmedBooking.customerEmail) {
       const amount = (session.amount_total || 0) / 100; // Stripe amounts are in cents
       await sendPaymentReceipt({
-        bookingRef: booking.bookingRef,
-        serviceType: booking.serviceType,
-        pickupAddress: booking.pickupAddress,
-        dropoffAddress: booking.dropoffAddress,
-        scheduledDate: booking.scheduledDate,
-        scheduledTime: booking.scheduledTime,
-        passengerCount: booking.passengerCount,
-        customerName: booking.customerName,
-        customerPhone: `${booking.customerPhoneCode}${booking.customerPhone}`,
-        customerEmail: booking.customerEmail,
-        paymentMethod: booking.paymentMethod,
-        wheelchairNeeded: booking.wheelchairNeeded,
-        luggageType: booking.luggageType,
-        specialNotes: booking.specialNotes,
+        ...bookingToEmailData(confirmedBooking),
         amount,
         paymentId: session.payment_intent || session.id,
       });
     }
 
-    // Also send booking confirmation (since card payments skipped it initially)
-    if (booking.customerEmail) {
-      await sendCustomerConfirmation({
-        bookingRef: booking.bookingRef,
-        serviceType: booking.serviceType,
-        pickupAddress: booking.pickupAddress,
-        dropoffAddress: booking.dropoffAddress,
-        scheduledDate: booking.scheduledDate,
-        scheduledTime: booking.scheduledTime,
-        passengerCount: booking.passengerCount,
-        customerName: booking.customerName,
-        customerPhone: `${booking.customerPhoneCode}${booking.customerPhone}`,
-        customerEmail: booking.customerEmail,
-        paymentMethod: booking.paymentMethod,
-        wheelchairNeeded: booking.wheelchairNeeded,
-        luggageType: booking.luggageType,
-        specialNotes: booking.specialNotes,
-        estimatedPrice: booking.estimatedPrice || undefined,
-        distanceKm: booking.distanceKm || undefined,
-      });
-    }
+    await sendBookingCompletionEmails(bookingToEmailData(confirmedBooking));
   } catch (error: any) {
     console.error(`❌ Error processing payment completion for booking ${bookingId}:`, error.message);
   }

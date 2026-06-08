@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 interface Booking {
   id: string;
@@ -20,7 +21,6 @@ interface Booking {
   paymentMethod: string;
   estimatedPrice?: number | null;
   driver?: { fullName?: string } | null;
-  createdAt: string;
 }
 
 interface DashboardStats {
@@ -40,16 +40,16 @@ interface DashboardStats {
 }
 
 export default function AdminDashboard() {
+  const { t, locale } = useLanguage();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState("");
 
   useEffect(() => {
-    fetchStats();
-
-    const interval = setInterval(fetchStats, 10000);
+    void fetchStats();
+    const interval = setInterval(() => void fetchStats(), 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [locale]);
 
   const safeJson = async (res: Response) => {
     const text = await res.text();
@@ -66,7 +66,7 @@ export default function AdminDashboard() {
       const res = await fetch("/api/admin/stats", { cache: "no-store" });
       const data = (await safeJson(res)) as DashboardStats;
       setStats(data);
-      setLastUpdated(new Date().toLocaleTimeString("sk-SK"));
+      setLastUpdated(new Date().toLocaleTimeString(locale));
     } catch (err) {
       console.error("Failed to fetch stats:", err);
     } finally {
@@ -76,8 +76,8 @@ export default function AdminDashboard() {
 
   const recentBookings = stats?.recentBookings || [];
 
-  const computed = useMemo(() => {
-    return {
+  const computed = useMemo(
+    () => ({
       activeRides:
         stats?.activeRides ??
         recentBookings.filter((b) =>
@@ -94,52 +94,53 @@ export default function AdminDashboard() {
         recentBookings
           .filter((b) => b.status === "COMPLETED")
           .reduce((sum, b) => sum + Number(b.estimatedPrice || 0), 0),
-    };
-  }, [stats, recentBookings]);
+    }),
+    [stats, recentBookings]
+  );
 
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center rounded-[32px] border border-drivo-border bg-white shadow-soft">
         <div className="text-center">
           <div className="mx-auto mb-3 h-12 w-12 animate-pulse rounded-2xl bg-[linear-gradient(135deg,rgba(31,167,163,0.2),rgba(67,211,203,0.35))]" />
-          <p className="text-drivo-text-secondary">Načítavam dashboard...</p>
+          <p className="text-drivo-text-secondary">{t("adminDashboard.loading")}</p>
         </div>
       </div>
     );
   }
 
   const statCards = [
-    { label: "Dnešné rezervácie", value: stats?.todayBookings || 0, code: "TD", color: "bg-drivo-blue-light text-drivo-blue border-drivo-aqua/20" },
-    { label: "Čakajúce", value: stats?.pendingBookings || 0, code: "PN", color: "bg-drivo-amber-light text-drivo-amber border-drivo-amber/20" },
-    { label: "Aktívne jazdy", value: computed.activeRides, code: "AR", color: "bg-drivo-green-light text-drivo-teal border-drivo-aqua/20" },
-    { label: "Hľadá vodiča", value: computed.searchingDispatches, code: "DV", color: "bg-drivo-purple-light text-drivo-purple border-drivo-purple/20" },
-    { label: "Dokončené", value: stats?.completedBookings || 0, code: "OK", color: "bg-drivo-green-light text-drivo-teal border-drivo-aqua/20" },
-    { label: "Vodiči", value: stats?.totalDrivers || 0, code: "DR", color: "bg-drivo-bg-soft text-drivo-navy border-drivo-border" },
+    { label: t("adminDashboard.stats.todayBookings"), value: stats?.todayBookings || 0, code: "TD", color: "bg-drivo-blue-light text-drivo-blue border-drivo-aqua/20" },
+    { label: t("adminDashboard.stats.pendingBookings"), value: stats?.pendingBookings || 0, code: "PN", color: "bg-drivo-amber-light text-drivo-amber border-drivo-amber/20" },
+    { label: t("adminDashboard.stats.activeRides"), value: computed.activeRides, code: "AR", color: "bg-drivo-green-light text-drivo-teal border-drivo-aqua/20" },
+    { label: t("adminDashboard.stats.searchingDispatches"), value: computed.searchingDispatches, code: "DV", color: "bg-drivo-purple-light text-drivo-purple border-drivo-purple/20" },
+    { label: t("adminDashboard.stats.completedBookings"), value: stats?.completedBookings || 0, code: "OK", color: "bg-drivo-green-light text-drivo-teal border-drivo-aqua/20" },
+    { label: t("adminDashboard.stats.totalDrivers"), value: stats?.totalDrivers || 0, code: "DR", color: "bg-drivo-bg-soft text-drivo-navy border-drivo-border" },
   ];
 
   return (
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-drivo-navy">Admin Dashboard</h1>
+          <h1 className="text-3xl font-black tracking-tight text-drivo-navy">{t("adminDashboard.title")}</h1>
           <p className="mt-1 text-sm text-drivo-text-secondary">
-            Prevádzkový prehľad Drivo • Aktualizované: {lastUpdated || "—"}
+            {t("adminDashboard.subtitle")} • {t("adminDashboard.updatedAt")} {lastUpdated || "—"}
           </p>
         </div>
 
         <div className="flex gap-2">
           <button
-            onClick={fetchStats}
+            onClick={() => void fetchStats()}
             className="rounded-2xl border border-drivo-border bg-white px-4 py-2 text-sm font-semibold text-drivo-text transition hover:bg-drivo-bg-soft"
           >
-            Obnoviť
+            {t("adminDashboard.refresh")}
           </button>
 
           <Link
             href="/admin/bookings"
             className="rounded-2xl bg-[linear-gradient(135deg,#1fa7a3_0%,#43d3cb_100%)] px-4 py-2 text-sm font-semibold text-white shadow-glow transition hover:opacity-95"
           >
-            Rezervácie
+            {t("adminDashboard.bookings")}
           </Link>
         </div>
       </div>
@@ -157,23 +158,21 @@ export default function AdminDashboard() {
       </div>
 
       <div className="mb-8 grid gap-4 md:grid-cols-4">
-        <MiniCard label="Online vodiči" value={stats?.onlineDrivers ?? "—"} code="ON" />
-        <MiniCard label="Bez vodiča" value={computed.noDriverAvailable} code="ND" />
-        <MiniCard label="Zrušené" value={stats?.cancelledBookings || 0} code="CN" />
-        <MiniCard label="Dnešný obrat" value={`€${computed.todayRevenue.toFixed(2)}`} code="RV" />
+        <MiniCard label={t("adminDashboard.financial.onlineDrivers")} value={stats?.onlineDrivers ?? "—"} code="ON" />
+        <MiniCard label={t("adminDashboard.financial.noDriverAvailable")} value={computed.noDriverAvailable} code="ND" />
+        <MiniCard label={t("adminDashboard.financial.cancelledBookings")} value={stats?.cancelledBookings || 0} code="CN" />
+        <MiniCard label={t("adminDashboard.financial.todayRevenue")} value={`€${computed.todayRevenue.toFixed(2)}`} code="RV" />
       </div>
 
       <div className="overflow-hidden rounded-[30px] border border-drivo-border bg-white shadow-soft">
         <div className="flex items-center justify-between border-b border-drivo-border-light p-5">
           <div>
-            <h2 className="text-lg font-bold text-drivo-navy">Najnovšie rezervácie</h2>
-            <p className="mt-1 text-xs text-drivo-text-muted">
-              Booking, dispatch, payment a driver status
-            </p>
+            <h2 className="text-lg font-bold text-drivo-navy">{t("adminDashboard.recentBookings.title")}</h2>
+            <p className="mt-1 text-xs text-drivo-text-muted">{t("adminDashboard.recentBookings.subtitle")}</p>
           </div>
 
           <Link href="/admin/bookings" className="text-sm font-medium text-drivo-teal hover:text-drivo-navy">
-            Zobraziť všetko →
+            {t("adminDashboard.recentBookings.viewAll")}
           </Link>
         </div>
 
@@ -182,18 +181,17 @@ export default function AdminDashboard() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-drivo-border-light bg-drivo-bg-soft">
-                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">Ref</th>
-                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">Status</th>
-                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">Dispatch</th>
-                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">Service</th>
-                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">Customer</th>
-                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">Date</th>
-                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">Route</th>
-                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">Driver</th>
-                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">Payment</th>
+                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">{t("adminDashboard.table.ref")}</th>
+                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">{t("adminDashboard.table.status")}</th>
+                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">{t("adminDashboard.table.dispatch")}</th>
+                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">{t("adminDashboard.table.service")}</th>
+                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">{t("adminDashboard.table.customer")}</th>
+                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">{t("adminDashboard.table.date")}</th>
+                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">{t("adminDashboard.table.route")}</th>
+                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">{t("adminDashboard.table.driver")}</th>
+                  <th className="p-3 text-left font-semibold text-drivo-text-secondary">{t("adminDashboard.table.payment")}</th>
                 </tr>
               </thead>
-
               <tbody>
                 {recentBookings.map((booking) => (
                   <tr key={booking.id} className="border-b border-drivo-border-light/70 transition-colors hover:bg-drivo-bg-soft/70">
@@ -232,7 +230,7 @@ export default function AdminDashboard() {
             <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-3xl bg-drivo-bg-soft text-sm font-black tracking-[0.24em] text-drivo-teal">
               BK
             </div>
-            <p className="text-drivo-text-secondary">Zatiaľ žiadne rezervácie.</p>
+            <p className="text-drivo-text-secondary">{t("adminDashboard.empty")}</p>
           </div>
         )}
       </div>
@@ -253,6 +251,7 @@ function MiniCard({ label, value, code }: { label: string; value: string | numbe
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useLanguage();
   const styles: Record<string, string> = {
     PENDING: "bg-drivo-amber-light text-drivo-amber",
     CONFIRMED: "bg-drivo-blue-light text-drivo-blue",
@@ -264,14 +263,11 @@ function StatusBadge({ status }: { status: string }) {
     NO_SHOW: "bg-gray-100 text-gray-700",
   };
 
-  return (
-    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${styles[status] || "bg-gray-100 text-gray-600"}`}>
-      {status}
-    </span>
-  );
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${styles[status] || "bg-gray-100 text-gray-600"}`}>{t(`status.${status}`, status)}</span>;
 }
 
 function DispatchBadge({ status }: { status?: string | null }) {
+  const { t } = useLanguage();
   const value = status || "NOT_STARTED";
   const styles: Record<string, string> = {
     NOT_STARTED: "bg-gray-100 text-gray-600",
@@ -280,35 +276,21 @@ function DispatchBadge({ status }: { status?: string | null }) {
     NO_DRIVER_AVAILABLE: "bg-red-50 text-red-700",
   };
 
-  return (
-    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${styles[value] || "bg-gray-100 text-gray-600"}`}>
-      {value}
-    </span>
-  );
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${styles[value] || "bg-gray-100 text-gray-600"}`}>{t(`dispatch.${value}`, value)}</span>;
 }
 
 function ServiceBadge({ type }: { type: string }) {
-  const labels: Record<string, string> = {
-    STANDARD: "Taxi",
-    ACCESSIBLE: "ZŤP",
-    SENIOR: "Senior",
-    CHILDREN: "Children",
-    AIRPORT: "Airport",
-  };
-
-  return <span className="text-xs font-semibold text-drivo-text">{labels[type] || type}</span>;
+  const { t } = useLanguage();
+  return <span className="text-xs font-semibold text-drivo-text">{t(`service.${type}`, type)}</span>;
 }
 
 function PaymentBadge({ method }: { method: string }) {
+  const { t } = useLanguage();
   const styles: Record<string, string> = {
     CARD: "bg-drivo-green-light text-drivo-teal",
     CASH: "bg-drivo-amber-light text-drivo-amber",
     INVOICE: "bg-drivo-blue-light text-drivo-blue",
   };
 
-  return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${styles[method] || "bg-gray-100 text-gray-600"}`}>
-      {method}
-    </span>
-  );
+  return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${styles[method] || "bg-gray-100 text-gray-600"}`}>{t(`payment.${method}`, method)}</span>;
 }

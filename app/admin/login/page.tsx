@@ -60,20 +60,20 @@ export default function AdminLoginPage() {
             <BrandLogo className="h-16 w-44" />
             <div className="mt-8">
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-drivo-teal">
-                Admin Control
+                {t("adminLogin.badge")}
               </p>
               <h1 className="mt-3 text-3xl font-black tracking-tight text-drivo-navy">
-                Secure DRIVO operations access
+                {t("adminLogin.title")}
               </h1>
               <p className="mt-2 text-sm leading-7 text-drivo-text-secondary">
-                Sign in to manage bookings, drivers, dispatch, and daily operations without changing any platform workflow.
+                {t("adminLogin.subtitle")}
               </p>
             </div>
 
             <form onSubmit={handleLogin} className="mt-8 space-y-5">
               <div>
                 <label htmlFor="email" className="mb-2 block text-sm font-semibold text-drivo-text">
-                  Email
+                  {t("common.email")}
                 </label>
                 <input
                   id="email"
@@ -118,21 +118,21 @@ export default function AdminLoginPage() {
           <div className="hidden p-10 text-white lg:flex lg:flex-col lg:justify-between">
             <div>
               <p className="inline-flex rounded-full border border-white/14 bg-white/8 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-drivo-aqua">
-                Premium Mobility Platform
+                {t("adminLogin.heroBadge")}
               </p>
               <h2 className="mt-6 max-w-md text-5xl font-black leading-[1.02]">
-                One brand system across customer, driver, and admin surfaces.
+                {t("adminLogin.heroTitle")}
               </h2>
               <p className="mt-5 max-w-lg text-base leading-8 text-white/68">
-                The admin workspace now visually aligns with DRIVO's navy and aqua identity while preserving the existing booking, OTP, payment, and dispatch logic.
+                {t("adminLogin.heroSubtitle")}
               </p>
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">
               {[
-                ["Bookings", "Live overview"],
-                ["Drivers", "Availability control"],
-                ["Dispatch", "Operational clarity"],
+                [t("admin.bookings"), t("adminLogin.featureBookings")],
+                [t("admin.drivers"), t("adminLogin.featureDrivers")],
+                [t("admin.tracking"), t("adminLogin.featureDispatch")],
               ].map(([title, desc]) => (
                 <div key={title} className="rounded-[28px] border border-white/10 bg-white/8 p-5">
                   <div className="text-lg font-bold text-white">{title}</div>

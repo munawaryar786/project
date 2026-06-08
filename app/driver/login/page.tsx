@@ -56,21 +56,21 @@ export default function DriverLoginPage() {
           <div className="hidden p-10 text-white lg:flex lg:flex-col lg:justify-between">
             <div>
               <p className="inline-flex rounded-full border border-white/[0.14] bg-white/[0.08] px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-drivo-aqua">
-                Driver Portal
+                {t("login.driverPortal")}
               </p>
               <h1 className="mt-6 max-w-md text-5xl font-black leading-[1.02]">
-                Premium dispatch, cleaner workflow, faster response.
+                {t("driverLogin.heroTitle")}
               </h1>
               <p className="mt-5 max-w-lg text-base leading-8 text-white/[0.68]">
-                DRIVO keeps your assigned rides, live availability, and ride requests in one calm, accessible workspace.
+                {t("driverLogin.heroSubtitle")}
               </p>
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">
               {[
-                ["24/7", "Live dispatch"],
-                ["GPS", "Location updates"],
-                ["SK", "Slovak-first flow"],
+                ["24/7", t("driverLogin.featureDispatch")],
+                ["GPS", t("driverLogin.featureGps")],
+                ["SK", t("driverLogin.featureLocale")],
               ].map(([value, label]) => (
                 <div key={label} className="rounded-[28px] border border-white/10 bg-white/[0.08] p-5">
                   <div className="text-2xl font-black text-white">{value}</div>
@@ -152,7 +152,7 @@ export default function DriverLoginPage() {
 
             {process.env.NODE_ENV === "development" && (
               <div className="mt-5 rounded-[22px] border border-drivo-aqua/30 bg-drivo-aqua/10 px-4 py-3 text-sm text-drivo-teal">
-                Dev: add a driver in Admin, then use their phone + password "driver123".
+                {t("driverLogin.devHint")}
               </div>
             )}
           </div>

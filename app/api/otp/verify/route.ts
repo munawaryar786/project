@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { bookingToEmailData, sendBookingCompletionEmails } from "@/lib/email";
 
 /**
  * POST /api/otp/verify — Verify OTP code
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Mark booking as phone verified
-    await prisma.booking.update({
+    const booking = await prisma.booking.update({
       where: { id: bookingId },
       data: { phoneVerified: true },
     });
@@ -80,6 +81,14 @@ try {
 } catch (err) {
   console.error("❌ Auto dispatch error:", err);
 }
+    if (booking.paymentMethod === "CARD") {
+      console.log(
+        `[email] Booking ${booking.bookingRef} uses card payment. Completion emails will be sent after Stripe confirms payment.`
+      );
+    } else {
+      await sendBookingCompletionEmails(bookingToEmailData(booking));
+    }
+
     return NextResponse.json(
       {
         success: true,

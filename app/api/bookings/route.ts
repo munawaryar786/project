@@ -3,7 +3,6 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { generateBookingRef, getSourceDomain } from "@/lib/utils";
 import { estimateBookingPrice } from "@/lib/pricing";
-import { notifyAdminNewBooking, sendCustomerConfirmation } from "@/lib/email";
 
 const BookingSchema = z.object({
   serviceType: z.enum([
@@ -34,7 +33,7 @@ const BookingSchema = z.object({
   waitAndGreet: z.boolean().default(false),
 
   customerName: z.string().min(2, "Name required"),
-  customerEmail: z.string().email().optional().nullable(),
+  customerEmail: z.string().trim().email("Valid customer email required"),
   customerPhone: z.string().min(6, "Phone required"),
   customerPhoneCode: z.string().default("+421"),
   languagePref: z.string().default("sk"),
@@ -169,37 +168,6 @@ export async function POST(request: NextRequest) {
     console.log("💾 Saved to:   DATABASE ✅");
     console.log("═══════════════════════════════════════");
 
-    const emailData = {
-      bookingRef,
-      serviceType: data.serviceType,
-      pickupAddress: data.pickupAddress,
-      dropoffAddress: data.dropoffAddress,
-      scheduledDate: data.scheduledDate,
-      scheduledTime: data.scheduledTime,
-      passengerCount: data.passengerCount,
-      customerName: data.customerName,
-      customerPhone: `${data.customerPhoneCode}${data.customerPhone}`,
-      customerEmail: data.customerEmail,
-      languagePref: data.languagePref,
-      paymentMethod: data.paymentMethod,
-      wheelchairNeeded: data.wheelchairNeeded,
-      luggageType: data.luggageType,
-      specialNotes: data.specialNotes,
-      sourceDomain,
-      estimatedPrice: estimate.estimatedPrice,
-      distanceKm: estimate.distanceKm,
-    };
-
-    notifyAdminNewBooking(emailData).catch((err) =>
-      console.error("Failed to send admin notification:", err)
-    );
-
-    if (data.paymentMethod !== "CARD" && data.customerEmail) {
-      sendCustomerConfirmation(emailData).catch((err) =>
-        console.error("Failed to send customer confirmation:", err)
-      );
-    }
-
     return NextResponse.json(
       {
         success: true,
@@ -238,8 +206,9 @@ export async function POST(request: NextRequest) {
         vehicleRequired: booking.vehicleRequired,
 
         emailSent: {
-          admin: true,
-          customer: data.paymentMethod !== "CARD" && !!data.customerEmail,
+          admin: false,
+          customer: false,
+          pendingCompletion: true,
         },
       },
       { status: 201 }
