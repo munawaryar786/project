@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 export default function RentalPage() {
   return (
     <>
-      <Header />
+      <Header forceSolid />
       <main>
         <RentalPortal />
       </main>

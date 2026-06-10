@@ -79,7 +79,7 @@ const NAV_LINKS = [
   { href: "/contact", key: "nav.contact" },
 ];
 
-export default function Header() {
+export default function Header({ forceSolid = false }: { forceSolid?: boolean }) {
   const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -99,25 +99,26 @@ export default function Header() {
     };
   }, [open]);
 
-  const navTone = scrolled ? "text-drivo-text" : "text-white";
-  const shellTone = scrolled
+  const solidHeader = forceSolid || scrolled;
+  const navTone = solidHeader ? "text-drivo-text" : "text-white";
+  const shellTone = solidHeader
     ? "border-b border-drivo-border/80 bg-white/86 shadow-[0_12px_40px_rgba(4,26,43,0.08)] backdrop-blur-xl"
     : "bg-transparent";
-  const logoVariant = scrolled ? "dark" : "light";
+  const logoVariant = solidHeader ? "dark" : "light";
 
   return (
     <header className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${shellTone}`}>
       <div className="container-main">
-        <div className="flex h-[78px] items-center justify-between gap-3">
-          <Link href="/" aria-label="Drivo home" className="flex items-center">
-            <BrandLogo variant={logoVariant} className="h-12 w-36 sm:h-14 sm:w-40" />
+        <div className="flex h-[78px] items-center justify-between gap-2 xl:gap-3">
+          <Link href="/" aria-label="Drivo home" className="flex shrink-0 items-center">
+            <BrandLogo variant={logoVariant} className="h-12 w-36 lg:h-11 lg:w-28 xl:h-14 xl:w-40" />
           </Link>
 
-          <nav className="hidden items-center gap-0 xl:flex xl:gap-1">
+          <nav className="hidden shrink-0 items-center gap-0 lg:flex xl:gap-1">
             <div className="relative" onMouseEnter={() => setServicesOpen(true)} onMouseLeave={() => setServicesOpen(false)}>
               <button
                 type="button"
-                className={`inline-flex min-h-[46px] items-center gap-2 rounded-full px-3 text-sm font-semibold transition xl:px-4 ${navTone} ${scrolled ? "hover:bg-drivo-bg-soft" : "hover:bg-white/10"}`}
+                className={`inline-flex min-h-[42px] items-center gap-1.5 rounded-full px-2 text-[13px] font-semibold transition xl:min-h-[46px] xl:gap-2 xl:px-4 xl:text-sm ${navTone} ${solidHeader ? "hover:bg-drivo-bg-soft" : "hover:bg-white/10"}`}
               >
                 {t("nav.services")}
                 <ChevronDownIcon className={`h-4 w-4 transition-transform ${servicesOpen ? "rotate-180" : ""}`} />
@@ -150,19 +151,19 @@ export default function Header() {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`inline-flex min-h-[46px] items-center rounded-full px-3 text-sm font-medium transition xl:px-4 ${navTone} ${scrolled ? "hover:bg-drivo-bg-soft" : "hover:bg-white/10"}`}
+                className={`inline-flex min-h-[42px] items-center rounded-full px-2 text-[13px] font-medium transition xl:min-h-[46px] xl:px-4 xl:text-sm ${navTone} ${solidHeader ? "hover:bg-drivo-bg-soft" : "hover:bg-white/10"}`}
               >
                 {t(link.key)}
               </Link>
             ))}
           </nav>
 
-          <div className="hidden items-center gap-1 xl:flex xl:gap-2">
-            <LanguageSwitcher tone={scrolled ? "dark" : "light"} />
+          <div className="hidden shrink-0 items-center gap-1 lg:flex xl:gap-2">
+            <LanguageSwitcher tone={solidHeader ? "dark" : "light"} />
             <Link
               href="/driver/login"
-              className={`inline-flex min-h-[46px] items-center rounded-full px-3 text-sm font-semibold transition xl:px-4 ${
-                scrolled
+              className={`inline-flex min-h-[42px] items-center rounded-full px-2 text-[13px] font-semibold transition xl:min-h-[46px] xl:px-4 xl:text-sm ${
+                solidHeader
                   ? "text-drivo-text-secondary hover:bg-drivo-bg-soft hover:text-drivo-text"
                   : "text-white hover:bg-white/10"
               }`}
@@ -171,27 +172,27 @@ export default function Header() {
             </Link>
             <Link
               href="/rental"
-              className={`inline-flex min-h-[46px] items-center rounded-full px-3 text-sm font-semibold transition xl:px-4 ${
-                scrolled
+              className={`inline-flex min-h-[42px] items-center rounded-full px-2 text-[13px] font-semibold transition xl:min-h-[46px] xl:px-4 xl:text-sm ${
+                solidHeader
                   ? "text-drivo-text-secondary hover:bg-drivo-bg-soft hover:text-drivo-text"
                   : "text-white hover:bg-white/10"
               }`}
             >
               {t("nav.rental", "Rental")}
             </Link>
-            <Link href="/book" className="btn-primary rounded-full px-4 xl:px-6">
+            <Link href="/book" className="btn-primary min-h-[42px] rounded-full px-3 text-[13px] xl:min-h-[46px] xl:px-6 xl:text-sm">
               {t("cta.bookNow")}
               <ArrowRightIcon />
             </Link>
           </div>
 
-          <div className="flex items-center gap-2 xl:hidden">
-            <LanguageSwitcher tone={scrolled ? "dark" : "light"} />
+          <div className="flex items-center gap-2 lg:hidden">
+            <LanguageSwitcher tone={solidHeader ? "dark" : "light"} />
             <button
               type="button"
               onClick={() => setOpen((value) => !value)}
               className={`inline-flex h-11 w-11 items-center justify-center rounded-full border transition ${
-                scrolled
+                solidHeader
                   ? "border-drivo-border bg-white text-drivo-text"
                   : "border-white/20 bg-white/10 text-white"
               }`}
@@ -209,7 +210,7 @@ export default function Header() {
       </div>
 
       {open && (
-  <div className="fixed inset-x-0 top-[78px] bottom-0 z-40 overflow-y-auto overscroll-contain border-t border-white/10 bg-[linear-gradient(180deg,#051d31_0%,#08263b_100%)] px-5 py-5 pb-28 xl:hidden">
+  <div className="fixed inset-x-0 top-[78px] bottom-0 z-40 overflow-y-auto overscroll-contain border-t border-white/10 bg-[linear-gradient(180deg,#051d31_0%,#08263b_100%)] px-5 py-5 pb-28 lg:hidden">
     <div className="container-main space-y-3 px-0">
       <div className="grid gap-2 rounded-[28px] border border-white/10 bg-white/6 p-3 backdrop-blur-sm">
         {SERVICES.map((service) => (

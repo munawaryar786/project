@@ -134,10 +134,10 @@ export default function RentalPortal() {
   }
 
   return (
-    <section className="min-h-screen bg-drivo-bg-soft pt-28 pb-16">
+    <section className="min-h-screen bg-drivo-bg-soft pt-32 pb-16 md:pt-36">
       <div className="container-main">
         <div className="grid gap-6 lg:grid-cols-[360px,1fr]">
-          <aside className="rounded-[28px] border border-drivo-border-light bg-white p-5 shadow-soft lg:sticky lg:top-28 lg:self-start">
+          <aside className="rounded-[28px] border border-drivo-border-light bg-white p-5 shadow-soft">
             <div className="mb-5 flex rounded-2xl bg-drivo-bg-soft p-1">
               {(["register", "signin"] as const).map((option) => (
                 <button
