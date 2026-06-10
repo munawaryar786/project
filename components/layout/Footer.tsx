@@ -93,7 +93,6 @@ const services = [
   { nameKey: "services.taxi.title", href: "/taxi", code: "taxi" as const },
   { nameKey: "services.airport.title", href: "/airport", code: "airport" as const },
   { nameKey: "services.accessible.title", href: "/accessible-transport", code: "accessible" as const },
-  { nameKey: "services.senior.title", href: "/seniors", code: "senior" as const },
   { nameKey: "services.children.title", href: "/children", code: "children" as const },
   { nameKey: "services.rental.title", href: "/car-rental", code: "rental" as const },
 ];

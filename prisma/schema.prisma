@@ -32,8 +32,53 @@ model Booking {
   scheduledTime  String
   passengerCount Int    @default(1)
   luggageType    String @default("NONE")
+  smallBags       Int    @default(0)
+  largeBags       Int    @default(0)
 
   wheelchairNeeded Boolean @default(false)
+  seniorPassenger  Boolean @default(false)
+  ztpCardHolder    Boolean @default(false)
+  wheelchairUser   Boolean @default(false)
+  companionRequired Boolean @default(false)
+  medicalAppointment Boolean @default(false)
+  waitingTimeRequired Boolean @default(false)
+  assistanceLevel String?
+  wheelchairType String?
+  canTransferToSeat Boolean?
+  wavRequired Boolean @default(false)
+  passengerRemainsInWheelchair Boolean @default(false)
+  companionCount Int @default(0)
+  hospitalName String?
+  department String?
+  appointmentDate String?
+  appointmentTime String?
+  tripType String?
+  returnDate String?
+  returnTime String?
+  waitingDuration String?
+  customWaitingDuration String?
+  scheduledRide Boolean @default(false)
+  recurrence String?
+  recurrenceCustom String?
+  childFullName String?
+  childName String?
+  childAge Int?
+  childSpecialRequirements String?
+  parentFullName String?
+  guardianName String?
+  parentPrimaryPhone String?
+  guardianPhone String?
+  parentEmergencyPhone String?
+  guardianEmergencyPhone String?
+  parentEmail String?
+  guardianEmail String?
+  educationalInstitutionName String?
+  institutionName String?
+  institutionAddress String?
+  educationalDestinationValidated Boolean @default(false)
+  pickupDate String?
+  pickupTime String?
+  recurrenceType String?
 
   flightNumber String?
   airline      String?
@@ -295,7 +340,15 @@ model RentalInquiry {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
   name        String
   phone       String
+  email       String?
+  licenseNumber String?
+  workPlatform String?
   vehicleType String
+  vehicleSelected String?
+  rentalStartDate String?
+  rentalDuration String?
+  weeklyRentalPlan String?
+  notes       String?
   message     String?
   status      String   @default("PENDING")
   createdAt   DateTime @default(now())

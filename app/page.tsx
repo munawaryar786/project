@@ -55,7 +55,7 @@ function Hero() {
     [2400, "+", t("home.stats.riders")],
     [50, "+", t("home.stats.drivers")],
     [15, "+", t("home.stats.vehicles")],
-    [6, "", t("home.stats.services")],
+    [5, "", t("home.stats.services")],
   ] as const;
 
   return (
@@ -156,9 +156,7 @@ function ServicesSection() {
     { ...SERVICES[0], nameKey: "services.taxi.title", descKey: "services.taxi.desc", img: HOME_IMAGES.taxi },
     { ...SERVICES[1], nameKey: "services.airport.title", descKey: "services.airport.desc", img: HOME_IMAGES.airport },
     { ...SERVICES[2], nameKey: "services.accessible.title", descKey: "services.accessible.desc", img: HOME_IMAGES.accessible },
-    { ...SERVICES[3], nameKey: "services.senior.title", descKey: "services.senior.desc", img: HOME_IMAGES.senior },
-    { ...SERVICES[4], nameKey: "services.children.title", descKey: "services.children.desc", img: HOME_IMAGES.children },
-    { ...SERVICES[5], nameKey: "services.rental.title", descKey: "services.rental.desc", img: HOME_IMAGES.rental },
+    { ...SERVICES[3], nameKey: "services.children.title", descKey: "services.children.desc", img: HOME_IMAGES.children },
   ];
 
   return (
@@ -169,7 +167,7 @@ function ServicesSection() {
           <h2 className="text-[32px] md:text-[40px] font-extrabold text-drivo-navy tracking-tight mb-4">{t("services.title")}</h2>
           <p className="text-[16px] text-drivo-text-secondary max-w-xl mx-auto">{t("services.subtitle")}</p>
         </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="mx-auto grid max-w-5xl sm:grid-cols-2 gap-6">
           {services.map((service) => (
             <Link key={service.href} href={service.href} className="group rounded-3xl overflow-hidden bg-white border border-drivo-border-light shadow-soft hover:shadow-card hover:-translate-y-1 transition-all duration-300">
               <div className="relative h-48 overflow-hidden">
@@ -350,25 +348,34 @@ function AccessibilityIcon({ name, className = "h-4 w-4" }: { name: Accessibilit
 function AccessibilitySection() {
   const { t } = useLanguage();
   const items: { label: string; icon: AccessibilityIconName }[] = [
-    { label: t("services.accessible.wheelchair"), icon: "wheelchair" },
-    { label: t("services.accessible.limited"), icon: "mobility" },
-    { label: t("services.accessible.elderly"), icon: "senior" },
-    { label: t("services.accessible.children"), icon: "children" },
+    { label: t("home.accessible.doorToDoor", "Door-to-door assistance"), icon: "boarding" },
+    { label: t("home.accessible.boarding", "Help boarding and exiting vehicles"), icon: "mobility" },
+    { label: t("home.accessible.hospital", "Hospital and rehabilitation visits"), icon: "institution" },
+    { label: t("home.accessible.companion", "Family companion option"), icon: "children" },
   ];
   const promises: { key: string; icon: AccessibilityIconName }[] = [
-    { key: "home.promise.dignity", icon: "dignity" },
-    { key: "home.promise.noRush", icon: "pace" },
-    { key: "home.promise.assistance", icon: "boarding" },
-    { key: "home.promise.communication", icon: "communication" },
-    { key: "home.promise.trained", icon: "driver" },
-    { key: "home.promise.institutions", icon: "institution" },
+    { key: "home.trust.doorToDoor", icon: "boarding" },
+    { key: "home.trust.companion", icon: "children" },
+    { key: "home.trust.waiting", icon: "pace" },
+    { key: "home.trust.trained", icon: "driver" },
+    { key: "home.trust.hospitalRehab", icon: "institution" },
+    { key: "home.trust.wav", icon: "wheelchair" },
   ];
 
   return (
     <section className="section bg-white">
       <div className="container-main">
         <div className="grid lg:grid-cols-2 gap-14 items-center">
-          <div>
+          <div className="relative overflow-hidden rounded-[28px] p-1">
+            <Image
+              src={HOME_IMAGES.senior}
+              alt=""
+              fill
+              sizes="(min-width: 1024px) 50vw, 100vw"
+              className="object-cover opacity-[0.08]"
+            />
+            <div className="absolute inset-0 bg-gradient-to-r from-white via-white/95 to-white/80" />
+            <div className="relative p-5 md:p-6">
             <span className="pill-purple mb-5 inline-flex">{t("services.accessible.title")}</span>
             <h2 className="text-[32px] md:text-[40px] font-extrabold text-drivo-navy tracking-tight leading-tight mb-5">{t("services.accessible.what")}</h2>
             <p className="text-[15px] text-drivo-text-secondary leading-relaxed mb-8 max-w-xl">{t("services.accessible.desc")}</p>
@@ -383,9 +390,19 @@ function AccessibilitySection() {
                 </div>
               ))}
             </div>
+            </div>
           </div>
 
-          <div className="rounded-[28px] border border-drivo-border-light bg-gradient-to-br from-white to-drivo-purple-light/20 p-6 shadow-card md:p-8">
+          <div className="relative overflow-hidden rounded-[28px] border border-drivo-border-light bg-gradient-to-br from-white to-drivo-purple-light/20 p-6 shadow-card md:p-8">
+            <Image
+              src={HOME_IMAGES.wavRamp}
+              alt=""
+              fill
+              sizes="(min-width: 1024px) 50vw, 100vw"
+              className="object-cover opacity-[0.1]"
+            />
+            <div className="absolute inset-0 bg-gradient-to-br from-white/95 via-white/88 to-drivo-purple-light/75" />
+            <div className="relative z-10">
             <div className="mb-6 flex items-center gap-3">
               <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-drivo-green-light text-drivo-green">
                 <AccessibilityIcon name="dignity" className="h-5 w-5" />
@@ -404,7 +421,8 @@ function AccessibilitySection() {
               ))}
             </div>
 
-            <Link href="/accessible-transport" className="btn-dark mt-8 w-full">{t("nav.book")}</Link>
+            <Link href="/book?service=accessible" className="btn-dark mt-8 w-full">{t("booking.scheduleTransport", "Schedule Transport")}</Link>
+            </div>
           </div>
         </div>
       </div>

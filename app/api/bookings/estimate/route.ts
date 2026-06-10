@@ -9,7 +9,11 @@ const EstimateSchema = z.object({
   dropoffAddress: z.string().min(3),
   passengerCount: z.number().min(1).max(6),
   luggageType: z.enum(["NONE", "SMALL", "LARGE"]).default("NONE"),
+  smallBags: z.number().min(0).max(12).default(0),
+  largeBags: z.number().min(0).max(12).default(0),
+  companionCount: z.number().min(0).max(3).default(0),
   wheelchairNeeded: z.boolean().default(false),
+  wavRequired: z.boolean().default(false),
 });
 
 export async function POST(request: NextRequest) {

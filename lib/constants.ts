@@ -10,8 +10,7 @@ export const MAX_PASSENGERS = 6;
 export const SERVICES: ServiceInfo[] = [
   { icon: '🚕', name: 'Standard Taxi', desc: 'Everyday city rides', href: '/taxi', color: 'from-blue-500/10 to-cyan-500/5' },
   { icon: '✈️', name: 'Airport Transfers', desc: 'BTS & Vienna airports', href: '/airport', color: 'from-sky-500/10 to-blue-500/5' },
-  { icon: '♿', name: 'Accessible Transport', desc: 'ZŤP / PRM priority service', href: '/accessible-transport', color: 'from-purple-500/10 to-violet-500/5', badge: 'Priority' },
-  { icon: '👴', name: 'Senior Taxi', desc: 'Patient, assisted rides', href: '/seniors', color: 'from-green-500/10 to-emerald-500/5' },
+  { icon: '♿', name: 'Assisted & Accessible Transport', desc: 'Senior, ZTP, WAV and medical rides', href: '/accessible-transport', color: 'from-purple-500/10 to-violet-500/5', badge: 'Priority' },
   { icon: '👧', name: "Children's Transport", desc: 'School Pick-up & Drop-off', href: '/children', color: 'from-pink-500/10 to-rose-500/5' },
   { icon: '🔑', name: 'Car Rental for Drivers', desc: 'Weekly vehicle rental', href: '/car-rental', color: 'from-amber-500/10 to-orange-500/5', badge: 'Drivers' },
 ];

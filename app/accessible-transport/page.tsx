@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import { LocalizedServicePage } from "@/components/shared/LocalizedPublicPages";
 
 export const metadata: Metadata = {
-  title: "Accessible Transport ZTP / PRM Bratislava",
+  title: "Assisted & Accessible Transport Bratislava",
   description:
-    "Dignified transport for wheelchair users, ZTP/PRM passengers, elderly, and special-needs individuals in Bratislava.",
+    "Safe and dignified transport for seniors, ZTP passengers, WAV users, hospital visits and assisted mobility users in Bratislava.",
   keywords: [
     "ZTP taxi",
     "PRM transport",
@@ -13,8 +13,8 @@ export const metadata: Metadata = {
     "ZTP preprava",
   ],
   openGraph: {
-    title: "Accessible Transport ZTP/PRM | Drivo Bratislava",
-    description: "Professional accessible transport for wheelchair users and ZTP/PRM passengers.",
+    title: "Assisted & Accessible Transport | Drivo Bratislava",
+    description: "Professional assisted transport for seniors, ZTP passengers, WAV users and medical appointments.",
     url: "https://drivo.sk/accessible-transport",
   },
   alternates: { canonical: "/accessible-transport" },
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 export default function AccessiblePage() {
   return (
     <LocalizedServicePage
-      badge="ZTP / PRM"
+      badge="Assisted Mobility"
       titleKey="services.accessible.title"
       taglineKey="services.accessible.tagline"
       descKey="services.accessible.desc"

@@ -24,7 +24,11 @@ export interface PriceEstimateRequest {
   dropoffAddress: string;
   passengerCount: number;
   luggageType: "NONE" | "SMALL" | "LARGE";
+  smallBags?: number;
+  largeBags?: number;
+  companionCount?: number;
   wheelchairNeeded: boolean;
+  wavRequired?: boolean;
 }
 
 export interface PriceEstimateResponse {
@@ -55,28 +59,37 @@ export function estimateBookingPrice(
 ): PriceEstimateResponse {
   const warnings: string[] = [];
   let vehicleRequired: "STANDARD" | "MINIVAN" | "WAV" = "STANDARD";
+  const smallBags = Math.max(0, req.smallBags || 0);
+  const largeBags = Math.max(0, req.largeBags || 0);
+  const companionCount = Math.max(0, req.companionCount || 0);
+  const capacityPassengers = req.passengerCount + companionCount;
   
   // 1. Validate Capacity & Assign Vehicle
-  if (req.wheelchairNeeded || req.serviceType === "ACCESSIBLE") {
+  if (req.wavRequired || req.wheelchairNeeded || req.serviceType === "ACCESSIBLE") {
     vehicleRequired = "WAV";
-    if (req.passengerCount > 4) {
+    if (capacityPassengers > 4) {
       warnings.push("WAV vehicles can typically hold 1 wheelchair + up to 3 regular passengers. Dispatch may contact you.");
     }
-  } else if (req.passengerCount > rates.MAX_PASSENGERS_STANDARD) {
+  } else if (capacityPassengers > rates.MAX_PASSENGERS_STANDARD) {
     vehicleRequired = "MINIVAN";
-    if (req.passengerCount > rates.MAX_PASSENGERS_MINIVAN) {
+    if (capacityPassengers > rates.MAX_PASSENGERS_MINIVAN) {
       warnings.push(`Warning: Maximum passenger capacity is ${rates.MAX_PASSENGERS_MINIVAN}.`);
     }
   }
 
   // Luggage validation
-  if (req.luggageType === "LARGE" && req.passengerCount >= 4) {
+  if (largeBags > 0 && capacityPassengers >= 4) {
     if (vehicleRequired !== "WAV") {
       vehicleRequired = "MINIVAN";
-      warnings.push("Upgraded to Minivan due to combination of large luggage and passenger count.");
+      warnings.push("Larger vehicle recommended");
     } else {
       warnings.push("Large luggage with WAV usage might have limited space. Dispatch will confirm.");
     }
+  }
+
+  if (smallBags + largeBags > 0 && capacityPassengers >= 5 && vehicleRequired !== "WAV") {
+    vehicleRequired = "MINIVAN";
+    warnings.push("Larger vehicle recommended");
   }
 
   // 2. Distance Estimation (mock for now, will be replaced by Google Maps in API route)

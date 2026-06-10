@@ -28,7 +28,7 @@ function ArrowRightIcon({ className = "h-4 w-4" }: IconProps) {
   );
 }
 
-function ServiceIcon({ kind, className = "h-5 w-5" }: { kind: "taxi" | "airport" | "accessible" | "senior" | "children" | "rental"; className?: string }) {
+function ServiceIcon({ kind, className = "h-5 w-5" }: { kind: "taxi" | "airport" | "accessible" | "children"; className?: string }) {
   const common = { className, "aria-hidden": true };
 
   switch (kind) {
@@ -55,14 +55,6 @@ function ServiceIcon({ kind, className = "h-5 w-5" }: { kind: "taxi" | "airport"
           <path d="M10.8 10.1H15.6M10.5 15.7C9.6 16.7 8.3 17.3 6.8 17.3C4.1 17.3 2 15.2 2 12.5C2 9.8 4.1 7.7 6.8 7.7C7.5 7.7 8.2 7.8 8.8 8.1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
       );
-    case "senior":
-      return (
-        <svg {...common} viewBox="0 0 24 24" fill="none">
-          <circle cx="9" cy="6" r="2.2" stroke="currentColor" strokeWidth="1.5" />
-          <path d="M8 9.2V14.2M8 14.2L5.5 21M8 14.2L12 18M12 18L14 21M12 18L17 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M16.5 8V21" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
-      );
     case "children":
       return (
         <svg {...common} viewBox="0 0 24 24" fill="none">
@@ -71,23 +63,14 @@ function ServiceIcon({ kind, className = "h-5 w-5" }: { kind: "taxi" | "airport"
           <path d="M7.8 9.4L6.8 14.4L9.6 17.4L10.5 21M6.8 14.4L4.2 17.1M6.8 14.4L10.7 13.2L13.5 10.6M15.5 9.4L14.7 13L17 15.5L18 20" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       );
-    default:
-      return (
-        <svg {...common} viewBox="0 0 24 24" fill="none">
-          <rect x="5" y="7" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
-          <path d="M9 7V5.8C9 5.1 9.6 4.5 10.3 4.5H15.2C15.7 4.5 16.1 4.7 16.4 5.1L18.2 7.4M8.5 11.5H13.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        </svg>
-      );
   }
 }
 
 const SERVICES = [
   { href: "/taxi", kind: "taxi" as const, title: "header.services.standard", desc: "services.taxi.desc" },
   { href: "/airport", kind: "airport" as const, title: "header.services.airport", desc: "services.airport.desc" },
-  { href: "/accessible-transport", kind: "accessible" as const, title: "header.services.specialized", desc: "services.accessible.desc" },
-  { href: "/seniors", kind: "senior" as const, title: "header.services.seniorAccessible", desc: "services.senior.desc" },
+  { href: "/accessible-transport", kind: "accessible" as const, title: "header.services.assistedAccessible", desc: "services.accessible.desc" },
   { href: "/children", kind: "children" as const, title: "header.services.children", desc: "services.children.desc" },
-  { href: "/car-rental", kind: "rental" as const, title: "header.services.rental", desc: "services.rental.desc" },
 ];
 
 const NAV_LINKS = [
@@ -125,16 +108,16 @@ export default function Header() {
   return (
     <header className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${shellTone}`}>
       <div className="container-main">
-        <div className="flex h-[78px] items-center justify-between gap-4">
+        <div className="flex h-[78px] items-center justify-between gap-3">
           <Link href="/" aria-label="Drivo home" className="flex items-center">
             <BrandLogo variant={logoVariant} className="h-12 w-36 sm:h-14 sm:w-40" />
           </Link>
 
-          <nav className="hidden items-center gap-1 xl:flex">
+          <nav className="hidden items-center gap-0 xl:flex xl:gap-1">
             <div className="relative" onMouseEnter={() => setServicesOpen(true)} onMouseLeave={() => setServicesOpen(false)}>
               <button
                 type="button"
-                className={`inline-flex min-h-[46px] items-center gap-2 rounded-full px-4 text-sm font-semibold transition ${navTone} ${scrolled ? "hover:bg-drivo-bg-soft" : "hover:bg-white/10"}`}
+                className={`inline-flex min-h-[46px] items-center gap-2 rounded-full px-3 text-sm font-semibold transition xl:px-4 ${navTone} ${scrolled ? "hover:bg-drivo-bg-soft" : "hover:bg-white/10"}`}
               >
                 {t("nav.services")}
                 <ChevronDownIcon className={`h-4 w-4 transition-transform ${servicesOpen ? "rotate-180" : ""}`} />
@@ -167,18 +150,18 @@ export default function Header() {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`inline-flex min-h-[46px] items-center rounded-full px-4 text-sm font-medium transition ${navTone} ${scrolled ? "hover:bg-drivo-bg-soft" : "hover:bg-white/10"}`}
+                className={`inline-flex min-h-[46px] items-center rounded-full px-3 text-sm font-medium transition xl:px-4 ${navTone} ${scrolled ? "hover:bg-drivo-bg-soft" : "hover:bg-white/10"}`}
               >
                 {t(link.key)}
               </Link>
             ))}
           </nav>
 
-          <div className="hidden items-center gap-2 lg:flex">
+          <div className="hidden items-center gap-1 xl:flex xl:gap-2">
             <LanguageSwitcher tone={scrolled ? "dark" : "light"} />
             <Link
               href="/driver/login"
-              className={`inline-flex min-h-[46px] items-center rounded-full px-4 text-sm font-semibold transition ${
+              className={`inline-flex min-h-[46px] items-center rounded-full px-3 text-sm font-semibold transition xl:px-4 ${
                 scrolled
                   ? "text-drivo-text-secondary hover:bg-drivo-bg-soft hover:text-drivo-text"
                   : "text-white hover:bg-white/10"
@@ -186,13 +169,23 @@ export default function Header() {
             >
               {t("nav.driverPortal")}
             </Link>
-            <Link href="/book" className="btn-primary rounded-full px-6">
+            <Link
+              href="/rental"
+              className={`inline-flex min-h-[46px] items-center rounded-full px-3 text-sm font-semibold transition xl:px-4 ${
+                scrolled
+                  ? "text-drivo-text-secondary hover:bg-drivo-bg-soft hover:text-drivo-text"
+                  : "text-white hover:bg-white/10"
+              }`}
+            >
+              {t("nav.rental", "Rental")}
+            </Link>
+            <Link href="/book" className="btn-primary rounded-full px-4 xl:px-6">
               {t("cta.bookNow")}
               <ArrowRightIcon />
             </Link>
           </div>
 
-          <div className="flex items-center gap-2 lg:hidden">
+          <div className="flex items-center gap-2 xl:hidden">
             <LanguageSwitcher tone={scrolled ? "dark" : "light"} />
             <button
               type="button"
@@ -216,7 +209,7 @@ export default function Header() {
       </div>
 
       {open && (
-  <div className="fixed inset-x-0 top-[78px] bottom-0 z-40 overflow-y-auto overscroll-contain border-t border-white/10 bg-[linear-gradient(180deg,#051d31_0%,#08263b_100%)] px-5 py-5 pb-28 lg:hidden">
+  <div className="fixed inset-x-0 top-[78px] bottom-0 z-40 overflow-y-auto overscroll-contain border-t border-white/10 bg-[linear-gradient(180deg,#051d31_0%,#08263b_100%)] px-5 py-5 pb-28 xl:hidden">
     <div className="container-main space-y-3 px-0">
       <div className="grid gap-2 rounded-[28px] border border-white/10 bg-white/6 p-3 backdrop-blur-sm">
         {SERVICES.map((service) => (
@@ -256,6 +249,13 @@ export default function Header() {
         >
           {t("nav.driverPortal")}
         </Link>
+        <Link
+          href="/rental"
+          onClick={() => setOpen(false)}
+          className="rounded-2xl px-3 py-3 text-sm font-medium text-white transition hover:bg-white/8"
+        >
+          {t("nav.rental", "Rental")}
+        </Link>
       </div>
 
       <div className="mt-4 flex flex-col gap-3 rounded-[28px] border border-white/10 bg-[#061f33]/95 p-3 pb-6 backdrop-blur-md">
@@ -265,6 +265,14 @@ export default function Header() {
           className="btn-outline w-full justify-center rounded-full border-white/15 bg-white/5 text-white hover:bg-white/10"
         >
           {t("nav.driverPortal")}
+        </Link>
+
+        <Link
+          href="/rental"
+          onClick={() => setOpen(false)}
+          className="btn-outline w-full justify-center rounded-full border-white/15 bg-white/5 text-white hover:bg-white/10"
+        >
+          {t("nav.rental", "Rental")}
         </Link>
 
         <Link

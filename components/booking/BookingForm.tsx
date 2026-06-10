@@ -8,6 +8,12 @@ import type {
   LuggageType,
   PaymentMethod,
   BookingStep,
+  AssistanceLevel,
+  WheelchairType,
+  TransferToSeat,
+  MedicalTripType,
+  WaitingDuration,
+  RecurrenceType,
 } from "@/types/booking";
 import PassengerCounter from "./PassengerCounter";
 import LuggageWarning from "./LuggageWarning";
@@ -37,6 +43,57 @@ function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function CounterControl({
+  label,
+  value,
+  onChange,
+  min = 0,
+  max = 12,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  min?: number;
+  max?: number;
+}) {
+  return (
+    <div>
+      <label className="text-[12px] font-semibold text-drivo-text-secondary mb-2 block">
+        {label}
+      </label>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => onChange(Math.max(min, value - 1))}
+          className="w-11 h-11 rounded-xl bg-drivo-bg-soft text-drivo-text font-medium text-lg hover:bg-drivo-border transition-colors flex items-center justify-center"
+          aria-label={`${label} -`}
+        >
+          -
+        </button>
+        <span className="text-[20px] font-bold text-drivo-text w-8 text-center">
+          {value}
+        </span>
+        <button
+          type="button"
+          onClick={() => onChange(Math.min(max, value + 1))}
+          className="w-11 h-11 rounded-xl bg-drivo-bg-soft text-drivo-text font-medium text-lg hover:bg-drivo-border transition-colors flex items-center justify-center"
+          aria-label={`${label} +`}
+        >
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">
+      {children}
+    </label>
+  );
+}
+
 export default function BookingForm({
   onPickupChange,
   onDropoffChange,
@@ -49,6 +106,8 @@ export default function BookingForm({
   const [serviceType, setServiceType] = useState<ServiceType>("standard");
   const [passengers, setPassengers] = useState(2);
   const [luggage, setLuggage] = useState<LuggageType>("none");
+  const [smallBags, setSmallBags] = useState(0);
+  const [largeBags, setLargeBags] = useState(0);
   const [wheelchair, setWheelchair] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
   const [cashAgreed, setCashAgreed] = useState(false);
@@ -74,6 +133,35 @@ export default function BookingForm({
   const [flightNumber, setFlightNumber] = useState("");
   const [airline, setAirline] = useState("");
   const [waitAndGreet, setWaitAndGreet] = useState(false);
+  const [seniorPassenger, setSeniorPassenger] = useState(false);
+  const [ztpCardHolder, setZtpCardHolder] = useState(false);
+  const [wheelchairUser, setWheelchairUser] = useState(false);
+  const [companionRequired, setCompanionRequired] = useState(false);
+  const [medicalAppointment, setMedicalAppointment] = useState(false);
+  const [waitingTimeRequired, setWaitingTimeRequired] = useState(false);
+  const [assistanceLevel, setAssistanceLevel] = useState<AssistanceLevel>("");
+  const [wheelchairType, setWheelchairType] = useState<WheelchairType>("");
+  const [canTransferToSeat, setCanTransferToSeat] = useState<TransferToSeat>("");
+  const [companionCount, setCompanionCount] = useState(1);
+  const [hospitalName, setHospitalName] = useState("");
+  const [department, setDepartment] = useState("");
+  const [appointmentDate, setAppointmentDate] = useState("");
+  const [appointmentTime, setAppointmentTime] = useState("");
+  const [tripType, setTripType] = useState<MedicalTripType>("GO_ONLY");
+  const [returnDate, setReturnDate] = useState("");
+  const [returnTime, setReturnTime] = useState("");
+  const [waitingDuration, setWaitingDuration] = useState<WaitingDuration>("");
+  const [customWaitingDuration, setCustomWaitingDuration] = useState("");
+  const [recurrence, setRecurrence] = useState<RecurrenceType>("ONE_TIME");
+  const [recurrenceCustom, setRecurrenceCustom] = useState("");
+  const [childFullName, setChildFullName] = useState("");
+  const [childAge, setChildAge] = useState("");
+  const [childSpecialRequirements, setChildSpecialRequirements] = useState("");
+  const [parentFullName, setParentFullName] = useState("");
+  const [parentPrimaryPhone, setParentPrimaryPhone] = useState("");
+  const [parentEmergencyPhone, setParentEmergencyPhone] = useState("");
+  const [parentEmail, setParentEmail] = useState("");
+  const [educationalInstitutionName, setEducationalInstitutionName] = useState("");
 
   const [bookingId, setBookingId] = useState("");
   const [bookingRef, setBookingRef] = useState("");
@@ -85,6 +173,70 @@ export default function BookingForm({
   }, [step]);
 
   const today = useMemo(() => new Date().toISOString().split("T")[0], []);
+  const assistedTransport = serviceType === "accessible";
+  const activeCompanionCount = assistedTransport && companionRequired ? companionCount : 0;
+  const capacityPassengerCount = passengers + activeCompanionCount;
+  const luggageCount = smallBags + largeBags;
+  const luggageUnits = smallBags + largeBags * 2;
+  const largerVehicleRecommended =
+    capacityPassengerCount > 4 ||
+    (capacityPassengerCount >= 4 && largeBags > 0) ||
+    (capacityPassengerCount >= 5 && luggageCount > 0) ||
+    capacityPassengerCount + luggageUnits > 6;
+  const wavRequired = assistedTransport && wheelchairUser && canTransferToSeat === "NO";
+  const passengerRemainsInWheelchair = wavRequired;
+  const showWaitingDuration = assistedTransport && (waitingTimeRequired || tripType === "WAIT_RETURN");
+  const showMedicalReturnDetails = assistedTransport && (medicalAppointment || waitingTimeRequired);
+  const contactStepNumber = showMedicalReturnDetails ? 6 : assistedTransport ? 5 : 4;
+  const childrenTransport = serviceType === "children";
+  const institutionAddress = dropoffAddress.trim();
+
+  useEffect(() => {
+    const nextLuggage: LuggageType =
+      largeBags > 0 ? "large" : smallBags > 0 ? "small" : "none";
+    setLuggage(nextLuggage);
+  }, [smallBags, largeBags]);
+
+  useEffect(() => {
+    if (!assistedTransport) {
+      setWheelchair(false);
+      setSeniorPassenger(false);
+      setZtpCardHolder(false);
+      setWheelchairUser(false);
+      setCompanionRequired(false);
+      setMedicalAppointment(false);
+      setWaitingTimeRequired(false);
+    }
+  }, [assistedTransport]);
+
+  useEffect(() => {
+    if (childrenTransport && paymentMethod === "cash") {
+      setPaymentMethod("card");
+      setCashAgreed(false);
+    }
+  }, [childrenTransport, paymentMethod]);
+
+  useEffect(() => {
+    if (!seniorPassenger) setAssistanceLevel("");
+    if (!wheelchairUser) {
+      setWheelchairType("");
+      setCanTransferToSeat("");
+    }
+    if (!companionRequired) setCompanionCount(1);
+    if (!medicalAppointment) {
+      setHospitalName("");
+      setDepartment("");
+      setAppointmentDate("");
+      setAppointmentTime("");
+      setTripType("GO_ONLY");
+      setReturnDate("");
+      setReturnTime("");
+    }
+    if (!showWaitingDuration) {
+      setWaitingDuration("");
+      setCustomWaitingDuration("");
+    }
+  }, [seniorPassenger, wheelchairUser, companionRequired, medicalAppointment, showWaitingDuration]);
 useEffect(() => {
   const draftRaw = localStorage.getItem("drivo_booking_draft");
   if (!draftRaw) return;
@@ -276,9 +428,50 @@ useEffect(() => {
     if (!trimmedEmail) return "Customer email is required.";
     if (!isValidEmail(trimmedEmail)) return "Valid email address is required.";
     if (customerPhone.trim().length < 6) return "Valid phone number is required.";
-    if (passengers > 6) return "Maximum 6 passengers allowed.";
-    if (passengers >= 6 && luggage !== "none") {
+    if (capacityPassengerCount > 6) return "Maximum 6 passengers including companions allowed.";
+    if (capacityPassengerCount >= 6 && luggageCount > 0) {
       return "For 6 passengers with luggage, please reduce to 5 passengers or use tourism/airport transfer option.";
+    }
+    if (assistedTransport && seniorPassenger && !assistanceLevel) return "Please select assistance level.";
+    if (assistedTransport && wheelchairUser && !wheelchairType) return "Please select wheelchair type.";
+    if (assistedTransport && wheelchairUser && !canTransferToSeat) return "Please confirm if the passenger can transfer to a vehicle seat.";
+    if (assistedTransport && companionRequired && companionCount < 1) return "Please select number of companions.";
+    if (assistedTransport && medicalAppointment) {
+      if (!hospitalName.trim()) return "Hospital or clinic name is required.";
+      if (!department.trim()) return "Department is required.";
+      if (!appointmentDate) return "Appointment date is required.";
+      if (!appointmentTime) return "Appointment time is required.";
+      if (tripType === "GO_RETURN" && (!returnDate || !returnTime)) {
+        return "Return date and time are required.";
+      }
+    }
+    if (showWaitingDuration && !waitingDuration) return "Please select waiting duration.";
+    if (waitingDuration === "CUSTOM" && !customWaitingDuration.trim()) {
+      return "Please enter custom waiting duration.";
+    }
+    if (childrenTransport) {
+      const destinationText = `${dropoffAddress} ${educationalInstitutionName}`.toLowerCase();
+      const educationDestination = ["school", "college", "university", "educational", "education", "training", "institute", "skola", "škola", "gymnasium", "academy"].some((term) =>
+        destinationText.includes(term)
+      );
+
+      if (!scheduledDate || !scheduledTime) return "Pickup date and time are required for children's transport.";
+      if (!returnDate || !returnTime) return "Return date and time are required for children's transport.";
+      if (!recurrence) return "Please select recurrence.";
+      if (recurrence === "CUSTOM" && !recurrenceCustom.trim()) return "Please enter custom recurrence.";
+      if (!childFullName.trim()) return "Child full name is required.";
+      if (!childAge.trim()) return "Child age is required.";
+      if (!parentFullName.trim()) return "Parent full name is required.";
+      if (!parentPrimaryPhone.trim()) return "Parent primary phone is required.";
+      if (!parentEmergencyPhone.trim()) return "Emergency phone is required.";
+      if (!parentEmail.trim() || !isValidEmail(parentEmail.trim())) return "Valid parent email is required.";
+      if (!educationDestination) {
+        return t(
+          "booking.childrenInstitutionValidation",
+          "Please select a verified school, college, university, or approved educational institution."
+        );
+      }
+      if (paymentMethod === "cash") return "Cash is not available for children's scheduled transport.";
     }
     if (paymentMethod === "cash" && !cashAgreed) {
       return "Please agree to the cash payment rules before continuing.";
@@ -330,7 +523,73 @@ scheduledTime:
     : scheduledTime,
           passengerCount: passengers,
           luggageType: luggageMap[luggage],
-          wheelchairNeeded: wheelchair,
+          smallBags,
+          largeBags,
+          wheelchairNeeded: assistedTransport && (wheelchair || wheelchairUser),
+          seniorPassenger: assistedTransport && seniorPassenger,
+          ztpCardHolder: assistedTransport && ztpCardHolder,
+          wheelchairUser: assistedTransport && wheelchairUser,
+          companionRequired: assistedTransport && companionRequired,
+          medicalAppointment: assistedTransport && medicalAppointment,
+          waitingTimeRequired: assistedTransport && waitingTimeRequired,
+          assistanceLevel: assistedTransport ? assistanceLevel || null : null,
+          wheelchairType: assistedTransport ? wheelchairType || null : null,
+          canTransferToSeat:
+            !assistedTransport
+              ? null
+              : canTransferToSeat === "YES"
+              ? true
+              : canTransferToSeat === "NO"
+              ? false
+              : null,
+          wavRequired,
+          passengerRemainsInWheelchair,
+          companionCount: activeCompanionCount,
+          hospitalName: assistedTransport && medicalAppointment ? hospitalName.trim() || null : null,
+          department: assistedTransport && medicalAppointment ? department.trim() || null : null,
+          appointmentDate: assistedTransport && medicalAppointment ? appointmentDate || null : null,
+          appointmentTime: assistedTransport && medicalAppointment ? appointmentTime || null : null,
+          tripType: assistedTransport && medicalAppointment ? tripType : null,
+          returnDate: assistedTransport && (medicalAppointment || waitingTimeRequired) ? returnDate || null : null,
+          returnTime: assistedTransport && (medicalAppointment || waitingTimeRequired) ? returnTime || null : null,
+          waitingDuration: showWaitingDuration ? waitingDuration || null : null,
+          customWaitingDuration: showWaitingDuration ? customWaitingDuration.trim() || null : null,
+          scheduledRide: childrenTransport,
+          recurrence: childrenTransport ? recurrence : null,
+          recurrenceType: childrenTransport ? recurrence : null,
+          recurrenceCustom: recurrenceCustom.trim() || null,
+          childFullName: childFullName.trim() || null,
+          childName: childFullName.trim() || null,
+          childAge: childAge.trim() ? Number(childAge) : null,
+          childSpecialRequirements: childSpecialRequirements.trim() || null,
+          parentFullName: parentFullName.trim() || null,
+          guardianName: parentFullName.trim() || null,
+          parentPrimaryPhone: parentPrimaryPhone.trim() || null,
+          guardianPhone: parentPrimaryPhone.trim() || null,
+          parentEmergencyPhone: parentEmergencyPhone.trim() || null,
+          guardianEmergencyPhone: parentEmergencyPhone.trim() || null,
+          parentEmail: parentEmail.trim() || null,
+          guardianEmail: parentEmail.trim() || null,
+          educationalInstitutionName: educationalInstitutionName.trim() || null,
+          institutionName: educationalInstitutionName.trim() || null,
+          institutionAddress: childrenTransport ? institutionAddress || null : null,
+          pickupDate: childrenTransport ? scheduledDate || null : null,
+          pickupTime: childrenTransport ? scheduledTime || null : null,
+          educationalDestinationValidated: [
+            "school",
+            "college",
+            "university",
+            "educational",
+            "education",
+            "training",
+            "institute",
+            "skola",
+            "škola",
+            "gymnasium",
+            "academy",
+          ].some((term) =>
+            `${dropoffAddress} ${educationalInstitutionName}`.toLowerCase().includes(term)
+          ),
           flightNumber: flightNumber.trim() || null,
           airline: airline.trim() || null,
           waitAndGreet,
@@ -482,7 +741,51 @@ scheduledTime:
           scheduledTime,
           passengerCount: passengers,
           luggageType: luggage,
-          wheelchairNeeded: wheelchair,
+          smallBags,
+          largeBags,
+          wheelchairNeeded: assistedTransport && (wheelchair || wheelchairUser),
+          seniorPassenger: assistedTransport && seniorPassenger,
+          ztpCardHolder: assistedTransport && ztpCardHolder,
+          wheelchairUser: assistedTransport && wheelchairUser,
+          companionRequired: assistedTransport && companionRequired,
+          medicalAppointment: assistedTransport && medicalAppointment,
+          waitingTimeRequired: assistedTransport && waitingTimeRequired,
+          assistanceLevel: assistedTransport ? assistanceLevel : "",
+          wheelchairType: assistedTransport ? wheelchairType : "",
+          canTransferToSeat: assistedTransport ? canTransferToSeat : "",
+          wavRequired,
+          passengerRemainsInWheelchair,
+          companionCount: activeCompanionCount,
+          hospitalName: assistedTransport && medicalAppointment ? hospitalName : "",
+          department: assistedTransport && medicalAppointment ? department : "",
+          appointmentDate: assistedTransport && medicalAppointment ? appointmentDate : "",
+          appointmentTime: assistedTransport && medicalAppointment ? appointmentTime : "",
+          tripType: assistedTransport && medicalAppointment ? tripType : "",
+          returnDate: assistedTransport && (medicalAppointment || waitingTimeRequired) ? returnDate : "",
+          returnTime: assistedTransport && (medicalAppointment || waitingTimeRequired) ? returnTime : "",
+          waitingDuration: showWaitingDuration ? waitingDuration : "",
+          customWaitingDuration: showWaitingDuration ? customWaitingDuration : "",
+          scheduledRide: childrenTransport,
+          recurrence,
+          recurrenceType: recurrence,
+          recurrenceCustom,
+          childFullName,
+          childName: childFullName,
+          childAge,
+          childSpecialRequirements,
+          parentFullName,
+          guardianName: parentFullName,
+          parentPrimaryPhone,
+          guardianPhone: parentPrimaryPhone,
+          parentEmergencyPhone,
+          guardianEmergencyPhone: parentEmergencyPhone,
+          parentEmail,
+          guardianEmail: parentEmail,
+          educationalInstitutionName,
+          institutionName: educationalInstitutionName,
+          institutionAddress,
+          pickupDate: scheduledDate,
+          pickupTime: scheduledTime,
           flightNumber,
           waitAndGreet,
           customerName,
@@ -520,14 +823,22 @@ scheduledTime:
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {serviceOptions.map((s) => (
             <button
               key={s.value}
               type="button"
               onClick={() => {
                 setServiceType(s.value);
-                    setWheelchair(s.value === "accessible");
+                setWheelchair(s.value === "accessible");
+                if (s.value === "accessible") {
+                  setSeniorPassenger(true);
+                }
+                if (s.value === "children") {
+                  setRideMode("schedule");
+                  setPaymentMethod("card");
+                  setCashAgreed(false);
+                }
                 if (s.value !== "airport") {
                   setFlightNumber("");
                   setAirline("");
@@ -719,7 +1030,46 @@ scheduledTime:
           <div className="space-y-5">
             <PassengerCounter value={passengers} onChange={setPassengers} />
 
-            <div>
+            <div className="grid sm:grid-cols-2 gap-4">
+              <CounterControl
+                label={`🧳 ${t("booking.smallBags", "Small bags")}`}
+                value={smallBags}
+                onChange={setSmallBags}
+              />
+              <CounterControl
+                label={`🧳 ${t("booking.largeBags", "Large bags")}`}
+                value={largeBags}
+                onChange={setLargeBags}
+              />
+            </div>
+
+            <div className="rounded-2xl bg-drivo-bg-soft p-4 text-[13px] text-drivo-text-secondary">
+              {t("booking.capacitySummary", "Capacity")}:
+              <span className="font-bold text-drivo-text">
+                {" "}
+                {capacityPassengerCount}/6 {t("booking.passengers").toLowerCase()}
+              </span>
+              {luggageCount > 0 && (
+                <span>
+                  {" "}
+                  · {smallBags} {t("booking.smallBags", "small bags")}, {largeBags}{" "}
+                  {t("booking.largeBags", "large bags")}
+                </span>
+              )}
+            </div>
+
+            {largerVehicleRecommended && (
+              <div className="p-4 bg-drivo-amber-light border border-amber-300 rounded-2xl animate-fade-in">
+                <p className="text-[13px] font-semibold text-amber-800">
+                  {t("booking.largerVehicleRecommended", "Larger vehicle recommended")}
+                </p>
+                <p className="text-[12px] text-amber-700 mt-1">
+                  {t("booking.capacityNotice", "We will match the ride with a suitable 7-seater or WAV vehicle when needed.")}
+                </p>
+              </div>
+            )}
+
+            <div className="hidden">
               <label className="text-[12px] font-semibold text-drivo-text-secondary mb-2 block">
                 🧳 {t("booking.luggage")}
               </label>
@@ -750,7 +1100,7 @@ scheduledTime:
             </div>
 
             <LuggageWarning
-              passengers={passengers}
+              passengers={capacityPassengerCount}
               luggage={luggage}
               onSwitchService={() => {
                 setServiceType("airport");
@@ -758,7 +1108,7 @@ scheduledTime:
               }}
             />
 
-            <div className="p-4 bg-drivo-purple-light/50 rounded-2xl">
+            <div className="hidden p-4 bg-drivo-purple-light/50 rounded-2xl">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <span className="text-xl">♿</span>
@@ -798,6 +1148,270 @@ onChange={(e) => {
             </div>
           </div>
         </div>
+
+        {assistedTransport && (
+        <div className="card">
+          <div className="flex items-center gap-3 mb-5">
+            <span className="w-9 h-9 bg-drivo-green-light rounded-xl flex items-center justify-center text-[14px] font-bold text-drivo-green-dark">
+              4
+            </span>
+            <div>
+              <h3 className="font-bold text-drivo-text text-[16px]">
+                {t("booking.assistanceRequirements", "Assistance Requirements")}
+              </h3>
+              <p className="text-[12px] text-drivo-text-muted">
+                {t("booking.assistanceRequirementsDesc", "Tell us what the driver should prepare for.")}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            {[
+              ["seniorPassenger", seniorPassenger, setSeniorPassenger, "booking.seniorPassenger"],
+              ["ztpCardHolder", ztpCardHolder, setZtpCardHolder, "booking.ztpCardHolder"],
+              ["wheelchairUser", wheelchairUser, (value: boolean) => {
+                setWheelchairUser(value);
+                setWheelchair(value);
+                if (value) setServiceType("accessible");
+              }, "booking.wheelchairUser"],
+              ["companionRequired", companionRequired, setCompanionRequired, "booking.companionRequired"],
+              ["medicalAppointment", medicalAppointment, setMedicalAppointment, "booking.medicalAppointment"],
+              ["waitingTimeRequired", waitingTimeRequired, setWaitingTimeRequired, "booking.waitingTimeRequired"],
+            ].map(([key, checked, onChange, labelKey]) => (
+              <label
+                key={key as string}
+                className={`flex items-center gap-3 rounded-2xl border p-4 text-[13px] font-semibold transition ${
+                  checked
+                    ? "border-drivo-green bg-drivo-green-light text-drivo-green-dark"
+                    : "border-drivo-border bg-white text-drivo-text hover:border-drivo-green/30"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked as boolean}
+                  onChange={(e) => (onChange as (value: boolean) => void)(e.target.checked)}
+                  className="h-4 w-4 rounded border-drivo-border text-drivo-green focus:ring-drivo-green"
+                />
+                {t(labelKey as string)}
+              </label>
+            ))}
+          </div>
+
+          {seniorPassenger && (
+            <div className="mt-5 animate-fade-in">
+              <FieldLabel>{t("booking.assistanceLevel", "Assistance Level")} *</FieldLabel>
+              <select
+                value={assistanceLevel}
+                onChange={(e) => setAssistanceLevel(e.target.value as AssistanceLevel)}
+                className="input"
+              >
+                <option value="">{t("booking.selectOption", "Select option")}</option>
+                <option value="LIGHT">{t("booking.assistanceLight", "Light Assistance")}</option>
+                <option value="DOOR_TO_DOOR">{t("booking.assistanceDoorToDoor", "Door-to-door Assistance")}</option>
+                <option value="BOARDING_HELP">{t("booking.assistanceBoarding", "Needs Help Boarding/Exiting")}</option>
+              </select>
+            </div>
+          )}
+
+          {ztpCardHolder && (
+            <div className="mt-5 rounded-2xl border border-drivo-purple/20 bg-drivo-purple-light/40 p-4 text-[13px] font-semibold text-drivo-purple">
+              {t("booking.ztpStoredYes", "ZTP Card Holder: Yes")}
+            </div>
+          )}
+
+          {wheelchairUser && (
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 animate-fade-in">
+              <div>
+                <FieldLabel>{t("booking.wheelchairType", "Wheelchair Type")} *</FieldLabel>
+                <select
+                  value={wheelchairType}
+                  onChange={(e) => setWheelchairType(e.target.value as WheelchairType)}
+                  className="input"
+                >
+                  <option value="">{t("booking.selectOption", "Select option")}</option>
+                  <option value="MANUAL">{t("booking.wheelchairManual", "Manual")}</option>
+                  <option value="ELECTRIC">{t("booking.wheelchairElectric", "Electric")}</option>
+                  <option value="FOLDABLE">{t("booking.wheelchairFoldable", "Foldable")}</option>
+                </select>
+              </div>
+              <div>
+                <FieldLabel>{t("booking.canTransferToSeat", "Can passenger transfer to vehicle seat?")} *</FieldLabel>
+                <select
+                  value={canTransferToSeat}
+                  onChange={(e) => setCanTransferToSeat(e.target.value as TransferToSeat)}
+                  className="input"
+                >
+                  <option value="">{t("booking.selectOption", "Select option")}</option>
+                  <option value="YES">{t("common.yes")}</option>
+                  <option value="NO">{t("common.no")}</option>
+                </select>
+              </div>
+              {wavRequired && (
+                <div className="sm:col-span-2 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-[13px] text-blue-800">
+                  <strong>{t("booking.wavRequired", "WAV required")}.</strong>{" "}
+                  {t("booking.passengerRemainsWheelchair", "Passenger remains in wheelchair. Vehicle must support wheelchair entry.")}
+                </div>
+              )}
+            </div>
+          )}
+
+          {companionRequired && (
+            <div className="mt-5 animate-fade-in">
+              <FieldLabel>{t("booking.numberOfCompanions", "Number of Companions")}</FieldLabel>
+              <select
+                value={companionCount}
+                onChange={(e) => setCompanionCount(Number(e.target.value))}
+                className="input"
+              >
+                {[1, 2, 3].map((count) => (
+                  <option key={count} value={count}>{count}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+        )}
+
+        {showMedicalReturnDetails && (
+        <div className="card">
+          <div className="flex items-center gap-3 mb-5">
+            <span className="w-9 h-9 bg-drivo-green-light rounded-xl flex items-center justify-center text-[14px] font-bold text-drivo-green-dark">
+              5
+            </span>
+            <div>
+              <h3 className="font-bold text-drivo-text text-[16px]">
+                {t("booking.medicalReturnDetails", "Medical / Return Trip Details")}
+              </h3>
+              <p className="text-[12px] text-drivo-text-muted">
+                {t("booking.medicalReturnDetailsDesc", "Appointment, waiting and return planning")}
+              </p>
+            </div>
+          </div>
+
+          {medicalAppointment && (
+            <div className="space-y-4">
+              <div className="grid sm:grid-cols-2 gap-4">
+                <input className="input" value={hospitalName} onChange={(e) => setHospitalName(e.target.value)} placeholder={`${t("booking.hospitalName", "Hospital / Clinic Name")} *`} />
+                <input className="input" value={department} onChange={(e) => setDepartment(e.target.value)} placeholder={`${t("booking.department", "Department")} *`} />
+                <input className="input" type="date" value={appointmentDate} onChange={(e) => setAppointmentDate(e.target.value)} min={today} />
+                <input className="input" type="time" value={appointmentTime} onChange={(e) => setAppointmentTime(e.target.value)} />
+              </div>
+
+              <div>
+                <FieldLabel>{t("booking.tripType", "Trip Type")}</FieldLabel>
+                <select value={tripType} onChange={(e) => setTripType(e.target.value as MedicalTripType)} className="input">
+                  <option value="GO_ONLY">{t("booking.goOnly", "Go Only")}</option>
+                  <option value="GO_RETURN">{t("booking.goReturn", "Go + Return")}</option>
+                  <option value="WAIT_RETURN">{t("booking.waitReturn", "Driver Wait & Return")}</option>
+                </select>
+              </div>
+
+              {(tripType === "GO_RETURN" || tripType === "WAIT_RETURN") && (
+                <div className="grid sm:grid-cols-2 gap-4">
+                  <input className="input" type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} min={appointmentDate || today} />
+                  <input className="input" type="time" value={returnTime} onChange={(e) => setReturnTime(e.target.value)} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {showWaitingDuration && (
+            <div className="mt-5 animate-fade-in">
+              <FieldLabel>{t("booking.waitingDuration", "Waiting Duration")} *</FieldLabel>
+              <select value={waitingDuration} onChange={(e) => setWaitingDuration(e.target.value as WaitingDuration)} className="input">
+                <option value="">{t("booking.selectOption", "Select option")}</option>
+                <option value="30_MINUTES">{t("booking.wait30", "30 Minutes")}</option>
+                <option value="1_HOUR">{t("booking.wait1h", "1 Hour")}</option>
+                <option value="2_HOURS">{t("booking.wait2h", "2 Hours")}</option>
+                <option value="3_HOURS">{t("booking.wait3h", "3 Hours")}</option>
+                <option value="4_HOURS">{t("booking.wait4h", "4 Hours")}</option>
+                <option value="CUSTOM">{t("booking.waitCustom", "Custom")}</option>
+              </select>
+              {waitingDuration === "CUSTOM" && (
+                <input
+                  className="input mt-3"
+                  value={customWaitingDuration}
+                  onChange={(e) => setCustomWaitingDuration(e.target.value)}
+                  placeholder={t("booking.customWaitingDuration", "Custom waiting duration")}
+                />
+              )}
+            </div>
+          )}
+        </div>
+        )}
+
+        {childrenTransport && (
+          <div className="card animate-fade-in">
+            <div className="flex items-center gap-3 mb-5">
+              <span className="w-9 h-9 bg-pink-100 rounded-xl flex items-center justify-center text-[14px]">
+                👧
+              </span>
+              <div>
+                <h3 className="font-bold text-drivo-text text-[16px]">
+                  {t("booking.childrenTransportDetails", "Children Transport Details")}
+                </h3>
+                <p className="text-[12px] text-drivo-text-muted">
+                  {t("booking.childrenTransportDesc", "Scheduled educational rides only. Cash is not available.")}
+                </p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="grid sm:grid-cols-2 gap-4">
+                <input className="input" type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} min={today} />
+                <input className="input" type="time" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} />
+                <input className="input" type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} min={scheduledDate || today} />
+                <input className="input" type="time" value={returnTime} onChange={(e) => setReturnTime(e.target.value)} />
+              </div>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <select value={recurrence} onChange={(e) => setRecurrence(e.target.value as RecurrenceType)} className="input">
+                  <option value="ONE_TIME">{t("booking.recurrenceOneTime", "One Time")}</option>
+                  <option value="DAILY">{t("booking.recurrenceDaily", "Daily")}</option>
+                  <option value="WEEKLY">{t("booking.recurrenceWeekly", "Weekly")}</option>
+                  <option value="MONTHLY">{t("booking.recurrenceMonthly", "Monthly")}</option>
+                  <option value="CUSTOM">{t("booking.waitCustom", "Custom")}</option>
+                </select>
+                {recurrence === "CUSTOM" && (
+                  <input className="input" value={recurrenceCustom} onChange={(e) => setRecurrenceCustom(e.target.value)} placeholder={t("booking.recurrenceCustom", "Custom recurrence")} />
+                )}
+              </div>
+              <div className="grid sm:grid-cols-2 gap-4">
+                <input className="input" value={childFullName} onChange={(e) => setChildFullName(e.target.value)} placeholder={`${t("booking.childFullName", "Child Full Name")} *`} />
+                <input className="input" type="number" min="0" max="18" value={childAge} onChange={(e) => setChildAge(e.target.value)} placeholder={`${t("booking.childAge", "Child Age")} *`} />
+              </div>
+              <textarea className="input resize-none" rows={2} value={childSpecialRequirements} onChange={(e) => setChildSpecialRequirements(e.target.value)} placeholder={t("booking.childSpecialRequirements", "Special Requirements")} />
+              <div className="grid sm:grid-cols-2 gap-4">
+                <input className="input" value={parentFullName} onChange={(e) => setParentFullName(e.target.value)} placeholder={`${t("booking.parentFullName", "Parent Full Name")} *`} />
+                <input className="input" value={parentPrimaryPhone} onChange={(e) => setParentPrimaryPhone(e.target.value)} placeholder={`${t("booking.parentPrimaryPhone", "Primary Phone")} *`} />
+                <input className="input" value={parentEmergencyPhone} onChange={(e) => setParentEmergencyPhone(e.target.value)} placeholder={`${t("booking.parentEmergencyPhone", "Emergency Phone")} *`} />
+                <input className="input" type="email" value={parentEmail} onChange={(e) => setParentEmail(e.target.value)} placeholder={`${t("booking.parentEmail", "Email")} *`} />
+              </div>
+              <input className="input" value={educationalInstitutionName} onChange={(e) => setEducationalInstitutionName(e.target.value)} placeholder={t("booking.educationalInstitution", "School, college, university or approved educational institution")} />
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-[13px] text-amber-800">
+                {t(
+                  "booking.childrenInstitutionValidation",
+                  "Please select a verified school, college, university, or approved educational institution."
+                )}
+              </div>
+              {(educationalInstitutionName || institutionAddress) && (
+                <div className="rounded-2xl border border-drivo-border bg-white p-4 text-[13px]">
+                  <div className="font-bold text-drivo-text">
+                    {t("booking.institutionSummary", "Institution")}
+                  </div>
+                  <div className="mt-2 grid gap-1 text-drivo-text-secondary">
+                    <span>
+                      {t("booking.institutionName", "Institution name")}:{" "}
+                      <strong className="text-drivo-text">{educationalInstitutionName || "N/A"}</strong>
+                    </span>
+                    <span>
+                      {t("booking.institutionAddress", "Full address")}:{" "}
+                      <strong className="text-drivo-text">{institutionAddress || "N/A"}</strong>
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {serviceType === "airport" && (
           <div className="card animate-fade-in">
@@ -862,7 +1476,7 @@ onChange={(e) => {
         <div className="card">
           <div className="flex items-center gap-3 mb-5">
             <span className="w-9 h-9 bg-drivo-green-light rounded-xl flex items-center justify-center text-[14px] font-bold text-drivo-green-dark">
-              4
+              {contactStepNumber}
             </span>
             <h3 className="font-bold text-drivo-text text-[16px]">
               {t("booking.contactDetails")} & {t("booking.payment")}
@@ -936,7 +1550,7 @@ onChange={(e) => {
                   ["card", "💳", t("booking.paymentCard"), t("booking.paymentCardDesc"), t("booking.recommended", "Recommended")],
                   ["cash", "💰", t("booking.paymentCash"), t("booking.paymentCashDesc"), t("booking.rulesApply", "Rules apply")],
                   ["invoice", "🏢", t("booking.paymentInvoice"), t("booking.paymentInvoiceDesc"), "Net 30"],
-                ].map(([v, icon, label, sub, tag]) => (
+                ].filter(([v]) => !(childrenTransport && v === "cash")).map(([v, icon, label, sub, tag]) => (
                   <button
                     key={v}
                     type="button"

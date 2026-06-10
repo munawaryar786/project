@@ -123,6 +123,43 @@ export default function BookingConfirmation({
               />
             )}
 
+            {bookingData?.serviceType === "children" && (
+              <>
+                <Detail
+                  label={t("booking.childFullName", "Child Full Name")}
+                  value={String(bookingData?.childName || bookingData?.childFullName || "")}
+                />
+                <Detail
+                  label={t("booking.childAge", "Child Age")}
+                  value={String(bookingData?.childAge || "")}
+                />
+                <Detail
+                  label={t("booking.parentFullName", "Parent/Guardian Full Name")}
+                  value={String(bookingData?.guardianName || bookingData?.parentFullName || "")}
+                />
+                <Detail
+                  label={t("booking.parentPrimaryPhone", "Primary Phone")}
+                  value={String(bookingData?.guardianPhone || bookingData?.parentPrimaryPhone || "")}
+                />
+                <Detail
+                  label={t("booking.parentEmergencyPhone", "Emergency Phone")}
+                  value={String(bookingData?.guardianEmergencyPhone || bookingData?.parentEmergencyPhone || "")}
+                />
+                <Detail
+                  label={t("booking.institutionName", "Institution name")}
+                  value={String(bookingData?.institutionName || bookingData?.educationalInstitutionName || "")}
+                />
+                <Detail
+                  label={t("booking.institutionAddress", "Full address")}
+                  value={String(bookingData?.institutionAddress || bookingData?.dropoffAddress || "")}
+                />
+                <Detail
+                  label={t("booking.recurrenceType", "Recurrence")}
+                  value={String(bookingData?.recurrenceType || bookingData?.recurrence || "")}
+                />
+              </>
+            )}
+
             <Detail
               label={t("booking.name")}
               value={(bookingData?.customerName as string) || ""}

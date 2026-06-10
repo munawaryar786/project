@@ -22,7 +22,51 @@ interface Booking {
 
   passengerCount: number;
   luggageType: string;
+  smallBags?: number;
+  largeBags?: number;
   wheelchairNeeded: boolean;
+  seniorPassenger?: boolean;
+  ztpCardHolder?: boolean;
+  wheelchairUser?: boolean;
+  companionRequired?: boolean;
+  medicalAppointment?: boolean;
+  waitingTimeRequired?: boolean;
+  assistanceLevel?: string | null;
+  wheelchairType?: string | null;
+  canTransferToSeat?: boolean | null;
+  wavRequired?: boolean;
+  passengerRemainsInWheelchair?: boolean;
+  companionCount?: number;
+  hospitalName?: string | null;
+  department?: string | null;
+  appointmentDate?: string | null;
+  appointmentTime?: string | null;
+  tripType?: string | null;
+  returnDate?: string | null;
+  returnTime?: string | null;
+  waitingDuration?: string | null;
+  customWaitingDuration?: string | null;
+  scheduledRide?: boolean;
+  recurrence?: string | null;
+  recurrenceType?: string | null;
+  recurrenceCustom?: string | null;
+  childFullName?: string | null;
+  childName?: string | null;
+  childAge?: number | null;
+  childSpecialRequirements?: string | null;
+  parentFullName?: string | null;
+  guardianName?: string | null;
+  parentPrimaryPhone?: string | null;
+  guardianPhone?: string | null;
+  parentEmergencyPhone?: string | null;
+  guardianEmergencyPhone?: string | null;
+  parentEmail?: string | null;
+  guardianEmail?: string | null;
+  educationalInstitutionName?: string | null;
+  institutionName?: string | null;
+  institutionAddress?: string | null;
+  pickupDate?: string | null;
+  pickupTime?: string | null;
 
   customerName: string;
   customerPhone: string;
@@ -976,6 +1020,42 @@ function BookingPanel({
           />
         </Section>
 
+        {(booking.serviceType === "CHILDREN" || booking.scheduledRide) && (
+          <Section title="Children Transport">
+            <Info label="Child Name" value={booking.childName || booking.childFullName || "N/A"} />
+            <Info label="Age" value={booking.childAge === null || booking.childAge === undefined ? "N/A" : String(booking.childAge)} />
+            <Info label="Special Requirements" value={booking.childSpecialRequirements || "N/A"} />
+            <Info label="Parent/Guardian" value={booking.guardianName || booking.parentFullName || "N/A"} />
+            <Info label="Primary Phone" value={booking.guardianPhone || booking.parentPrimaryPhone || "N/A"} />
+            <Info label="Emergency Phone" value={booking.guardianEmergencyPhone || booking.parentEmergencyPhone || "N/A"} />
+            <Info label="Guardian Email" value={booking.guardianEmail || booking.parentEmail || "N/A"} />
+            <Info label="Institution" value={booking.institutionName || booking.educationalInstitutionName || "N/A"} />
+            <Info label="Institution Address" value={booking.institutionAddress || booking.dropoffAddress || "N/A"} />
+            <Info label="Pickup Schedule" value={`${booking.pickupDate || booking.scheduledDate || ""} ${booking.pickupTime || booking.scheduledTime || ""}`.trim() || "N/A"} />
+            <Info label="Return Schedule" value={`${booking.returnDate || ""} ${booking.returnTime || ""}`.trim() || "N/A"} />
+            <Info label="Recurrence" value={formatValue(booking.recurrenceType || booking.recurrence)} />
+            <Info label="Custom Recurrence" value={booking.recurrenceCustom || "N/A"} />
+          </Section>
+        )}
+
+        <Section title="Assistance & Medical">
+          <Info label="Senior Passenger" value={yesNo(booking.seniorPassenger)} />
+          <Info label="Assistance Level" value={formatValue(booking.assistanceLevel)} />
+          <Info label="ZTP" value={yesNo(booking.ztpCardHolder)} />
+          <Info label="Wheelchair User" value={yesNo(booking.wheelchairUser || booking.wheelchairNeeded)} />
+          <Info label="Wheelchair Type" value={formatValue(booking.wheelchairType)} />
+          <Info label="Can Transfer To Seat" value={booking.canTransferToSeat === null || booking.canTransferToSeat === undefined ? "N/A" : yesNo(booking.canTransferToSeat)} />
+          <Info label="WAV Required" value={yesNo(booking.wavRequired)} />
+          <Info label="Companion Count" value={String(booking.companionCount || 0)} />
+          <Info label="Small / Large Bags" value={`${booking.smallBags || 0} / ${booking.largeBags || 0}`} />
+          <Info label="Medical Appointment" value={yesNo(booking.medicalAppointment)} />
+          <Info label="Hospital" value={booking.hospitalName || "N/A"} />
+          <Info label="Department" value={booking.department || "N/A"} />
+          <Info label="Appointment Time" value={booking.appointmentDate || booking.appointmentTime ? `${booking.appointmentDate || ""} ${booking.appointmentTime || ""}`.trim() : "N/A"} />
+          <Info label="Waiting Duration" value={formatValue(booking.customWaitingDuration || booking.waitingDuration)} />
+          <Info label="Return Trip Details" value={booking.returnDate || booking.returnTime ? `${booking.returnDate || ""} ${booking.returnTime || ""}`.trim() : "N/A"} />
+        </Section>
+
         <Section title="Dispatch">
           <button
             onClick={() =>
@@ -1181,6 +1261,15 @@ function Info({
       </span>
     </div>
   );
+}
+
+function yesNo(value: unknown) {
+  return value ? "Yes" : "No";
+}
+
+function formatValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return "N/A";
+  return String(value).replaceAll("_", " ");
 }
 
 function StatusBadge({

@@ -16,6 +16,50 @@ interface Booking {
   scheduledTime: string;
   passengerCount: number;
   wheelchairNeeded: boolean;
+  smallBags?: number;
+  largeBags?: number;
+  seniorPassenger?: boolean;
+  ztpCardHolder?: boolean;
+  wheelchairUser?: boolean;
+  companionRequired?: boolean;
+  medicalAppointment?: boolean;
+  waitingTimeRequired?: boolean;
+  assistanceLevel?: string | null;
+  wheelchairType?: string | null;
+  canTransferToSeat?: boolean | null;
+  wavRequired?: boolean;
+  passengerRemainsInWheelchair?: boolean;
+  companionCount?: number;
+  hospitalName?: string | null;
+  department?: string | null;
+  appointmentDate?: string | null;
+  appointmentTime?: string | null;
+  tripType?: string | null;
+  returnDate?: string | null;
+  returnTime?: string | null;
+  waitingDuration?: string | null;
+  customWaitingDuration?: string | null;
+  scheduledRide?: boolean;
+  recurrence?: string | null;
+  recurrenceType?: string | null;
+  recurrenceCustom?: string | null;
+  childFullName?: string | null;
+  childName?: string | null;
+  childAge?: number | null;
+  childSpecialRequirements?: string | null;
+  parentFullName?: string | null;
+  guardianName?: string | null;
+  parentPrimaryPhone?: string | null;
+  guardianPhone?: string | null;
+  parentEmergencyPhone?: string | null;
+  guardianEmergencyPhone?: string | null;
+  parentEmail?: string | null;
+  guardianEmail?: string | null;
+  educationalInstitutionName?: string | null;
+  institutionName?: string | null;
+  institutionAddress?: string | null;
+  pickupDate?: string | null;
+  pickupTime?: string | null;
   customerName: string;
   customerPhone: string;
   customerPhoneCode: string;
@@ -720,6 +764,9 @@ function IncomingRideRequestCard({
             💳 {request.booking?.paymentMethod}
           </div>
         </div>
+
+        <ChildrenTransportSummary booking={request.booking} dark />
+        <AssistanceSummary booking={request.booking} dark />
       </div>
 
       <div className="grid grid-cols-2 gap-3 mt-5">
@@ -786,6 +833,9 @@ function ActiveTripCard({
           <p className="font-bold">🏁 {booking.dropoffAddress}</p>
         </div>
       </div>
+
+      <ChildrenTransportSummary booking={booking} dark />
+      <AssistanceSummary booking={booking} dark />
 
       <div className="grid grid-cols-2 gap-3 mb-4 text-sm">
         <a
@@ -962,6 +1012,7 @@ function BookingCard({
 
           <div className="text-xs space-y-1 text-gray-600">
             <InfoRow label="Batožina" value={booking.luggageType} />
+            <InfoRow label="Malá / veľká batožina" value={`${booking.smallBags || 0} / ${booking.largeBags || 0}`} />
             <InfoRow label="Platba" value={booking.paymentMethod} />
             {booking.flightNumber && (
               <InfoRow label="Let" value={`✈️ ${booking.flightNumber}`} />
@@ -976,6 +1027,9 @@ function BookingCard({
               </div>
             )}
           </div>
+
+          <ChildrenTransportSummary booking={booking} />
+          <AssistanceSummary booking={booking} />
 
           {nextAction && (
             <button
@@ -1072,6 +1126,120 @@ function InfoRow({ label, value }: { label: string; value: string }) {
       <span className="font-bold">{value}</span>
     </div>
   );
+}
+
+function ChildrenTransportSummary({
+  booking,
+  dark = false,
+}: {
+  booking?: Booking;
+  dark?: boolean;
+}) {
+  if (!booking || (booking.serviceType !== "CHILDREN" && !booking.scheduledRide)) return null;
+
+  const rows = [
+    ["Child", `${booking.childName || booking.childFullName || "N/A"}${booking.childAge !== null && booking.childAge !== undefined ? `, ${booking.childAge}` : ""}`],
+    ["Guardian", booking.guardianName || booking.parentFullName || "N/A"],
+    ["Primary phone", booking.guardianPhone || booking.parentPrimaryPhone || "N/A"],
+    ["Emergency phone", booking.guardianEmergencyPhone || booking.parentEmergencyPhone || "N/A"],
+    ["Institution", booking.institutionName || booking.educationalInstitutionName || "N/A"],
+    ["Institution address", booking.institutionAddress || booking.dropoffAddress || "N/A"],
+    ["Pickup", `${booking.pickupDate || booking.scheduledDate || ""} ${booking.pickupTime || booking.scheduledTime || ""}`.trim()],
+    ["Return", `${booking.returnDate || ""} ${booking.returnTime || ""}`.trim() || "N/A"],
+    ["Recurrence", formatEnum(booking.recurrenceType || booking.recurrence)],
+    booking.childSpecialRequirements && ["Special requirements", booking.childSpecialRequirements],
+  ].filter(Boolean) as string[][];
+
+  return (
+    <div
+      className={`rounded-2xl p-3 text-xs ${
+        dark
+          ? "bg-white/10 text-white"
+          : "bg-pink-50 text-pink-950 border border-pink-100"
+      }`}
+    >
+      <p className="mb-2 font-black uppercase">
+        Children Transport
+      </p>
+      <div className="space-y-1.5">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex justify-between gap-3">
+            <span className={dark ? "text-white/70" : "text-pink-700"}>{label}</span>
+            <span className="font-bold text-right">{value || "N/A"}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AssistanceSummary({
+  booking,
+  dark = false,
+}: {
+  booking?: Booking;
+  dark?: boolean;
+}) {
+  if (!booking) return null;
+
+  const rows = [
+    booking.seniorPassenger && ["Senior Passenger", formatEnum(booking.assistanceLevel)],
+    booking.ztpCardHolder && ["ZTP Passenger", "Yes"],
+    (booking.wheelchairUser || booking.wheelchairNeeded) && [
+      "Wheelchair",
+      `${formatEnum(booking.wheelchairType)} · transfer: ${
+        booking.canTransferToSeat === null || booking.canTransferToSeat === undefined
+          ? "N/A"
+          : booking.canTransferToSeat
+          ? "Yes"
+          : "No"
+      }`,
+    ],
+    booking.wavRequired && ["WAV Required", booking.passengerRemainsInWheelchair ? "Passenger remains in wheelchair" : "Yes"],
+    (booking.companionCount || 0) > 0 && ["Companions", String(booking.companionCount)],
+    booking.hospitalName && ["Hospital", booking.hospitalName],
+    (booking.appointmentDate || booking.appointmentTime) && [
+      "Appointment",
+      `${booking.appointmentDate || ""} ${booking.appointmentTime || ""}`.trim(),
+    ],
+    (booking.waitingDuration || booking.customWaitingDuration) && [
+      "Waiting",
+      formatEnum(booking.customWaitingDuration || booking.waitingDuration),
+    ],
+    (booking.returnDate || booking.returnTime) && [
+      "Return",
+      `${booking.returnDate || ""} ${booking.returnTime || ""}`.trim(),
+    ],
+  ].filter(Boolean) as string[][];
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div
+      className={`rounded-2xl p-3 text-xs ${
+        dark
+          ? "bg-white/10 text-white"
+          : "bg-blue-50 text-blue-900 border border-blue-100"
+      }`}
+    >
+      <p className="mb-2 font-black uppercase">
+        Assistance
+      </p>
+      <div className="space-y-1.5">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex justify-between gap-3">
+            <span className={dark ? "text-white/70" : "text-blue-700"}>{label}</span>
+            <span className="font-bold text-right">{value || "N/A"}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function formatEnum(value?: string | null) {
+  if (!value) return "N/A";
+  return value.replaceAll("_", " ");
 }
 
 function getNextAction(booking: Booking) {
