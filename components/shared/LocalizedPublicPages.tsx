@@ -18,6 +18,8 @@ type ServicePageProps = {
   image: string;
   accent?: "green" | "purple" | "amber" | "blue" | "pink";
   bookingHref?: string;
+  bookingLabelKey?: string;
+  bookingLabelFallback?: string;
 };
 
 const accentClasses = {
@@ -36,8 +38,12 @@ export function LocalizedServicePage({
   image,
   accent = "green",
   bookingHref = "/book",
+  bookingLabelKey,
+  bookingLabelFallback,
 }: ServicePageProps) {
   const { t } = useLanguage();
+  const bookingLabel = bookingLabelKey ? t(bookingLabelKey, bookingLabelFallback) : t("nav.book");
+  const ctaBookingLabel = bookingLabelKey ? t(bookingLabelKey, bookingLabelFallback) : t("cta.bookNow");
   const benefits = [
     ["✅", t("trust.item1.title"), t("trust.item1.desc")],
     ["♿", t("trust.item4.title"), t("trust.item4.desc")],
@@ -65,7 +71,7 @@ export function LocalizedServicePage({
               {t(descKey)}
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
-              <Link href={bookingHref} className="btn-primary">{t("nav.book")} →</Link>
+              <Link href={bookingHref} className="btn-primary">{bookingLabel} →</Link>
               <a href={WHATSAPP_URL} className="btn-outline border-white/20 text-white hover:bg-white/10">💬 {t("common.whatsapp")}</a>
             </div>
           </div>
@@ -102,7 +108,7 @@ export function LocalizedServicePage({
           <div className="container-main text-center">
             <h2 className="text-[28px] font-bold text-white mb-4">{t("cta.title")}</h2>
             <p className="text-white/50 mb-8">{t("booking.pageIntro")}</p>
-            <Link href={bookingHref} className="btn-primary text-[16px] px-10">{t("cta.bookNow")} →</Link>
+            <Link href={bookingHref} className="btn-primary text-[16px] px-10">{ctaBookingLabel} →</Link>
           </div>
         </section>
       </main>

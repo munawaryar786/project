@@ -28,7 +28,9 @@ export default function CarRentalPage() {
       descKey="services.rental.desc"
       image="https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=1920&q=80"
       accent="amber"
-      bookingHref="/contact"
+      bookingHref="/rental"
+      bookingLabelKey="rental.forDrivers"
+      bookingLabelFallback="Rental for Drivers"
     />
   );
 }

@@ -504,7 +504,7 @@ function DriverCTA() {
             <span className="pill bg-drivo-amber/20 text-drivo-amber mb-5 inline-flex">{t("home.driver.badge")}</span>
             <h2 className="text-[32px] md:text-[40px] font-extrabold text-white tracking-tight mb-5">{t("home.driver.title")}</h2>
             <p className="text-[16px] text-white/50 mb-8">{t("home.driver.desc")}</p>
-            <Link href="/car-rental" className="btn-primary">{t("services.rental.title")}</Link>
+            <Link href="/rental" className="btn-primary">{t("rental.forDrivers", "Rental for Drivers")}</Link>
           </div>
           <div className="relative h-[400px] overflow-hidden rounded-3xl shadow-elevated">
             <Image src="https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=600&q=80" alt={t("home.driver.title")} fill sizes="(min-width: 1024px) 50vw, 100vw" className="object-cover" />

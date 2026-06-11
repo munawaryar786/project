@@ -46,6 +46,8 @@ export default function RentalPortal() {
     fullName: "",
     phone: "",
     email: "",
+    password: "",
+    confirmPassword: "",
     licenseNumber: "",
     workPlatform: "Bolt",
     rentalStartDate: "",
@@ -99,6 +101,11 @@ export default function RentalPortal() {
       return;
     }
 
+    if (form.password !== form.confirmPassword) {
+      setError(t("rental.passwordMismatch", "Passwords do not match."));
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -131,6 +138,12 @@ export default function RentalPortal() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function handleSignIn(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitted(false);
+    setError(t("rental.signInUnavailable", "Rental sign in is not available yet."));
   }
 
   return (
@@ -175,6 +188,43 @@ export default function RentalPortal() {
             </div>
           </aside>
 
+          {mode === "signin" ? (
+          <form onSubmit={handleSignIn} className="space-y-6">
+            <div className="rounded-[28px] border border-drivo-border-light bg-white p-5 shadow-soft md:p-6">
+              <h2 className="mb-5 text-[18px] font-extrabold text-drivo-text">
+                {t("rental.signIn", "Sign in")}
+              </h2>
+              <div className="space-y-4">
+                <input
+                  className="input"
+                  required
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  placeholder={`${t("rental.email", "Email")} *`}
+                />
+                <input
+                  className="input"
+                  required
+                  type="password"
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  placeholder={`${t("rental.password", "Password")} *`}
+                />
+              </div>
+
+              {error && (
+                <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+                  {error}
+                </div>
+              )}
+
+              <button type="submit" className="btn-primary mt-6 w-full py-4 text-[16px]">
+                {t("rental.signIn", "Sign in")}
+              </button>
+            </div>
+          </form>
+          ) : (
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="rounded-[28px] border border-drivo-border-light bg-white p-5 shadow-soft md:p-6">
               <div className="mb-5">
@@ -221,6 +271,8 @@ export default function RentalPortal() {
                   <input className="input" required value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} placeholder={`${t("rental.fullName", "Full Name")} *`} />
                   <input className="input" required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder={`${t("rental.phone", "Phone")} *`} />
                   <input className="input" required type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={`${t("rental.email", "Email")} *`} />
+                  <input className="input" required type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={`${t("rental.password", "Password")} *`} />
+                  <input className="input" required type="password" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} placeholder={`${t("rental.confirmPassword", "Confirm Password")} *`} />
                   <input className="input" required value={form.licenseNumber} onChange={(e) => setForm({ ...form, licenseNumber: e.target.value })} placeholder={`${t("rental.licenseNumber", "License Number")} *`} />
                   <select className="input" value={form.workPlatform} onChange={(e) => setForm({ ...form, workPlatform: e.target.value })}>
                     {["Bolt", "Wolt", "Foodora", "Taxi", "Other"].map((platform) => (
@@ -242,11 +294,6 @@ export default function RentalPortal() {
                       <option key={duration} value={duration}>{t(`rental.duration.${duration}`, duration)}</option>
                     ))}
                   </select>
-                  <select className="input" value={form.weeklyRentalPlan} onChange={(e) => setForm({ ...form, weeklyRentalPlan: e.target.value })}>
-                    <option value="Weekly standard plan">{t("rental.weeklyStandard", "Weekly standard plan")}</option>
-                    <option value="Weekly long-term plan">{t("rental.weeklyLongTerm", "Weekly long-term plan")}</option>
-                  </select>
-                  <textarea className="input min-h-24 resize-none" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder={t("rental.notes", "Notes")} />
                 </div>
               </div>
             </div>
@@ -267,6 +314,7 @@ export default function RentalPortal() {
               {submitting ? t("rental.submitting", "Submitting...") : t("rental.submit", "Submit rental request")}
             </button>
           </form>
+          )}
         </div>
       </div>
     </section>
