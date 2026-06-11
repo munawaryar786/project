@@ -43,6 +43,33 @@ function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+const EDUCATIONAL_DESTINATION_TERMS = [
+  "school",
+  "college",
+  "university",
+  "educational",
+  "education",
+  "training",
+  "centre",
+  "center",
+  "institute",
+  "academy",
+  "skola",
+  "škola",
+  "gymnasium",
+  "gymnázium",
+  "univerzita",
+];
+
+function isEducationalDestination(value: string) {
+  const normalized = value.toLowerCase();
+  return EDUCATIONAL_DESTINATION_TERMS.some((term) => normalized.includes(term));
+}
+
+function getInstitutionName(address: string) {
+  return address.split(",")[0]?.trim() || "";
+}
+
 function CounterControl({
   label,
   value,
@@ -191,6 +218,11 @@ export default function BookingForm({
   const contactStepNumber = showMedicalReturnDetails ? 6 : assistedTransport ? 5 : 4;
   const childrenTransport = serviceType === "children";
   const institutionAddress = dropoffAddress.trim();
+  const selectedInstitutionName =
+    educationalInstitutionName.trim() || getInstitutionName(institutionAddress);
+  const educationalDestinationSelected = isEducationalDestination(
+    `${institutionAddress} ${selectedInstitutionName}`
+  );
 
   useEffect(() => {
     const nextLuggage: LuggageType =
@@ -533,11 +565,11 @@ useEffect(() => {
           pickupLng: resolvedPickupCoords?.lng ?? null,
           dropoffLat: resolvedDropoffCoords?.lat ?? null,
           dropoffLng: resolvedDropoffCoords?.lng ?? null,
-          scheduledDate: rideMode === "now" ? today : scheduledDate,
+          scheduledDate: childrenTransport || rideMode === "schedule" ? scheduledDate : today,
 scheduledTime:
-  rideMode === "now"
-    ? new Date().toTimeString().slice(0, 5)
-    : scheduledTime,
+  childrenTransport || rideMode === "schedule"
+    ? scheduledTime
+    : new Date().toTimeString().slice(0, 5),
           passengerCount: passengers,
           luggageType: luggageMap[luggage],
           smallBags,
@@ -567,8 +599,8 @@ scheduledTime:
           appointmentDate: assistedTransport && medicalAppointment ? appointmentDate || null : null,
           appointmentTime: assistedTransport && medicalAppointment ? appointmentTime || null : null,
           tripType: assistedTransport && medicalAppointment ? tripType : null,
-          returnDate: assistedTransport && (medicalAppointment || waitingTimeRequired) ? returnDate || null : null,
-          returnTime: assistedTransport && (medicalAppointment || waitingTimeRequired) ? returnTime || null : null,
+          returnDate: childrenTransport || (assistedTransport && (medicalAppointment || waitingTimeRequired)) ? returnDate || null : null,
+          returnTime: childrenTransport || (assistedTransport && (medicalAppointment || waitingTimeRequired)) ? returnTime || null : null,
           waitingDuration: showWaitingDuration ? waitingDuration || null : null,
           customWaitingDuration: showWaitingDuration ? customWaitingDuration.trim() || null : null,
           scheduledRide: childrenTransport,
@@ -587,8 +619,8 @@ scheduledTime:
           guardianEmergencyPhone: parentEmergencyPhone.trim() || null,
           parentEmail: parentEmail.trim() || null,
           guardianEmail: parentEmail.trim() || null,
-          educationalInstitutionName: educationalInstitutionName.trim() || null,
-          institutionName: educationalInstitutionName.trim() || null,
+          educationalInstitutionName: childrenTransport ? selectedInstitutionName || null : null,
+          institutionName: childrenTransport ? selectedInstitutionName || null : null,
           institutionAddress: childrenTransport ? institutionAddress || null : null,
           pickupDate: childrenTransport ? scheduledDate || null : null,
           pickupTime: childrenTransport ? scheduledTime || null : null,
@@ -783,8 +815,8 @@ scheduledTime:
           appointmentDate: assistedTransport && medicalAppointment ? appointmentDate : "",
           appointmentTime: assistedTransport && medicalAppointment ? appointmentTime : "",
           tripType: assistedTransport && medicalAppointment ? tripType : "",
-          returnDate: assistedTransport && (medicalAppointment || waitingTimeRequired) ? returnDate : "",
-          returnTime: assistedTransport && (medicalAppointment || waitingTimeRequired) ? returnTime : "",
+          returnDate: childrenTransport || (assistedTransport && (medicalAppointment || waitingTimeRequired)) ? returnDate : "",
+          returnTime: childrenTransport || (assistedTransport && (medicalAppointment || waitingTimeRequired)) ? returnTime : "",
           waitingDuration: showWaitingDuration ? waitingDuration : "",
           customWaitingDuration: showWaitingDuration ? customWaitingDuration : "",
           scheduledRide: childrenTransport,
@@ -803,8 +835,8 @@ scheduledTime:
           guardianEmergencyPhone: parentEmergencyPhone,
           parentEmail,
           guardianEmail: parentEmail,
-          educationalInstitutionName,
-          institutionName: educationalInstitutionName,
+          educationalInstitutionName: childrenTransport ? selectedInstitutionName : educationalInstitutionName,
+          institutionName: childrenTransport ? selectedInstitutionName : educationalInstitutionName,
           institutionAddress,
           pickupDate: scheduledDate,
           pickupTime: scheduledTime,
@@ -955,15 +987,55 @@ scheduledTime:
 
             <AddressAutocomplete
               id="dropoff"
-              label={`📍 ${t("booking.dropoff")} *`}
+              label={
+                childrenTransport
+                  ? t("booking.schoolInstitution", "School / College / University *")
+                  : `Destination: ${t("booking.dropoff")} *`
+              }
               value={dropoffAddress}
               onChange={(v) => {
                 setDropoffAddress(v);
                 setDropoffCoords(null);
+                if (childrenTransport) {
+                  setEducationalInstitutionName(getInstitutionName(v));
+                }
                 onDropoffChange?.(v);
               }}
-              placeholder={t("booking.dropoffPlaceholder")}
+              placeholder={
+                childrenTransport
+                  ? t("booking.searchEducationalInstitution", "Search educational institution")
+                  : t("booking.dropoffPlaceholder")
+              }
+              suggestionBias={childrenTransport ? "school college university training centre" : undefined}
             />
+
+            {childrenTransport && (
+              <div className="space-y-3">
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-[13px] text-amber-800">
+                  {t(
+                    "booking.childrenInstitutionValidation",
+                    "Please select a verified educational institution."
+                  )}
+                </div>
+                {institutionAddress && (
+                  <div className="rounded-2xl border border-drivo-border bg-white p-4 text-[13px]">
+                    <div className="font-bold text-drivo-text">
+                      {t("booking.institutionSummary", "Institution")}
+                    </div>
+                    <div className="mt-2 grid gap-1 text-drivo-text-secondary">
+                      <span>
+                        {t("booking.institutionName", "Institution name")}: {" "}
+                        <strong className="text-drivo-text">{selectedInstitutionName || "N/A"}</strong>
+                      </span>
+                      <span>
+                        {t("booking.institutionAddress", "Full address")}: {" "}
+                        <strong className="text-drivo-text">{institutionAddress}</strong>
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {pickupAddress && dropoffAddress && (
               <PriceEstimate
@@ -971,10 +1043,15 @@ scheduledTime:
                 dropoffAddress={dropoffAddress}
                 serviceType={serviceType}
                 passengerCount={passengers}
+                returnDate={childrenTransport ? returnDate : ""}
+                returnTime={childrenTransport ? returnTime : ""}
+                recurrenceType={childrenTransport ? recurrence : "ONE_TIME"}
+                recurrenceCustom={childrenTransport ? recurrenceCustom : ""}
                 onPriceChange={setEstimatedPrice}
               />
             )}
 
+{!childrenTransport && (
 <div className="mb-5 grid grid-cols-2 gap-2 sm:gap-3">
   <button
     type="button"
@@ -1000,8 +1077,9 @@ scheduledTime:
     📅 {t("booking.scheduleRide")}
   </button>
 </div>
+)}
 
-            {rideMode === "schedule" && (
+            {!childrenTransport && rideMode === "schedule" && (
               <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">
@@ -1050,7 +1128,7 @@ scheduledTime:
           </div>
 
           <div className="space-y-5">
-            <PassengerCounter value={passengers} onChange={setPassengers} />
+            <PassengerCounter value={passengers} onChange={setPassengers} label={childrenTransport ? t("booking.numberOfChildren", "Number of Children") : undefined} />
 
             <div className="grid sm:grid-cols-2 gap-4">
               <CounterControl
@@ -1468,38 +1546,6 @@ onChange={(e) => {
                 <input className="input" value={parentEmergencyPhone} onChange={(e) => setParentEmergencyPhone(e.target.value)} placeholder={`${t("booking.parentEmergencyPhone", "Emergency Phone")} *`} />
                 <input className="input" type="email" value={parentEmail} onChange={(e) => setParentEmail(e.target.value)} placeholder={`${t("booking.parentEmail", "Email")} *`} />
               </div>
-              <div>
-                <FieldLabel>{t("booking.schoolInstitution", "School / College / University")} *</FieldLabel>
-                <input
-                  className="input"
-                  value={educationalInstitutionName}
-                  onChange={(e) => setEducationalInstitutionName(e.target.value)}
-                  placeholder={t("booking.searchEducationalInstitution", "Search educational institution")}
-                />
-              </div>
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-[13px] text-amber-800">
-                {t(
-                  "booking.childrenInstitutionValidation",
-                  "Please select a verified school, college, university, or approved educational institution."
-                )}
-              </div>
-              {(educationalInstitutionName || institutionAddress) && (
-                <div className="rounded-2xl border border-drivo-border bg-white p-4 text-[13px]">
-                  <div className="font-bold text-drivo-text">
-                    {t("booking.institutionSummary", "Institution")}
-                  </div>
-                  <div className="mt-2 grid gap-1 text-drivo-text-secondary">
-                    <span>
-                      {t("booking.institutionName", "Institution name")}:{" "}
-                      <strong className="text-drivo-text">{educationalInstitutionName || "N/A"}</strong>
-                    </span>
-                    <span>
-                      {t("booking.institutionAddress", "Full address")}:{" "}
-                      <strong className="text-drivo-text">{institutionAddress || "N/A"}</strong>
-                    </span>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}

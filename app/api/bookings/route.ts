@@ -88,6 +88,31 @@ const BookingSchema = z.object({
   cashAgreed: z.boolean().default(false),
 });
 
+function parseScheduleDays(value: string | null | undefined) {
+  const match = value?.match(/\d+/);
+  if (!match) return null;
+  const days = Number(match[0]);
+  return Number.isFinite(days) && days > 0 ? days : null;
+}
+
+function childrenScheduleMultiplier(data: z.infer<typeof BookingSchema>) {
+  const recurrence = data.recurrence || data.recurrenceType || "ONE_TIME";
+  const customDays = parseScheduleDays(data.recurrenceCustom);
+  const serviceDays =
+    recurrence === "WEEKLY"
+      ? customDays || 5
+      : recurrence === "MONTHLY"
+        ? customDays || 20
+        : recurrence === "DAILY"
+          ? customDays || 1
+          : recurrence === "CUSTOM"
+            ? customDays || 1
+            : 1;
+  const tripLegs = data.returnDate && data.returnTime ? 2 : 1;
+
+  return serviceDays * tripLegs;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -127,6 +152,10 @@ export async function POST(request: NextRequest) {
       wheelchairNeeded: data.wheelchairNeeded || data.wheelchairUser,
       wavRequired,
     });
+    const finalEstimatedPrice =
+      data.serviceType === "CHILDREN"
+        ? parseFloat((estimate.estimatedPrice * childrenScheduleMultiplier(data)).toFixed(2))
+        : estimate.estimatedPrice;
 
     if (capacityPassengerCount > 6) {
       return NextResponse.json(
@@ -263,7 +292,7 @@ export async function POST(request: NextRequest) {
 
         sourceDomain,
 
-        estimatedPrice: estimate.estimatedPrice,
+        estimatedPrice: finalEstimatedPrice,
         distanceKm: estimate.distanceKm,
         vehicleRequired: estimate.vehicleRequired,
       },
@@ -284,7 +313,7 @@ export async function POST(request: NextRequest) {
       `🧭 Dropoff GPS:${data.dropoffLat ?? "N/A"}, ${data.dropoffLng ?? "N/A"}`
     );
     console.log(`📏 Distance:   ${estimate.distanceKm} km`);
-    console.log(`💰 Est. Price: €${estimate.estimatedPrice}`);
+    console.log(`💰 Est. Price: €${finalEstimatedPrice}`);
     console.log(`🚗 Vehicle Req:${estimate.vehicleRequired}`);
     console.log(`📅 Date:       ${data.scheduledDate} ${data.scheduledTime}`);
     console.log(`👥 Passengers: ${data.passengerCount}`);

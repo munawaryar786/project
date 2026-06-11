@@ -8,6 +8,7 @@ type PassengerCounterProps = {
   onChange: (value: number) => void;
   min?: number;
   max?: number;
+  label?: string;
 };
 
 export default function PassengerCounter({
@@ -15,13 +16,14 @@ export default function PassengerCounter({
   onChange,
   min = 1,
   max = MAX_PASSENGERS,
+  label,
 }: PassengerCounterProps) {
   const { t } = useLanguage();
 
   return (
     <div>
       <label className="text-[12px] font-semibold text-drivo-text-secondary mb-2 block">
-        👥 {t("booking.passengers")}
+        {label || t("booking.passengers")}
       </label>
 
       <div className="flex items-center gap-3">
@@ -31,7 +33,7 @@ export default function PassengerCounter({
           className="w-11 h-11 rounded-xl bg-drivo-bg-soft text-drivo-text font-medium text-lg hover:bg-drivo-border transition-colors flex items-center justify-center"
           aria-label={t("booking.decreasePassengers", "Decrease passengers")}
         >
-          −
+          -
         </button>
 
         <span className="text-[20px] font-bold text-drivo-text w-8 text-center">
