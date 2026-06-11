@@ -12,6 +12,7 @@ interface Props {
   bookingRef: string;
   bookingId: string;
   estimatedPrice?: number;
+  passengerProfile?: Record<string, unknown> | null;
   bookingData: Record<string, unknown> | null;
 }
 
@@ -21,10 +22,20 @@ export default function BookingConfirmation({
   bookingRef,
   bookingId,
   estimatedPrice,
+  passengerProfile,
   bookingData,
 }: Props) {
   const { t } = useLanguage();
   const [paying, setPaying] = useState(false);
+  const [profileHidden, setProfileHidden] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState("");
+  const [profileDone, setProfileDone] = useState(Boolean(passengerProfile?.profileCompleted));
+  const [profileForm, setProfileForm] = useState({
+    fullName: String(passengerProfile?.fullName || bookingData?.customerName || ""),
+    email: String(passengerProfile?.email || bookingData?.customerEmail || ""),
+    password: "",
+  });
 
   const handleStripePayment = async () => {
     setPaying(true);
@@ -52,6 +63,33 @@ export default function BookingConfirmation({
     } catch {
       alert(t("payment.error", "Payment error. Please try again."));
       setPaying(false);
+    }
+  };
+
+  const showProfilePrompt = Boolean(passengerProfile) && !profileDone && !profileHidden;
+
+  const handleCompleteProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileError("");
+    setProfileLoading(true);
+
+    try {
+      const res = await fetch("/api/passenger/profile/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...profileForm, bookingId }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || t("passenger.profileCompleteError"));
+      }
+
+      setProfileDone(true);
+    } catch (err) {
+      setProfileError(err instanceof Error ? err.message : t("passenger.profileCompleteError"));
+    } finally {
+      setProfileLoading(false);
     }
   };
 
@@ -216,6 +254,77 @@ export default function BookingConfirmation({
             </div>
           )}
         </div>
+
+        {showProfilePrompt && (
+          <form
+            onSubmit={handleCompleteProfile}
+            className="mb-6 rounded-2xl border border-drivo-green/20 bg-drivo-green-light/40 p-4 text-left no-print"
+          >
+            <div className="mb-4">
+              <h3 className="text-[16px] font-bold text-drivo-text">
+                {t("passenger.completePromptTitle")}
+              </h3>
+              <p className="mt-1 text-[13px] text-drivo-text-secondary">
+                {t("passenger.completePromptDesc")}
+              </p>
+              <p className="mt-2 text-[12px] font-semibold text-drivo-green">
+                {t("passenger.phoneVerified")}: {String(passengerProfile?.phone || bookingData?.customerPhone || "")}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <input
+                className="input"
+                value={profileForm.fullName}
+                onChange={(e) => setProfileForm({ ...profileForm, fullName: e.target.value })}
+                placeholder={t("passenger.fullName")}
+                required
+              />
+              <input
+                className="input"
+                type="email"
+                value={profileForm.email}
+                onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
+                placeholder={t("passenger.email")}
+                required
+              />
+              <input
+                className="input"
+                type="password"
+                value={profileForm.password}
+                onChange={(e) => setProfileForm({ ...profileForm, password: e.target.value })}
+                placeholder={t("passenger.password")}
+                minLength={8}
+                required
+              />
+            </div>
+
+            {profileError && (
+              <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] font-semibold text-red-700">
+                {profileError}
+              </div>
+            )}
+
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <button type="submit" disabled={profileLoading} className="btn-primary flex-1 justify-center">
+                {profileLoading ? t("passenger.saving") : t("passenger.completeProfile")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setProfileHidden(true)}
+                className="btn-outline flex-1 justify-center"
+              >
+                {t("passenger.skipProfile")}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {profileDone && passengerProfile && (
+          <div className="mb-6 rounded-2xl border border-green-200 bg-green-50 p-4 text-left text-[13px] font-semibold text-green-700 no-print">
+            {t("passenger.profileCompleted")}
+          </div>
+        )}
 
         <div className="space-y-3 no-print">
           {paymentMethod === "card" && (

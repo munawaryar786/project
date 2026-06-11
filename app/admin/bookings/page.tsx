@@ -89,6 +89,14 @@ interface Booking {
 
   driverId?: string | null;
   driver?: Driver | null;
+  passenger?: {
+    id: string;
+    fullName?: string | null;
+    phone: string;
+    phoneVerified: boolean;
+    email?: string | null;
+    bookings?: { id: string }[];
+  } | null;
 
   acceptedAt?: string | null;
   createdAt: string;
@@ -988,6 +996,15 @@ function BookingPanel({
             }
           />
         </Section>
+
+        {booking.passenger && (
+          <Section title="Passenger Account">
+            <Info label="Passenger Name" value={booking.passenger.fullName || "N/A"} />
+            <Info label="Phone Verified" value={yesNo(booking.passenger.phoneVerified)} />
+            <Info label="Email" value={booking.passenger.email || "N/A"} />
+            <Info label="Total Bookings" value={String(booking.passenger.bookings?.length || 0)} />
+          </Section>
+        )}
 
         <Section title="Trip">
           <Info

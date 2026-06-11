@@ -101,6 +101,9 @@ model Booking {
   distanceKm      Float?
   vehicleRequired String? @default("STANDARD")
 
+  passengerId String? @db.ObjectId
+  passenger   Passenger? @relation(fields: [passengerId], references: [id])
+
   driverId String? @db.ObjectId
   driver   Driver? @relation(fields: [driverId], references: [id])
 
@@ -114,9 +117,50 @@ model Booking {
   earning DriverEarning?
 
   @@index([status])
+  @@index([passengerId])
   @@index([driverId])
   @@index([dispatchStatus])
   @@index([createdAt])
+}
+
+// ============================================
+// PASSENGERS
+// ============================================
+model Passenger {
+  id               String @id @default(auto()) @map("_id") @db.ObjectId
+  phone            String @unique
+  phoneVerified    Boolean @default(false)
+  fullName         String?
+  email            String?
+  passwordHash     String?
+  profileCompleted Boolean @default(false)
+
+  bookings Booking[]
+  otps     PassengerOtp[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([phoneVerified])
+}
+
+model PassengerOtp {
+  id          String @id @default(auto()) @map("_id") @db.ObjectId
+  code        String
+  phone       String
+  expiresAt   DateTime
+  used        Boolean @default(false)
+
+  passengerId String @db.ObjectId
+  passenger   Passenger @relation(fields: [passengerId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([passengerId, code])
+  @@index([phone, code])
+  @@index([expiresAt])
+  @@map("passenger_otps")
 }
 
 // ============================================

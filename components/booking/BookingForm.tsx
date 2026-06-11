@@ -167,6 +167,7 @@ export default function BookingForm({
   const [bookingRef, setBookingRef] = useState("");
   const [devOtp, setDevOtp] = useState<string | undefined>(undefined);
   const [estimatedPrice, setEstimatedPrice] = useState<number | undefined>();
+  const [passengerProfile, setPassengerProfile] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -271,6 +272,22 @@ useEffect(() => {
     localStorage.removeItem("drivo_booking_draft");
   }
 }, []);
+
+  useEffect(() => {
+    fetch("/api/passenger/me", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data?.passenger) return;
+        setPassengerProfile(data.passenger);
+        if (!customerName && data.passenger.fullName) {
+          setCustomerName(data.passenger.fullName);
+        }
+        if (!customerEmail && data.passenger.email) {
+          setCustomerEmail(data.passenger.email);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const serviceMap: Record<string, string> = {
     standard: "STANDARD",
@@ -674,6 +691,10 @@ scheduledTime:
       throw new Error(readError(data, "OTP verification failed"));
     }
 
+    if (isRecord(data) && isRecord(data.passenger)) {
+      setPassengerProfile(data.passenger);
+    }
+
     setStep(3);
   };
 
@@ -733,6 +754,7 @@ scheduledTime:
         bookingRef={bookingRef}
         bookingId={bookingId}
         estimatedPrice={estimatedPrice}
+        passengerProfile={passengerProfile}
         bookingData={{
           serviceType,
           pickupAddress,

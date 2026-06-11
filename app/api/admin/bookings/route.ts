@@ -18,7 +18,16 @@ export async function GET() {
   try {
     const bookings = await prisma.booking.findMany({
       orderBy: { createdAt: "desc" },
-      include: { driver: true },
+      include: {
+        driver: true,
+        passenger: {
+          include: {
+            bookings: {
+              select: { id: true },
+            },
+          },
+        },
+      },
       take: 100,
     });
 

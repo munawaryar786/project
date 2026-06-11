@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { bookingToEmailData, sendBookingCompletionEmails } from "@/lib/email";
+import {
+  createPassengerSession,
+  publicPassenger,
+  setPassengerCookie,
+} from "@/lib/passenger-auth";
 
 /**
  * POST /api/otp/verify — Verify OTP code
@@ -48,10 +53,42 @@ export async function POST(request: NextRequest) {
     });
 
     // Mark booking as phone verified
-    const booking = await prisma.booking.update({
+    let booking = await prisma.booking.update({
       where: { id: bookingId },
       data: { phoneVerified: true },
     });
+
+    const passengerPhone = `${booking.customerPhoneCode}${booking.customerPhone}`;
+    let passenger = await prisma.passenger.findUnique({
+      where: { phone: passengerPhone },
+    });
+
+    if (!passenger) {
+      passenger = await prisma.passenger.create({
+        data: {
+          phone: passengerPhone,
+          phoneVerified: true,
+          fullName: booking.customerName || null,
+          email: null,
+          profileCompleted: false,
+        },
+      });
+    } else {
+      passenger = await prisma.passenger.update({
+        where: { id: passenger.id },
+        data: {
+          phoneVerified: true,
+          fullName: passenger.fullName || booking.customerName || null,
+        },
+      });
+    }
+
+    if (booking.passengerId !== passenger.id) {
+      booking = await prisma.booking.update({
+        where: { id: bookingId },
+        data: { passengerId: passenger.id },
+      });
+    }
 
     console.log("═══════════════════════════════════════");
     console.log("✅ OTP VERIFIED — DATABASE UPDATED ✅");
@@ -89,14 +126,19 @@ try {
       await sendBookingCompletionEmails(bookingToEmailData(booking));
     }
 
-    return NextResponse.json(
+    const token = await createPassengerSession(passenger);
+    const response = NextResponse.json(
       {
         success: true,
         verified: true,
         message: "Phone verified successfully",
+        passenger: publicPassenger(passenger),
       },
       { status: 200 }
     );
+    setPassengerCookie(response, token);
+
+    return response;
   } catch (error) {
     console.error("❌ OTP verify error:", error);
     return NextResponse.json(
