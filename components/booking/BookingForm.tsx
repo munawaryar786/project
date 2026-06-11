@@ -189,6 +189,7 @@ export default function BookingForm({
   const [parentEmergencyPhone, setParentEmergencyPhone] = useState("");
   const [parentEmail, setParentEmail] = useState("");
   const [educationalInstitutionName, setEducationalInstitutionName] = useState("");
+  const [institutionSuggestionSelected, setInstitutionSuggestionSelected] = useState(false);
 
   const [bookingId, setBookingId] = useState("");
   const [bookingRef, setBookingRef] = useState("");
@@ -248,6 +249,14 @@ export default function BookingForm({
       setCashAgreed(false);
     }
   }, [childrenTransport, paymentMethod]);
+
+  useEffect(() => {
+    if (childrenTransport) {
+      setSmallBags(0);
+      setLargeBags(0);
+      setLuggage("none");
+    }
+  }, [childrenTransport]);
 
   useEffect(() => {
     if (!seniorPassenger) setAssistanceLevel("");
@@ -499,6 +508,12 @@ useEffect(() => {
       return "Please enter custom waiting duration.";
     }
     if (childrenTransport) {
+      if (!institutionSuggestionSelected) {
+        return t(
+          "booking.childrenInstitutionValidation",
+          "Please select a verified educational institution."
+        );
+      }
       const destinationText = `${dropoffAddress} ${educationalInstitutionName}`.toLowerCase();
       const educationDestination = ["school", "college", "university", "educational", "education", "training", "institute", "skola", "škola", "gymnasium", "academy"].some((term) =>
         destinationText.includes(term)
@@ -514,7 +529,7 @@ useEffect(() => {
       if (!parentPrimaryPhone.trim()) return "Parent primary phone is required.";
       if (!parentEmergencyPhone.trim()) return "Emergency phone is required.";
       if (!parentEmail.trim() || !isValidEmail(parentEmail.trim())) return "Valid parent email is required.";
-      if (!educationDestination) {
+      if (!institutionSuggestionSelected && !educationDestination) {
         return t(
           "booking.childrenInstitutionValidation",
           "Please select a verified school, college, university, or approved educational institution."
@@ -624,21 +639,7 @@ scheduledTime:
           institutionAddress: childrenTransport ? institutionAddress || null : null,
           pickupDate: childrenTransport ? scheduledDate || null : null,
           pickupTime: childrenTransport ? scheduledTime || null : null,
-          educationalDestinationValidated: [
-            "school",
-            "college",
-            "university",
-            "educational",
-            "education",
-            "training",
-            "institute",
-            "skola",
-            "škola",
-            "gymnasium",
-            "academy",
-          ].some((term) =>
-            `${dropoffAddress} ${educationalInstitutionName}`.toLowerCase().includes(term)
-          ),
+          educationalDestinationValidated: childrenTransport ? institutionSuggestionSelected : false,
           flightNumber: flightNumber.trim() || null,
           airline: airline.trim() || null,
           waitAndGreet,
@@ -998,8 +999,15 @@ scheduledTime:
                 setDropoffCoords(null);
                 if (childrenTransport) {
                   setEducationalInstitutionName(getInstitutionName(v));
+                  setInstitutionSuggestionSelected(false);
                 }
                 onDropoffChange?.(v);
+              }}
+              onSelect={(v) => {
+                if (childrenTransport) {
+                  setEducationalInstitutionName(getInstitutionName(v));
+                  setInstitutionSuggestionSelected(true);
+                }
               }}
               placeholder={
                 childrenTransport
@@ -1037,7 +1045,7 @@ scheduledTime:
               </div>
             )}
 
-            {pickupAddress && dropoffAddress && (
+            {!childrenTransport && pickupAddress && dropoffAddress && (
               <PriceEstimate
                 pickupAddress={pickupAddress}
                 dropoffAddress={dropoffAddress}
@@ -1119,7 +1127,9 @@ scheduledTime:
             </span>
             <div>
               <h3 className="font-bold text-drivo-text text-[16px]">
-                {t("booking.passengers")} & {t("booking.luggage")}
+                {childrenTransport
+                  ? t("booking.numberOfChildren", "Number of Children")
+                  : `${t("booking.passengers")} & ${t("booking.luggage")}`}
               </h3>
               <p className="text-[12px] text-drivo-text-muted">
                 {t("booking.vehicleMatching", "Vehicle matching")}
@@ -1130,6 +1140,7 @@ scheduledTime:
           <div className="space-y-5">
             <PassengerCounter value={passengers} onChange={setPassengers} label={childrenTransport ? t("booking.numberOfChildren", "Number of Children") : undefined} />
 
+            {!childrenTransport && (
             <div className="grid sm:grid-cols-2 gap-4">
               <CounterControl
                 label={`🧳 ${t("booking.smallBags", "Small bags")}`}
@@ -1142,7 +1153,9 @@ scheduledTime:
                 onChange={setLargeBags}
               />
             </div>
+            )}
 
+            {!childrenTransport && (
             <div className="rounded-2xl bg-drivo-bg-soft p-4 text-[13px] text-drivo-text-secondary">
               {t("booking.capacitySummary", "Capacity")}:
               <span className="font-bold text-drivo-text">
@@ -1157,8 +1170,9 @@ scheduledTime:
                 </span>
               )}
             </div>
+            )}
 
-            {largerVehicleRecommended && (
+            {!childrenTransport && largerVehicleRecommended && (
               <div className="p-4 bg-drivo-amber-light border border-amber-300 rounded-2xl animate-fade-in">
                 <p className="text-[13px] font-semibold text-amber-800">
                   {t("booking.largerVehicleRecommended", "Larger vehicle recommended")}
@@ -1199,6 +1213,7 @@ scheduledTime:
               </div>
             </div>
 
+            {!childrenTransport && (
             <LuggageWarning
               passengers={capacityPassengerCount}
               luggage={luggage}
@@ -1207,6 +1222,7 @@ scheduledTime:
                 setPassengers(Math.min(5, passengers));
               }}
             />
+            )}
 
             <div className="hidden p-4 bg-drivo-purple-light/50 rounded-2xl">
               <div className="flex items-center justify-between">
@@ -1535,6 +1551,19 @@ onChange={(e) => {
                   </div>
                 )}
               </div>
+              {pickupAddress && dropoffAddress && scheduledDate && scheduledTime && recurrence && (
+                <PriceEstimate
+                  pickupAddress={pickupAddress}
+                  dropoffAddress={dropoffAddress}
+                  serviceType={serviceType}
+                  passengerCount={passengers}
+                  returnDate={returnDate}
+                  returnTime={returnTime}
+                  recurrenceType={recurrence}
+                  recurrenceCustom={recurrenceCustom}
+                  onPriceChange={setEstimatedPrice}
+                />
+              )}
               <div className="grid sm:grid-cols-2 gap-4">
                 <input className="input" value={childFullName} onChange={(e) => setChildFullName(e.target.value)} placeholder={`${t("booking.childFullName", "Child Full Name")} *`} />
                 <input className="input" type="number" min="0" max="18" value={childAge} onChange={(e) => setChildAge(e.target.value)} placeholder={`${t("booking.childAge", "Child Age")} *`} />

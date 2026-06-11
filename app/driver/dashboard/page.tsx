@@ -1138,6 +1138,8 @@ function ChildrenTransportSummary({
   if (!booking || (booking.serviceType !== "CHILDREN" && !booking.scheduledRide)) return null;
 
   const rows = [
+    ["Pickup address", booking.pickupAddress || "N/A"],
+    ["Number of children", String(booking.passengerCount || 0)],
     ["Child", `${booking.childName || booking.childFullName || "N/A"}${booking.childAge !== null && booking.childAge !== undefined ? `, ${booking.childAge}` : ""}`],
     ["Guardian", booking.guardianName || booking.parentFullName || "N/A"],
     ["Primary phone", booking.guardianPhone || booking.parentPrimaryPhone || "N/A"],
@@ -1146,6 +1148,7 @@ function ChildrenTransportSummary({
     ["Institution address", booking.institutionAddress || booking.dropoffAddress || "N/A"],
     ["Pickup", `${booking.pickupDate || booking.scheduledDate || ""} ${booking.pickupTime || booking.scheduledTime || ""}`.trim()],
     ["Return", `${booking.returnDate || ""} ${booking.returnTime || ""}`.trim() || "N/A"],
+    ["Return pickup time", booking.returnTime || "N/A"],
     ["Recurrence", formatEnum(booking.recurrenceType || booking.recurrence)],
     booking.childSpecialRequirements && ["Special requirements", booking.childSpecialRequirements],
   ].filter(Boolean) as string[][];

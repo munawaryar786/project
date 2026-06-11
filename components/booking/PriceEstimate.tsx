@@ -18,9 +18,12 @@ interface PriceEstimate {
   distanceKm: number;
   durationMinutes: number;
   oneWayPrice: number;
+  ratePerKm: number;
   estimatedPrice: number;
   breakdown: string;
 }
+
+const CHILDREN_KM_RATE = 1.5;
 
 const scheduleLabels: Record<string, string> = {
   ONE_TIME: "One Time",
@@ -40,9 +43,9 @@ function parseCustomDays(value: string) {
 function estimateServiceDays(recurrenceType: string, recurrenceCustom: string) {
   const customDays = parseCustomDays(recurrenceCustom);
 
+  if (recurrenceType === "DAILY") return customDays || 5;
   if (recurrenceType === "WEEKLY") return customDays || 5;
   if (recurrenceType === "MONTHLY") return customDays || 20;
-  if (recurrenceType === "DAILY") return customDays || 1;
   if (recurrenceType === "CUSTOM") return customDays || 1;
   return 1;
 }
@@ -97,13 +100,17 @@ export default function PriceEstimate({
         const data = await response.json();
 
         if (data.success) {
-          const oneWayPrice = Number(data.pricing.estimatedPrice);
+          const distanceKm = Number(data.distance.km);
+          const oneWayPrice = isChildrenTransport
+            ? Number((distanceKm * CHILDREN_KM_RATE * passengerCount).toFixed(2))
+            : Number(data.pricing.estimatedPrice);
           const displayedPrice = Number((oneWayPrice * childMultiplier).toFixed(2));
 
           setEstimate({
-            distanceKm: data.distance.km,
+            distanceKm,
             durationMinutes: data.distance.duration,
             oneWayPrice,
+            ratePerKm: isChildrenTransport ? CHILDREN_KM_RATE : 0,
             estimatedPrice: displayedPrice,
             breakdown: data.pricing.breakdown,
           });
@@ -168,7 +175,15 @@ export default function PriceEstimate({
         {isChildrenTransport && (
           <>
             <div className="flex items-center justify-between gap-3">
-              <span>One-way trip price</span>
+              <span>Rate per km</span>
+              <span className="font-semibold text-drivo-text">EUR {estimate.ratePerKm.toFixed(2)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span>Number of children</span>
+              <span className="font-semibold text-drivo-text">{passengerCount}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span>One-way child route price</span>
               <span className="font-semibold text-drivo-text">EUR {estimate.oneWayPrice.toFixed(2)}</span>
             </div>
             <div className="flex items-center justify-between gap-3">
@@ -184,7 +199,7 @@ export default function PriceEstimate({
               <span className="font-semibold text-drivo-text">{serviceDays}</span>
             </div>
             <div className="rounded-xl bg-white/70 p-3 text-[11px] text-drivo-text-secondary">
-              Total = one-way route price {returnIncluded ? "x 2 for return" : "x 1"} x {serviceDays} service day{serviceDays === 1 ? "" : "s"}.
+              Total = {estimate.distanceKm} km x EUR {estimate.ratePerKm.toFixed(2)} x {passengerCount} child{passengerCount === 1 ? "" : "ren"} {returnIncluded ? "x 2 return legs" : "x 1 outbound leg"} x {serviceDays} service day{serviceDays === 1 ? "" : "s"}.
             </div>
           </>
         )}

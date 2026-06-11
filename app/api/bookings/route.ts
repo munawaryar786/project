@@ -88,6 +88,8 @@ const BookingSchema = z.object({
   cashAgreed: z.boolean().default(false),
 });
 
+const CHILDREN_KM_RATE = 1.5;
+
 function parseScheduleDays(value: string | null | undefined) {
   const match = value?.match(/\d+/);
   if (!match) return null;
@@ -104,7 +106,7 @@ function childrenScheduleMultiplier(data: z.infer<typeof BookingSchema>) {
       : recurrence === "MONTHLY"
         ? customDays || 20
         : recurrence === "DAILY"
-          ? customDays || 1
+          ? customDays || 5
           : recurrence === "CUSTOM"
             ? customDays || 1
             : 1;
@@ -154,7 +156,7 @@ export async function POST(request: NextRequest) {
     });
     const finalEstimatedPrice =
       data.serviceType === "CHILDREN"
-        ? parseFloat((estimate.estimatedPrice * childrenScheduleMultiplier(data)).toFixed(2))
+        ? parseFloat((estimate.distanceKm * CHILDREN_KM_RATE * data.passengerCount * childrenScheduleMultiplier(data)).toFixed(2))
         : estimate.estimatedPrice;
 
     if (capacityPassengerCount > 6) {

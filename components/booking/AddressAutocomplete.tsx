@@ -8,6 +8,7 @@ interface AddressAutocompleteProps {
   label: string;
   id: string;
   suggestionBias?: string;
+  onSelect?: (value: string) => void;
 }
 
 export default function AddressAutocomplete({
@@ -17,6 +18,7 @@ export default function AddressAutocomplete({
   label,
   id,
   suggestionBias,
+  onSelect,
 }: AddressAutocompleteProps) {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -32,7 +34,8 @@ export default function AddressAutocomplete({
     const timer = setTimeout(async () => {
       try {
         const query = suggestionBias ? `${value} ${suggestionBias}` : value;
-        const response = await fetch(`/api/addresses/suggest?q=${encodeURIComponent(query)}`);
+        const educationalParam = suggestionBias ? "&educational=1" : "";
+        const response = await fetch(`/api/addresses/suggest?q=${encodeURIComponent(query)}${educationalParam}`);
         const data = await response.json();
         
         if (data.success) {
@@ -51,6 +54,7 @@ export default function AddressAutocomplete({
 
   const handleSelect = (suggestion: string) => {
     onChange(suggestion);
+    onSelect?.(suggestion);
     setShowSuggestions(false);
     setSuggestions([]);
   };

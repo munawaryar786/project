@@ -1039,6 +1039,18 @@ function BookingPanel({
 
         {(booking.serviceType === "CHILDREN" || booking.scheduledRide) && (
           <Section title="Children Transport">
+            <Info label="Service" value="Children Transport" />
+            <Info label="Pickup Address" value={booking.pickupAddress || "N/A"} />
+            <Info label="School / College / University Name" value={booking.institutionName || booking.educationalInstitutionName || "N/A"} />
+            <Info label="School Full Address" value={booking.institutionAddress || booking.dropoffAddress || "N/A"} />
+            <Info label="Number of Children" value={String(booking.passengerCount || 0)} />
+            <Info label="Pickup Date" value={booking.pickupDate || booking.scheduledDate || "N/A"} />
+            <Info label="Pickup Time" value={booking.pickupTime || booking.scheduledTime || "N/A"} />
+            <Info label="Return Date" value={booking.returnDate || "N/A"} />
+            <Info label="Return Time" value={booking.returnTime || "N/A"} />
+            <Info label="Recurrence Type" value={formatValue(booking.recurrenceType || booking.recurrence)} />
+            <Info label="Estimated Service Days" value={String(getChildrenServiceDays(booking))} />
+            <Info label="Children Price Breakdown" value={getChildrenPriceBreakdown(booking)} />
             <Info label="Child Name" value={booking.childName || booking.childFullName || "N/A"} />
             <Info label="Age" value={booking.childAge === null || booking.childAge === undefined ? "N/A" : String(booking.childAge)} />
             <Info label="Special Requirements" value={booking.childSpecialRequirements || "N/A"} />
@@ -1052,6 +1064,7 @@ function BookingPanel({
             <Info label="Return Schedule" value={`${booking.returnDate || ""} ${booking.returnTime || ""}`.trim() || "N/A"} />
             <Info label="Recurrence" value={formatValue(booking.recurrenceType || booking.recurrence)} />
             <Info label="Custom Recurrence" value={booking.recurrenceCustom || "N/A"} />
+            <Info label="Payment Method" value={formatValue(booking.paymentMethod)} />
           </Section>
         )}
 
@@ -1287,6 +1300,36 @@ function yesNo(value: unknown) {
 function formatValue(value: unknown) {
   if (value === null || value === undefined || value === "") return "N/A";
   return String(value).replaceAll("_", " ");
+}
+
+const CHILDREN_KM_RATE = 1.5;
+
+function parseChildrenDays(value?: string | null) {
+  const match = value?.match(/\d+/);
+  if (!match) return null;
+  const days = Number(match[0]);
+  return Number.isFinite(days) && days > 0 ? days : null;
+}
+
+function getChildrenServiceDays(booking: Booking) {
+  const recurrence = booking.recurrenceType || booking.recurrence || "ONE_TIME";
+  const customDays = parseChildrenDays(booking.recurrenceCustom);
+
+  if (recurrence === "DAILY") return customDays || 5;
+  if (recurrence === "WEEKLY") return customDays || 5;
+  if (recurrence === "MONTHLY") return customDays || 20;
+  if (recurrence === "CUSTOM") return customDays || 1;
+  return 1;
+}
+
+function getChildrenPriceBreakdown(booking: Booking) {
+  const distance = Number(booking.distanceKm || 0);
+  const children = Number(booking.passengerCount || 0);
+  const serviceDays = getChildrenServiceDays(booking);
+  const returnLegs = booking.returnDate && booking.returnTime ? 2 : 1;
+  const total = Number(booking.estimatedPrice || 0);
+
+  return `${distance} km x EUR ${CHILDREN_KM_RATE.toFixed(2)} x ${children} children x ${returnLegs} trip leg${returnLegs === 1 ? "" : "s"} x ${serviceDays} service day${serviceDays === 1 ? "" : "s"} = EUR ${total.toFixed(2)}`;
 }
 
 function StatusBadge({

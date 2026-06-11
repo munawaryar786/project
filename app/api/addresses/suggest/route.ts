@@ -8,6 +8,7 @@ import { getAddressSuggestions } from "@/lib/google-maps";
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get("q");
+  const educational = searchParams.get("educational") === "1";
 
   if (!query || query.length < 3) {
     return NextResponse.json(
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const suggestions = await getAddressSuggestions(query);
+    const suggestions = await getAddressSuggestions(query, educational);
 
     return NextResponse.json({
       success: true,

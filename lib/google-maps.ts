@@ -127,7 +127,7 @@ export async function geocodeAddress(address: string): Promise<GeocodeResult> {
  * @param input - Partial address input
  * @returns Array of address suggestions
  */
-export async function getAddressSuggestions(input: string): Promise<string[]> {
+export async function getAddressSuggestions(input: string, educational = false): Promise<string[]> {
   if (!GOOGLE_MAPS_API_KEY) {
     console.error("❌ Google Maps not configured");
     return [];
@@ -135,7 +135,8 @@ export async function getAddressSuggestions(input: string): Promise<string[]> {
 
   try {
     // Use direct fetch to Google Places Autocomplete API
-    const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&key=${GOOGLE_MAPS_API_KEY}&types=geocode&components=country:sk`;
+    const type = educational ? "establishment" : "geocode";
+    const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&key=${GOOGLE_MAPS_API_KEY}&types=${type}&components=country:sk`;
     
     const response = await fetch(url);
     const data = await response.json();
