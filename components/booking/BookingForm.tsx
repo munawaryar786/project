@@ -1378,22 +1378,83 @@ onChange={(e) => {
               </div>
             </div>
             <div className="space-y-4">
-              <div className="grid sm:grid-cols-2 gap-4">
-                <input className="input" type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} min={today} />
-                <input className="input" type="time" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} />
-                <input className="input" type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} min={scheduledDate || today} />
-                <input className="input" type="time" value={returnTime} onChange={(e) => setReturnTime(e.target.value)} />
+              <div className="space-y-3 rounded-2xl border border-drivo-border-light bg-drivo-bg-soft/60 p-4">
+                <h4 className="text-[13px] font-bold text-drivo-text">
+                  {t("booking.schoolDropoff", "School Drop-off")}
+                </h4>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <FieldLabel>{t("booking.pickupDate", "Pickup Date")} *</FieldLabel>
+                    <input
+                      className="input"
+                      type="date"
+                      value={scheduledDate}
+                      onChange={(e) => setScheduledDate(e.target.value)}
+                      min={today}
+                      placeholder={t("booking.selectPickupDate", "Select pickup date")}
+                      title={t("booking.selectPickupDate", "Select pickup date")}
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>{t("booking.pickupTime", "Pickup Time")} *</FieldLabel>
+                    <input
+                      className="input"
+                      type="time"
+                      value={scheduledTime}
+                      onChange={(e) => setScheduledTime(e.target.value)}
+                      placeholder={t("booking.selectPickupTime", "Select pickup time")}
+                      title={t("booking.selectPickupTime", "Select pickup time")}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3 rounded-2xl border border-drivo-border-light bg-drivo-bg-soft/60 p-4">
+                <h4 className="text-[13px] font-bold text-drivo-text">
+                  {t("booking.schoolReturn", "School Pick-up / Return")}
+                </h4>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <FieldLabel>{t("booking.returnDate", "Return Date")} *</FieldLabel>
+                    <input
+                      className="input"
+                      type="date"
+                      value={returnDate}
+                      onChange={(e) => setReturnDate(e.target.value)}
+                      min={scheduledDate || today}
+                      placeholder={t("booking.selectReturnDate", "Select return date")}
+                      title={t("booking.selectReturnDate", "Select return date")}
+                    />
+                  </div>
+                  <div>
+                    <FieldLabel>{t("booking.returnTime", "Return Time")} *</FieldLabel>
+                    <input
+                      className="input"
+                      type="time"
+                      value={returnTime}
+                      onChange={(e) => setReturnTime(e.target.value)}
+                      placeholder={t("booking.selectReturnTime", "Select return time")}
+                      title={t("booking.selectReturnTime", "Select return time")}
+                    />
+                  </div>
+                </div>
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
-                <select value={recurrence} onChange={(e) => setRecurrence(e.target.value as RecurrenceType)} className="input">
-                  <option value="ONE_TIME">{t("booking.recurrenceOneTime", "One Time")}</option>
-                  <option value="DAILY">{t("booking.recurrenceDaily", "Daily")}</option>
-                  <option value="WEEKLY">{t("booking.recurrenceWeekly", "Weekly")}</option>
-                  <option value="MONTHLY">{t("booking.recurrenceMonthly", "Monthly")}</option>
-                  <option value="CUSTOM">{t("booking.waitCustom", "Custom")}</option>
-                </select>
+                <div>
+                  <FieldLabel>{t("booking.recurrenceType", "Recurrence")}</FieldLabel>
+                  <select value={recurrence} onChange={(e) => setRecurrence(e.target.value as RecurrenceType)} className="input">
+                    <option value="ONE_TIME">{t("booking.recurrenceOneTime", "One Time")}</option>
+                    <option value="DAILY">{t("booking.recurrenceDaily", "Daily")}</option>
+                    <option value="WEEKLY">{t("booking.recurrenceWeekly", "Weekly")}</option>
+                    <option value="MONTHLY">{t("booking.recurrenceMonthly", "Monthly")}</option>
+                    <option value="CUSTOM">{t("booking.waitCustom", "Custom")}</option>
+                  </select>
+                </div>
                 {recurrence === "CUSTOM" && (
-                  <input className="input" value={recurrenceCustom} onChange={(e) => setRecurrenceCustom(e.target.value)} placeholder={t("booking.recurrenceCustom", "Custom recurrence")} />
+                  <div>
+                    <FieldLabel>{t("booking.recurrenceCustom", "Custom recurrence")}</FieldLabel>
+                    <input className="input" value={recurrenceCustom} onChange={(e) => setRecurrenceCustom(e.target.value)} placeholder={t("booking.recurrenceCustom", "Custom recurrence")} />
+                  </div>
                 )}
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
@@ -1407,7 +1468,15 @@ onChange={(e) => {
                 <input className="input" value={parentEmergencyPhone} onChange={(e) => setParentEmergencyPhone(e.target.value)} placeholder={`${t("booking.parentEmergencyPhone", "Emergency Phone")} *`} />
                 <input className="input" type="email" value={parentEmail} onChange={(e) => setParentEmail(e.target.value)} placeholder={`${t("booking.parentEmail", "Email")} *`} />
               </div>
-              <input className="input" value={educationalInstitutionName} onChange={(e) => setEducationalInstitutionName(e.target.value)} placeholder={t("booking.educationalInstitution", "School, college, university or approved educational institution")} />
+              <div>
+                <FieldLabel>{t("booking.schoolInstitution", "School / College / University")} *</FieldLabel>
+                <input
+                  className="input"
+                  value={educationalInstitutionName}
+                  onChange={(e) => setEducationalInstitutionName(e.target.value)}
+                  placeholder={t("booking.searchEducationalInstitution", "Search educational institution")}
+                />
+              </div>
               <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-[13px] text-amber-800">
                 {t(
                   "booking.childrenInstitutionValidation",
