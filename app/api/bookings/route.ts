@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import{Prisma} from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { generateBookingRef, getSourceDomain } from "@/lib/utils";
@@ -315,11 +316,11 @@ export async function POST(request: NextRequest) {
         fareBaseFare: isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.baseFare) : null,
         fareDistanceCharge: isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.distanceCharge) : null,
         fareWaitingCharge: isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.waitingCharge) : null,
-        fareOptionalFees: optionalFees,
+        fareOptionalFees: optionalFees as Prisma.InputJsonValue,
         fareNightCharge: isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.nightServiceCharge) : null,
         fareMinimumAdjustment: isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.minimumFareAdjustment) : null,
         fareTotalFare: isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.totalFare) : finalEstimatedPrice,
-        fareBreakdown: isRecord(data.fareBreakdown) ? data.fareBreakdown : undefined,
+        fareBreakdown: isRecord(data.fareBreakdown) ? (data.fareBreakdown as Prisma.InputJsonValue) : undefined,
       },
     });
 
