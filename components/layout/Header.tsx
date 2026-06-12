@@ -210,8 +210,8 @@ export default function Header({ forceSolid = false }: { forceSolid?: boolean })
       </div>
 
       {open && (
-  <div className="fixed inset-0 z-[9999] bg-[linear-gradient(180deg,#051d31_0%,#08263b_100%)] lg:hidden">
-    <div className="sticky top-0 z-[10000] border-b border-white/10 bg-[#051d31]/95 px-5 backdrop-blur-md">
+  <div className="fixed inset-0 z-[9999] h-[100dvh] w-screen bg-[#061D2B] lg:hidden">
+    <div className="sticky top-0 z-[10000] border-b border-white/10 bg-[#061D2B] px-5">
       <div className="container-main flex h-[78px] items-center justify-between gap-3 px-0">
         <Link href="/" aria-label="Drivo home" onClick={() => setOpen(false)} className="flex shrink-0 items-center">
           <BrandLogo variant="light" className="h-12 w-36" />
@@ -235,7 +235,7 @@ export default function Header({ forceSolid = false }: { forceSolid?: boolean })
 
     <div className="max-h-[calc(100vh-78px)] overflow-y-auto overscroll-contain px-5 pb-28 pt-5">
     <div className="container-main space-y-3 px-0">
-      <div className="grid gap-2 rounded-[28px] border border-white/10 bg-white/6 p-3 backdrop-blur-sm">
+      <div className="grid gap-2 rounded-[28px] border border-white/10 bg-[#08263B] p-3">
         {SERVICES.map((service) => (
           <Link
             key={service.href}
@@ -254,7 +254,7 @@ export default function Header({ forceSolid = false }: { forceSolid?: boolean })
         ))}
       </div>
 
-      <div className="grid gap-2 rounded-[28px] border border-white/10 bg-white/6 p-3 backdrop-blur-sm">
+      <div className="grid gap-2 rounded-[28px] border border-white/10 bg-[#08263B] p-3">
         {NAV_LINKS.map((link) => (
           <Link
             key={link.href}
@@ -282,7 +282,7 @@ export default function Header({ forceSolid = false }: { forceSolid?: boolean })
         </Link>
       </div>
 
-      <div className="mt-4 flex flex-col gap-3 rounded-[28px] border border-white/10 bg-[#061f33]/95 p-3 pb-6 backdrop-blur-md">
+      <div className="mt-4 flex flex-col gap-3 rounded-[28px] border border-white/10 bg-[#061F33] p-3 pb-6">
         <Link
           href="/driver/login"
           onClick={() => setOpen(false)}
