@@ -210,7 +210,30 @@ export default function Header({ forceSolid = false }: { forceSolid?: boolean })
       </div>
 
       {open && (
-  <div className="fixed inset-0 z-[9999] overflow-y-auto overscroll-contain border-t border-white/10 bg-[linear-gradient(180deg,#051d31_0%,#08263b_100%)] px-5 pb-28 pt-[98px] lg:hidden">
+  <div className="fixed inset-0 z-[9999] bg-[linear-gradient(180deg,#051d31_0%,#08263b_100%)] lg:hidden">
+    <div className="sticky top-0 z-[10000] border-b border-white/10 bg-[#051d31]/95 px-5 backdrop-blur-md">
+      <div className="container-main flex h-[78px] items-center justify-between gap-3 px-0">
+        <Link href="/" aria-label="Drivo home" onClick={() => setOpen(false)} className="flex shrink-0 items-center">
+          <BrandLogo variant="light" className="h-12 w-36" />
+        </Link>
+        <div className="flex items-center gap-2">
+          <LanguageSwitcher tone="light" />
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition hover:bg-white/15"
+            aria-label="Close menu"
+          >
+            <span className="relative h-4 w-4">
+              <span className="absolute left-0 top-1/2 h-0.5 w-4 -translate-y-1/2 rotate-45 rounded-full bg-current" />
+              <span className="absolute left-0 top-1/2 h-0.5 w-4 -translate-y-1/2 -rotate-45 rounded-full bg-current" />
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div className="max-h-[calc(100vh-78px)] overflow-y-auto overscroll-contain px-5 pb-28 pt-5">
     <div className="container-main space-y-3 px-0">
       <div className="grid gap-2 rounded-[28px] border border-white/10 bg-white/6 p-3 backdrop-blur-sm">
         {SERVICES.map((service) => (
@@ -292,6 +315,7 @@ export default function Header({ forceSolid = false }: { forceSolid?: boolean })
           {t("common.whatsapp")}
         </a>
       </div>
+    </div>
     </div>
   </div>
 )}
