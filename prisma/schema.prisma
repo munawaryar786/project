@@ -32,53 +32,54 @@ model Booking {
   scheduledTime  String
   passengerCount Int    @default(1)
   luggageType    String @default("NONE")
-  smallBags       Int    @default(0)
-  largeBags       Int    @default(0)
+  smallBags      Int    @default(0)
+  largeBags      Int    @default(0)
 
-  wheelchairNeeded Boolean @default(false)
-  seniorPassenger  Boolean @default(false)
-  ztpCardHolder    Boolean @default(false)
-  wheelchairUser   Boolean @default(false)
-  companionRequired Boolean @default(false)
-  medicalAppointment Boolean @default(false)
-  waitingTimeRequired Boolean @default(false)
-  assistanceLevel String?
-  wheelchairType String?
-  canTransferToSeat Boolean?
-  wavRequired Boolean @default(false)
-  passengerRemainsInWheelchair Boolean @default(false)
-  companionCount Int @default(0)
-  hospitalName String?
-  department String?
-  appointmentDate String?
-  appointmentTime String?
-  tripType String?
-  returnDate String?
-  returnTime String?
-  waitingDuration String?
-  customWaitingDuration String?
-  scheduledRide Boolean @default(false)
-  recurrence String?
-  recurrenceCustom String?
-  childFullName String?
-  childName String?
-  childAge Int?
-  childSpecialRequirements String?
-  parentFullName String?
-  guardianName String?
-  parentPrimaryPhone String?
-  guardianPhone String?
-  parentEmergencyPhone String?
-  guardianEmergencyPhone String?
-  parentEmail String?
-  guardianEmail String?
-  educationalInstitutionName String?
-  institutionName String?
-  institutionAddress String?
-  educationalDestinationValidated Boolean @default(false)
-  pickupDate String?
-  pickupTime String?
-  recurrenceType String?
+  wheelchairNeeded                Boolean  @default(false)
+  seniorPassenger                 Boolean  @default(false)
+  ztpCardHolder                   Boolean  @default(false)
+  wheelchairUser                  Boolean  @default(false)
+  companionRequired               Boolean  @default(false)
+  medicalAppointment              Boolean  @default(false)
+  waitingTimeRequired             Boolean  @default(false)
+  assistanceLevel                 String?
+  wheelchairType                  String?
+  canTransferToSeat               Boolean?
+  wavRequired                     Boolean  @default(false)
+  passengerRemainsInWheelchair    Boolean  @default(false)
+  companionCount                  Int      @default(0)
+  hospitalName                    String?
+  department                      String?
+  appointmentDate                 String?
+  appointmentTime                 String?
+  tripType                        String?
+  returnDate                      String?
+  returnTime                      String?
+  waitingDuration                 String?
+  customWaitingDuration           String?
+  scheduledRide                   Boolean  @default(false)
+  recurrence                      String?
+  recurrenceCustom                String?
+  childFullName                   String?
+  childName                       String?
+  childAge                        Int?
+  childSpecialRequirements        String?
+  childrenDetails                 Json?
+  parentFullName                  String?
+  guardianName                    String?
+  parentPrimaryPhone              String?
+  guardianPhone                   String?
+  parentEmergencyPhone            String?
+  guardianEmergencyPhone          String?
+  parentEmail                     String?
+  guardianEmail                   String?
+  educationalInstitutionName      String?
+  institutionName                 String?
+  institutionAddress              String?
+  educationalDestinationValidated Boolean  @default(false)
+  pickupDate                      String?
+  pickupTime                      String?
+  recurrenceType                  String?
 
   flightNumber String?
   airline      String?
@@ -97,11 +98,19 @@ model Booking {
 
   sourceDomain String?
 
-  estimatedPrice  Float?
-  distanceKm      Float?
-  vehicleRequired String? @default("STANDARD")
+  estimatedPrice        Float?
+  distanceKm            Float?
+  vehicleRequired       String? @default("STANDARD")
+  fareBaseFare          Float?
+  fareDistanceCharge    Float?
+  fareWaitingCharge     Float?
+  fareOptionalFees      Json?
+  fareNightCharge       Float?
+  fareMinimumAdjustment Float?
+  fareTotalFare         Float?
+  fareBreakdown         Json?
 
-  passengerId String? @db.ObjectId
+  passengerId String?    @db.ObjectId
   passenger   Passenger? @relation(fields: [passengerId], references: [id])
 
   driverId String? @db.ObjectId
@@ -127,8 +136,8 @@ model Booking {
 // PASSENGERS
 // ============================================
 model Passenger {
-  id               String @id @default(auto()) @map("_id") @db.ObjectId
-  phone            String @unique
+  id               String  @id @default(auto()) @map("_id") @db.ObjectId
+  phone            String  @unique
   phoneVerified    Boolean @default(false)
   fullName         String?
   email            String?
@@ -146,13 +155,13 @@ model Passenger {
 }
 
 model PassengerOtp {
-  id          String @id @default(auto()) @map("_id") @db.ObjectId
-  code        String
-  phone       String
-  expiresAt   DateTime
-  used        Boolean @default(false)
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  code      String
+  phone     String
+  expiresAt DateTime
+  used      Boolean  @default(false)
 
-  passengerId String @db.ObjectId
+  passengerId String    @db.ObjectId
   passenger   Passenger @relation(fields: [passengerId], references: [id])
 
   createdAt DateTime @default(now())
@@ -193,11 +202,11 @@ model Driver {
   licenseNumber String?
   status        String  @default("ACTIVE")
 
-  vehicleId String?  @db.ObjectId
-  vehicle   Vehicle? @relation(fields: [vehicleId], references: [id])
-  vehicleType  String?
-  vehiclePlate String?
-  vehicleCapacity Int @default(4)
+  vehicleId       String?  @db.ObjectId
+  vehicle         Vehicle? @relation(fields: [vehicleId], references: [id])
+  vehicleType     String?
+  vehiclePlate    String?
+  vehicleCapacity Int      @default(4)
 
   currentLat         Float?
   currentLng         Float?
@@ -332,10 +341,10 @@ model Vehicle {
   rentalStatus String  @default("AVAILABLE")
   weeklyRate   Float?
 
-  currentMileageKm Int?
-  serviceNotes     String?
-  nextServiceDate  DateTime?
-  stkValidUntil    DateTime?
+  currentMileageKm  Int?
+  serviceNotes      String?
+  nextServiceDate   DateTime?
+  stkValidUntil     DateTime?
   weeklyRentalPrice Float?
   dailyRentalPrice  Float?
   baseRidePrice     Float?
@@ -351,18 +360,89 @@ model Vehicle {
 // PRICING SETTINGS
 // ============================================
 model PricingSettings {
-  id                    String @id @default(auto()) @map("_id") @db.ObjectId
-  key                   String @unique @default("default")
-  standardTaxiBasePrice Float  @default(3)
-  pricePerKm            Float  @default(1.5)
-  airportTransferPrice  Float  @default(5)
-  tourismTransferPrice  Float  @default(0)
-  weeklyVehicleRentalPrice Float @default(120)
-  dailyVehicleRentalPrice  Float @default(25)
-  minimumFare           Float  @default(5)
+  id                        String  @id @default(auto()) @map("_id") @db.ObjectId
+  key                       String  @unique @default("default")
+  standardTaxiBasePrice     Float   @default(3)
+  pricePerKm                Float   @default(1.5)
+  airportTransferPrice      Float   @default(5)
+  tourismTransferPrice      Float   @default(0)
+  weeklyVehicleRentalPrice  Float   @default(120)
+  dailyVehicleRentalPrice   Float   @default(25)
+  minimumFare               Float   @default(5)
+  baseFare                  Float   @default(1.49)
+  distanceRate              Float   @default(1.09)
+  waitingRatePerMinute      Float   @default(0.19)
+  bookingFee                Float   @default(0)
+  surgeEnabled              Boolean @default(false)
+  airportPickupFee          Float   @default(3)
+  airportMeetGreetFee       Float   @default(5)
+  assistedTransportFee      Float   @default(3)
+  childTransportFee         Float   @default(3)
+  priorityBookingFee        Float   @default(2)
+  nightServicePercentage    Float   @default(10)
+  nightStartTime            String  @default("22:00")
+  nightEndTime              String  @default("06:00")
+  globalDefaultCommission   Float   @default(12.5)
+  transparentPricingMessage String  @default("Transparent Pricing. No Surge Charges.")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model PricingDistanceTier {
+  id        String  @id @default(auto()) @map("_id") @db.ObjectId
+  key       String  @unique
+  configKey String  @default("default")
+  label     String
+  minKm     Float
+  maxKm     Float?
+  ratePerKm Float
+  sortOrder Int
+  active    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([configKey])
+  @@index([active])
+  @@map("pricing_distance_tiers")
+}
+
+model ServicePricingProfile {
+  id                     String  @id @default(auto()) @map("_id") @db.ObjectId
+  code                   String  @unique
+  name                   String
+  description            String?
+  active                 Boolean @default(true)
+  baseFareOverride       Float?
+  distanceRateOverride   Float?
+  minimumFareOverride    Float?
+  serviceFee             Float   @default(0)
+  commissionRateOverride Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active])
+  @@map("service_pricing_profiles")
+}
+
+model CommissionConfig {
+  id             String  @id @default(auto()) @map("_id") @db.ObjectId
+  key            String  @unique
+  scope          String
+  scopeId        String?
+  commissionRate Float   @default(12.5)
+  active         Boolean @default(true)
+  notes          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([scope])
+  @@index([scopeId])
+  @@index([active])
+  @@map("commission_configs")
 }
 
 // ============================================
@@ -381,19 +461,19 @@ model ContactMessage {
 // RENTAL INQUIRIES
 // ============================================
 model RentalInquiry {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  name        String
-  phone       String
-  email       String?
-  licenseNumber String?
-  workPlatform String?
-  vehicleType String
-  vehicleSelected String?
-  rentalStartDate String?
-  rentalDuration String?
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  name             String
+  phone            String
+  email            String?
+  licenseNumber    String?
+  workPlatform     String?
+  vehicleType      String
+  vehicleSelected  String?
+  rentalStartDate  String?
+  rentalDuration   String?
   weeklyRentalPlan String?
-  notes       String?
-  message     String?
-  status      String   @default("PENDING")
-  createdAt   DateTime @default(now())
+  notes            String?
+  message          String?
+  status           String   @default("PENDING")
+  createdAt        DateTime @default(now())
 }

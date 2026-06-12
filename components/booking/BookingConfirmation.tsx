@@ -163,14 +163,13 @@ export default function BookingConfirmation({
 
             {bookingData?.serviceType === "children" && (
               <>
-                <Detail
-                  label={t("booking.childFullName", "Child Full Name")}
-                  value={String(bookingData?.childName || bookingData?.childFullName || "")}
-                />
-                <Detail
-                  label={t("booking.childAge", "Child Age")}
-                  value={String(bookingData?.childAge || "")}
-                />
+                {getChildrenSummaryRows(bookingData).map((child, index) => (
+                  <Detail
+                    key={`${child.fullName}-${index}`}
+                    label={`Child ${index + 1}`}
+                    value={`${child.fullName || ""}${child.age ? `, ${child.age}` : ""}${child.specialRequirements ? ` - ${child.specialRequirements}` : ""}`}
+                  />
+                ))}
                 <Detail
                   label={t("booking.parentFullName", "Parent/Guardian Full Name")}
                   value={String(bookingData?.guardianName || bookingData?.parentFullName || "")}
@@ -377,4 +376,31 @@ function Detail({
       </span>
     </div>
   );
+}
+
+function getChildrenSummaryRows(bookingData: Record<string, unknown> | null) {
+  const children = bookingData?.childrenDetails;
+
+  if (Array.isArray(children) && children.length > 0) {
+    return children.map((child) => {
+      const item = child && typeof child === "object" ? child as Record<string, unknown> : {};
+      return {
+        fullName: String(item.fullName || ""),
+        age: String(item.age || ""),
+        specialRequirements: String(item.specialRequirements || ""),
+      };
+    });
+  }
+
+  if (bookingData?.childName || bookingData?.childFullName || bookingData?.childAge) {
+    return [
+      {
+        fullName: String(bookingData.childName || bookingData.childFullName || ""),
+        age: String(bookingData.childAge || ""),
+        specialRequirements: String(bookingData.childSpecialRequirements || ""),
+      },
+    ];
+  }
+
+  return [];
 }

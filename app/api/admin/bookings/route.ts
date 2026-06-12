@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import {
+  calculateBookingFinancialBreakdown,
+  createOrUpdateDriverEarningForBooking,
+} from "@/lib/commission-engine";
 
 const VALID_STATUSES = [
   "PENDING",
@@ -14,12 +18,47 @@ const VALID_STATUSES = [
 
 const TERMINAL_STATUSES = ["COMPLETED", "CANCELLED", "NO_SHOW"];
 
+async function withFinancialBreakdown<T extends any>(booking: T) {
+  const earning = (booking as any).earning;
+  const driver = (booking as any).driver;
+
+  if (earning) {
+    return {
+      ...booking,
+      financialBreakdown: {
+        totalFare: Number(earning.totalFare || 0),
+        platformCommission: Number(earning.platformAmount || 0),
+        platformEarnings: Number(earning.platformAmount || 0),
+        driverEarnings: Number(earning.driverAmount || 0),
+        serviceType: (booking as any).serviceType || "UNKNOWN",
+        commissionPercentageUsed: Number(earning.commissionRate || 0),
+        commissionSource: "EARNING",
+        commissionSourceId: earning.id,
+      },
+    };
+  }
+
+  const financialBreakdown = await calculateBookingFinancialBreakdown({
+    driverId: (booking as any).driverId,
+    fleetId: driver?.fleetId || null,
+    serviceType: (booking as any).serviceType,
+    fareTotalFare: (booking as any).fareTotalFare,
+    estimatedPrice: (booking as any).estimatedPrice,
+  });
+
+  return {
+    ...booking,
+    financialBreakdown,
+  };
+}
+
 export async function GET() {
   try {
     const bookings = await prisma.booking.findMany({
       orderBy: { createdAt: "desc" },
       include: {
         driver: true,
+        earning: true,
         passenger: {
           include: {
             bookings: {
@@ -30,11 +69,14 @@ export async function GET() {
       },
       take: 100,
     });
+    const bookingsWithFinancials = await Promise.all(
+      bookings.map(withFinancialBreakdown)
+    );
 
     return NextResponse.json({
       success: true,
-      bookings,
-      total: bookings.length,
+      bookings: bookingsWithFinancials,
+      total: bookingsWithFinancials.length,
     });
   } catch (error) {
     console.error("❌ Admin bookings fetch error:", error);
@@ -138,7 +180,7 @@ export async function PATCH(request: NextRequest) {
     const updatedBooking = await prisma.booking.update({
       where: { id: bookingId },
       data: updateData,
-      include: { driver: true },
+      include: { driver: true, earning: true },
     });
 
     if (
@@ -152,6 +194,15 @@ export async function PATCH(request: NextRequest) {
       });
     }
 
+    if (status === "COMPLETED" && updatedBooking.driverId) {
+      await createOrUpdateDriverEarningForBooking(updatedBooking.id);
+    }
+
+    const bookingWithFinancials = await prisma.booking.findUnique({
+      where: { id: updatedBooking.id },
+      include: { driver: true, earning: true },
+    });
+
     console.log("═══════════════════════════════════════");
     console.log("📋 ADMIN BOOKING UPDATED");
     console.log(`Ref: ${updatedBooking.bookingRef}`);
@@ -162,7 +213,9 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      booking: updatedBooking,
+      booking: bookingWithFinancials
+        ? await withFinancialBreakdown(bookingWithFinancials)
+        : updatedBooking,
     });
   } catch (error) {
     console.error("❌ Admin booking update error:", error);

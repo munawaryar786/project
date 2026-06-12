@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { createOrUpdateDriverEarningForBooking } from "@/lib/commission-engine";
 
 const VALID_DRIVER_STATUSES = [
   "DRIVER_ENROUTE",
@@ -145,6 +146,8 @@ export async function PATCH(request: NextRequest) {
           respondedAt: new Date(),
         },
       });
+
+      await createOrUpdateDriverEarningForBooking(bookingId);
     }
 
     const statusLabels: Record<string, string> = {

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { calculateBookingFinancialBreakdown } from "@/lib/commission-engine";
 
 export interface DriverFinancialSummary {
   driverId: string;
@@ -58,6 +59,9 @@ export async function getDriverFinancialSummary(
           id: true,
           scheduledDate: true,
           estimatedPrice: true,
+          fareTotalFare: true,
+          serviceType: true,
+          driverId: true,
           earning: true,
         },
       }),
@@ -66,12 +70,23 @@ export async function getDriverFinancialSummary(
     ]);
 
   const earningByBooking = new Set(earnings.map((earning) => earning.bookingId));
-  const fallbackEarnings = completedBookings
-    .filter((booking) => !earningByBooking.has(booking.id))
-    .map((booking) => ({
-      amount: Number(booking.estimatedPrice || 0) * 0.8,
-      completedAt: toDateFromBooking(booking.scheduledDate) || now,
-    }));
+  const fallbackEarnings = await Promise.all(
+    completedBookings
+      .filter((booking) => !earningByBooking.has(booking.id))
+      .map(async (booking) => {
+        const financial = await calculateBookingFinancialBreakdown({
+          driverId: booking.driverId,
+          serviceType: booking.serviceType,
+          fareTotalFare: booking.fareTotalFare,
+          estimatedPrice: booking.estimatedPrice,
+        });
+
+        return {
+          amount: financial.driverEarnings,
+          completedAt: toDateFromBooking(booking.scheduledDate) || now,
+        };
+      })
+  );
 
   const rows = [
     ...earnings.map((earning) => ({

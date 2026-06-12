@@ -1,6 +1,14 @@
 "use client";
 import { useState, useEffect } from 'react';
 
+type AddressSuggestion = {
+  description: string;
+  placeId?: string;
+  mainText?: string;
+  secondaryText?: string;
+  types?: string[];
+};
+
 interface AddressAutocompleteProps {
   value: string;
   onChange: (value: string) => void;
@@ -8,7 +16,8 @@ interface AddressAutocompleteProps {
   label: string;
   id: string;
   suggestionBias?: string;
-  onSelect?: (value: string) => void;
+  noResultsText?: string;
+  onSelect?: (value: string, suggestion?: AddressSuggestion) => void;
 }
 
 export default function AddressAutocomplete({
@@ -18,15 +27,18 @@ export default function AddressAutocomplete({
   label,
   id,
   suggestionBias,
+  noResultsText = "No matching address found.",
   onSelect,
 }: AddressAutocompleteProps) {
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
 
   useEffect(() => {
     if (value.length < 3) {
       setSuggestions([]);
+      setSearched(false);
       return;
     }
 
@@ -39,7 +51,13 @@ export default function AddressAutocomplete({
         const data = await response.json();
         
         if (data.success) {
-          setSuggestions(data.suggestions);
+          const items = Array.isArray(data.suggestionItems)
+            ? data.suggestionItems
+            : Array.isArray(data.suggestions)
+              ? data.suggestions.map((description: string) => ({ description }))
+              : [];
+          setSuggestions(items);
+          setSearched(true);
           setShowSuggestions(true);
         }
       } catch (error) {
@@ -50,13 +68,14 @@ export default function AddressAutocomplete({
     }, 300); // Debounce 300ms
 
     return () => clearTimeout(timer);
-  }, [value]);
+  }, [value, suggestionBias]);
 
-  const handleSelect = (suggestion: string) => {
-    onChange(suggestion);
-    onSelect?.(suggestion);
+  const handleSelect = (suggestion: AddressSuggestion) => {
+    onChange(suggestion.description);
+    onSelect?.(suggestion.description, suggestion);
     setShowSuggestions(false);
     setSuggestions([]);
+    setSearched(false);
   };
 
   return (
@@ -84,14 +103,24 @@ export default function AddressAutocomplete({
         <ul className="absolute z-50 w-full mt-1 bg-white border border-drivo-border rounded-xl shadow-lg max-h-60 overflow-y-auto">
           {suggestions.map((suggestion, index) => (
             <li
-              key={index}
+              key={suggestion.placeId || `${suggestion.description}-${index}`}
               onClick={() => handleSelect(suggestion)}
               className="px-4 py-3 cursor-pointer hover:bg-drivo-bg-soft border-b border-drivo-border-light last:border-0 text-[14px] text-drivo-text"
             >
-              {suggestion}
+              <span className="block font-semibold">{suggestion.mainText || suggestion.description}</span>
+              {suggestion.secondaryText && (
+                <span className="mt-0.5 block text-[12px] text-drivo-text-muted">
+                  {suggestion.secondaryText}
+                </span>
+              )}
             </li>
           ))}
         </ul>
+      )}
+      {showSuggestions && searched && !loading && suggestions.length === 0 && (
+        <div className="absolute z-50 w-full mt-1 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] font-semibold text-amber-800 shadow-lg">
+          {noResultsText}
+        </div>
       )}
     </div>
   );

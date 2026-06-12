@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "seed:pricing": "node prisma/seed-pricing.js",
     "postinstall": "prisma generate"
   },
   "dependencies": {

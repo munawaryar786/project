@@ -47,6 +47,11 @@ interface Booking {
   childName?: string | null;
   childAge?: number | null;
   childSpecialRequirements?: string | null;
+  childrenDetails?: Array<{
+    fullName?: string | null;
+    age?: number | string | null;
+    specialRequirements?: string | null;
+  }> | null;
   parentFullName?: string | null;
   guardianName?: string | null;
   parentPrimaryPhone?: string | null;
@@ -65,6 +70,14 @@ interface Booking {
   customerPhoneCode: string;
   paymentMethod: string;
   cashAgreed: boolean;
+  estimatedPrice?: number | null;
+  fareTotalFare?: number | null;
+  earning?: {
+    totalFare: number;
+    driverAmount: number;
+    platformAmount: number;
+    commissionRate: number;
+  } | null;
   specialNotes: string | null;
   flightNumber: string | null;
   waitAndGreet: boolean;
@@ -624,6 +637,9 @@ export default function DriverDashboard() {
                     <p className="text-sm font-semibold text-gray-700">
                       {booking.pickupAddress} → {booking.dropoffAddress}
                     </p>
+                    <p className="mt-1 text-xs font-bold text-green-700">
+                      Your earnings: {formatDriverMoney(getDriverEarningAmount(booking))}
+                    </p>
                   </div>
                   <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold">
                     ✅ DOKONČENÉ
@@ -1014,6 +1030,12 @@ function BookingCard({
             <InfoRow label="Batožina" value={booking.luggageType} />
             <InfoRow label="Malá / veľká batožina" value={`${booking.smallBags || 0} / ${booking.largeBags || 0}`} />
             <InfoRow label="Platba" value={booking.paymentMethod} />
+            {booking.earning && (
+              <InfoRow
+                label="Vaše zárobky"
+                value={formatDriverMoney(booking.earning.driverAmount)}
+              />
+            )}
             {booking.flightNumber && (
               <InfoRow label="Let" value={`✈️ ${booking.flightNumber}`} />
             )}
@@ -1088,6 +1110,14 @@ function StatCard({
   );
 }
 
+function getDriverEarningAmount(booking: Booking) {
+  return Number(booking.earning?.driverAmount || 0);
+}
+
+function formatDriverMoney(value: number) {
+  return `EUR ${Number(value || 0).toFixed(2)}`;
+}
+
 function MoneyCard({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-3 text-center">
@@ -1137,10 +1167,14 @@ function ChildrenTransportSummary({
 }) {
   if (!booking || (booking.serviceType !== "CHILDREN" && !booking.scheduledRide)) return null;
 
+  const childrenRows = getChildrenRows(booking).map((child, index) => [
+    `Child ${index + 1}`,
+    `${child.fullName || "N/A"}${child.age !== null && child.age !== undefined && child.age !== "" ? `, ${child.age}` : ""}${child.specialRequirements ? ` - ${child.specialRequirements}` : ""}`,
+  ]);
   const rows = [
     ["Pickup address", booking.pickupAddress || "N/A"],
     ["Number of children", String(booking.passengerCount || 0)],
-    ["Child", `${booking.childName || booking.childFullName || "N/A"}${booking.childAge !== null && booking.childAge !== undefined ? `, ${booking.childAge}` : ""}`],
+    ...childrenRows,
     ["Guardian", booking.guardianName || booking.parentFullName || "N/A"],
     ["Primary phone", booking.guardianPhone || booking.parentPrimaryPhone || "N/A"],
     ["Emergency phone", booking.guardianEmergencyPhone || booking.parentEmergencyPhone || "N/A"],
@@ -1150,7 +1184,6 @@ function ChildrenTransportSummary({
     ["Return", `${booking.returnDate || ""} ${booking.returnTime || ""}`.trim() || "N/A"],
     ["Return pickup time", booking.returnTime || "N/A"],
     ["Recurrence", formatEnum(booking.recurrenceType || booking.recurrence)],
-    booking.childSpecialRequirements && ["Special requirements", booking.childSpecialRequirements],
   ].filter(Boolean) as string[][];
 
   return (
@@ -1174,6 +1207,32 @@ function ChildrenTransportSummary({
       </div>
     </div>
   );
+}
+
+function getChildrenRows(booking: Booking) {
+  if (Array.isArray(booking.childrenDetails) && booking.childrenDetails.length > 0) {
+    return booking.childrenDetails.map((child) => ({
+      fullName: child.fullName || "",
+      age: child.age ?? "",
+      specialRequirements: child.specialRequirements || "",
+    }));
+  }
+
+  if (
+    booking.childName ||
+    booking.childFullName ||
+    (booking.childAge !== null && booking.childAge !== undefined)
+  ) {
+    return [
+      {
+        fullName: booking.childName || booking.childFullName || "",
+        age: booking.childAge ?? "",
+        specialRequirements: booking.childSpecialRequirements || "",
+      },
+    ];
+  }
+
+  return [];
 }
 
 function AssistanceSummary({

@@ -1,11 +1,22 @@
 "use client";
-import { useState, useCallback, useEffect, useRef } from "react";
-import { GoogleMap, Marker, DirectionsRenderer, useJsApiLoader } from "@react-google-maps/api";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  DirectionsRenderer,
+  GoogleMap,
+  Marker,
+  useJsApiLoader,
+} from "@react-google-maps/api";
 
 interface RouteMapProps {
   pickupAddress: string;
   dropoffAddress: string;
-  onRouteInfo?: (info: { distanceKm: number; durationMin: number; priceEstimate: number }) => void;
+  hideEstimate?: boolean;
+  onRouteInfo?: (info: {
+    distanceKm: number;
+    durationMin: number;
+    priceEstimate: number;
+  }) => void;
 }
 
 const mapContainerStyle = {
@@ -14,7 +25,7 @@ const mapContainerStyle = {
   borderRadius: "16px",
 };
 
-const defaultCenter = { lat: 48.1486, lng: 17.1077 }; // Bratislava
+const defaultCenter = { lat: 48.1486, lng: 17.1077 };
 
 const mapOptions: google.maps.MapOptions = {
   zoomControl: true,
@@ -28,45 +39,52 @@ const mapOptions: google.maps.MapOptions = {
   ],
 };
 
-export default function RouteMap({ pickupAddress, dropoffAddress, onRouteInfo }: RouteMapProps) {
-  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
-  const [pickupCoords, setPickupCoords] = useState<google.maps.LatLngLiteral | null>(null);
-  const [dropoffCoords, setDropoffCoords] = useState<google.maps.LatLngLiteral | null>(null);
-  const [routeInfo, setRouteInfo] = useState<{ distanceKm: number; durationMin: number; priceEstimate: number } | null>(null);
+export default function RouteMap({
+  pickupAddress,
+  dropoffAddress,
+  hideEstimate = false,
+  onRouteInfo,
+}: RouteMapProps) {
+  const [directions, setDirections] =
+    useState<google.maps.DirectionsResult | null>(null);
+  const [pickupCoords, setPickupCoords] =
+    useState<google.maps.LatLngLiteral | null>(null);
+  const [dropoffCoords, setDropoffCoords] =
+    useState<google.maps.LatLngLiteral | null>(null);
+  const [routeInfo, setRouteInfo] = useState<{
+    distanceKm: number;
+    durationMin: number;
+    priceEstimate: number;
+  } | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
 
   const { isLoaded, loadError } = useJsApiLoader({
-  id: "google-map-script",
-  googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
-  libraries: ["places"],
-  region: "SK",
-});
+    id: "google-map-script",
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || "",
+    libraries: ["places"],
+    region: "SK",
+  });
 
-if (loadError) {
-  return (
-    <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-red-700">
-      Google Maps failed to load. Check API key / domain restriction.
-    </div>
-  );
-}
+  const geocodeAddress = useCallback(
+    (address: string, type: "pickup" | "dropoff") => {
+      if (!isLoaded || !address) return;
 
-  const geocodeAddress = useCallback((address: string, type: "pickup" | "dropoff") => {
-    if (!isLoaded || !address) return;
+      const geocoder = new google.maps.Geocoder();
+      geocoder.geocode({ address, region: "sk" }, (results, status) => {
+        if (status === "OK" && results?.[0]) {
+          const loc = results[0].geometry.location;
+          const coords = { lat: loc.lat(), lng: loc.lng() };
 
-    const geocoder = new google.maps.Geocoder();
-    geocoder.geocode({ address, region: "sk" }, (results, status) => {
-      if (status === "OK" && results && results[0]) {
-        const loc = results[0].geometry.location;
-        const coords = { lat: loc.lat(), lng: loc.lng() };
-
-        if (type === "pickup") {
-          setPickupCoords(coords);
-        } else {
-          setDropoffCoords(coords);
+          if (type === "pickup") {
+            setPickupCoords(coords);
+          } else {
+            setDropoffCoords(coords);
+          }
         }
-      }
-    });
-  }, [isLoaded]);
+      });
+    },
+    [isLoaded]
+  );
 
   useEffect(() => {
     geocodeAddress(pickupAddress, "pickup");
@@ -87,37 +105,22 @@ if (loadError) {
         travelMode: google.maps.TravelMode.DRIVING,
       },
       (result, status) => {
-        if (status === "OK" && result) {
-          setDirections(result);
+        if (status !== "OK" || !result) return;
 
-          // Extract route info
-          const route = result.routes[0];
-          if (route && route.legs[0]) {
-            const leg = route.legs[0];
-            const distanceMeters = leg.distance?.value || 0;
-            const durationSeconds = leg.duration?.value || 0;
-            const distanceKm = distanceMeters / 1000;
-            const durationMin = Math.round(durationSeconds / 60);
+        setDirections(result);
+        const leg = result.routes[0]?.legs[0];
+        if (!leg) return;
 
-            // Calculate price estimate (base €3 + €1.50/km)
-            const priceEstimate = Math.round((3 + distanceKm * 1.50) * 100) / 100;
+        const distanceKm = Math.round(((leg.distance?.value || 0) / 1000) * 10) / 10;
+        const durationMin = Math.round((leg.duration?.value || 0) / 60);
+        const priceEstimate = Math.round((3 + distanceKm * 1.5) * 100) / 100;
+        const info = { distanceKm, durationMin, priceEstimate };
 
-            const info = { distanceKm: Math.round(distanceKm * 10) / 10, durationMin, priceEstimate };
-            setRouteInfo(info);
-            onRouteInfo?.(info);
-          }
-        }
+        setRouteInfo(info);
+        onRouteInfo?.(info);
       }
     );
   }, [pickupCoords, dropoffCoords, isLoaded, onRouteInfo]);
-
-  const onLoad = useCallback((map: google.maps.Map) => {
-    mapRef.current = map;
-  }, []);
-
-  const onUnmount = useCallback(() => {
-    mapRef.current = null;
-  }, []);
 
   const handleFitBounds = useCallback(() => {
     if (!mapRef.current || (!pickupCoords && !dropoffCoords)) return;
@@ -134,10 +137,18 @@ if (loadError) {
     }
   }, [pickupCoords, dropoffCoords, handleFitBounds]);
 
+  if (loadError) {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700">
+        Google Maps failed to load. Check API key or domain restriction.
+      </div>
+    );
+  }
+
   if (!isLoaded) {
     return (
-      <div className="bg-drivo-bg-soft rounded-2xl p-8 text-center border border-drivo-border-light">
-        <div className="w-8 h-8 border-3 border-drivo-green border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+      <div className="rounded-2xl border border-drivo-border-light bg-drivo-bg-soft p-8 text-center">
+        <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-drivo-green border-t-transparent" />
         <p className="text-[13px] text-drivo-text-secondary">Loading map...</p>
       </div>
     );
@@ -145,59 +156,37 @@ if (loadError) {
 
   return (
     <div className="space-y-4">
-      {/* Route Info Bar */}
       {routeInfo && (
-        <div className="flex items-center gap-4 p-4 bg-drivo-green-light/50 border border-drivo-green/20 rounded-2xl animate-fade-in">
-          <div className="flex items-center gap-2">
-            <span className="text-[18px]">📍</span>
-            <div>
-              <p className="text-[11px] text-drivo-text-secondary font-medium">Distance</p>
-              <p className="text-[16px] font-bold text-drivo-green-dark">{routeInfo.distanceKm} km</p>
-            </div>
-          </div>
-          <div className="w-px h-10 bg-drivo-green/20" />
-          <div className="flex items-center gap-2">
-            <span className="text-[18px]">⏱️</span>
-            <div>
-              <p className="text-[11px] text-drivo-text-secondary font-medium">Duration</p>
-              <p className="text-[16px] font-bold text-drivo-green-dark">~{routeInfo.durationMin} min</p>
-            </div>
-          </div>
-          <div className="w-px h-10 bg-drivo-green/20" />
-          <div className="flex items-center gap-2">
-            <span className="text-[18px]">💰</span>
-            <div>
-              <p className="text-[11px] text-drivo-text-secondary font-medium">Estimate</p>
-              <p className="text-[16px] font-bold text-drivo-green-dark">€{routeInfo.priceEstimate.toFixed(2)}</p>
-            </div>
-          </div>
+        <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-drivo-green/20 bg-drivo-green-light/50 p-4">
+          <RouteStat label="Distance" value={`${routeInfo.distanceKm} km`} />
+          <Divider />
+          <RouteStat label="Duration" value={`~${routeInfo.durationMin} min`} />
+          {!hideEstimate && (
+            <>
+              <Divider />
+              <RouteStat label="Estimate" value={`EUR ${routeInfo.priceEstimate.toFixed(2)}`} />
+            </>
+          )}
         </div>
       )}
 
-      {/* Map */}
-      <div className="rounded-2xl overflow-hidden border border-drivo-border-light shadow-card relative">
+      <div className="relative overflow-hidden rounded-2xl border border-drivo-border-light shadow-card">
         <GoogleMap
           mapContainerStyle={mapContainerStyle}
           center={pickupCoords || dropoffCoords || defaultCenter}
           zoom={12}
           options={mapOptions}
-          onLoad={onLoad}
-          onUnmount={onUnmount}
+          onLoad={(map) => {
+            mapRef.current = map;
+          }}
+          onUnmount={() => {
+            mapRef.current = null;
+          }}
         >
           {pickupCoords && (
             <Marker
               position={pickupCoords}
               label={{ text: "A", color: "#FFFFFF", fontWeight: "bold", fontSize: "14px" }}
-              icon={{
-                url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(`
-                  <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <circle cx="18" cy="18" r="16" fill="#34D186" stroke="#2BB974" stroke-width="2"/>
-                    <circle cx="18" cy="18" r="8" fill="white"/>
-                  </svg>
-                `),
-                scaledSize: new google.maps.Size(36, 36),
-                anchor: new google.maps.Point(18, 18),
-              }}
               title={pickupAddress}
             />
           )}
@@ -205,34 +194,49 @@ if (loadError) {
             <Marker
               position={dropoffCoords}
               label={{ text: "B", color: "#FFFFFF", fontWeight: "bold", fontSize: "14px" }}
-              icon={{
-                url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(`
-                  <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <circle cx="18" cy="18" r="16" fill="#1A73E8" stroke="#1557B0" stroke-width="2"/>
-                    <circle cx="18" cy="18" r="8" fill="white"/>
-                  </svg>
-                `),
-                scaledSize: new google.maps.Size(36, 36),
-                anchor: new google.maps.Point(18, 18),
-              }}
               title={dropoffAddress}
             />
           )}
-          {directions && <DirectionsRenderer directions={directions} options={{ polylineOptions: { strokeColor: "#34D186", strokeWeight: 5, strokeOpacity: 0.8 } }} />}
+          {directions && (
+            <DirectionsRenderer
+              directions={directions}
+              options={{
+                polylineOptions: {
+                  strokeColor: "#34D186",
+                  strokeWeight: 5,
+                  strokeOpacity: 0.8,
+                },
+              }}
+            />
+          )}
         </GoogleMap>
 
-        {/* Loading overlay when calculating route */}
         {!directions && (pickupCoords || dropoffCoords) && (
-          <div className="absolute inset-0 bg-white/60 flex items-center justify-center backdrop-blur-sm rounded-2xl">
-            <div className="bg-white rounded-xl px-6 py-4 shadow-card border border-drivo-border-light">
+          <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-white/60 backdrop-blur-sm">
+            <div className="rounded-xl border border-drivo-border-light bg-white px-6 py-4 shadow-card">
               <div className="flex items-center gap-3">
-                <div className="w-5 h-5 border-2 border-drivo-green border-t-transparent rounded-full animate-spin" />
-                <p className="text-[13px] text-drivo-text-secondary font-medium">Calculating route...</p>
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-drivo-green border-t-transparent" />
+                <p className="text-[13px] font-medium text-drivo-text-secondary">
+                  Calculating route...
+                </p>
               </div>
             </div>
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function Divider() {
+  return <div className="hidden h-10 w-px bg-drivo-green/20 sm:block" />;
+}
+
+function RouteStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[11px] font-medium text-drivo-text-secondary">{label}</p>
+      <p className="text-[16px] font-bold text-drivo-green-dark">{value}</p>
     </div>
   );
 }

@@ -53,6 +53,13 @@ const BookingSchema = z.object({
   scheduledRide: z.boolean().default(false),
   recurrence: z.enum(["ONE_TIME", "DAILY", "WEEKLY", "MONTHLY", "CUSTOM"]).optional().nullable(),
   recurrenceCustom: z.string().max(120).optional().nullable(),
+  childrenDetails: z.array(
+    z.object({
+      fullName: z.string().min(1).max(120),
+      age: z.coerce.number().min(0).max(18),
+      specialRequirements: z.string().max(500).nullable().optional(),
+    })
+  ).max(6).optional().nullable(),
   childFullName: z.string().max(120).optional().nullable(),
   childName: z.string().max(120).optional().nullable(),
   childAge: z.number().min(0).max(18).optional().nullable(),
@@ -86,33 +93,17 @@ const BookingSchema = z.object({
 
   paymentMethod: z.enum(["CARD", "CASH", "INVOICE"]),
   cashAgreed: z.boolean().default(false),
+  estimatedPrice: z.number().optional().nullable(),
+  fareBreakdown: z.unknown().optional().nullable(),
 });
 
-const CHILDREN_KM_RATE = 1.5;
-
-function parseScheduleDays(value: string | null | undefined) {
-  const match = value?.match(/\d+/);
-  if (!match) return null;
-  const days = Number(match[0]);
-  return Number.isFinite(days) && days > 0 ? days : null;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function childrenScheduleMultiplier(data: z.infer<typeof BookingSchema>) {
-  const recurrence = data.recurrence || data.recurrenceType || "ONE_TIME";
-  const customDays = parseScheduleDays(data.recurrenceCustom);
-  const serviceDays =
-    recurrence === "WEEKLY"
-      ? customDays || 5
-      : recurrence === "MONTHLY"
-        ? customDays || 20
-        : recurrence === "DAILY"
-          ? customDays || 5
-          : recurrence === "CUSTOM"
-            ? customDays || 1
-            : 1;
-  const tripLegs = data.returnDate && data.returnTime ? 2 : 1;
-
-  return serviceDays * tripLegs;
+function readNumber(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 export async function POST(request: NextRequest) {
@@ -155,9 +146,13 @@ export async function POST(request: NextRequest) {
       wavRequired,
     });
     const finalEstimatedPrice =
-      data.serviceType === "CHILDREN"
-        ? parseFloat((estimate.distanceKm * CHILDREN_KM_RATE * data.passengerCount * childrenScheduleMultiplier(data)).toFixed(2))
-        : estimate.estimatedPrice;
+      (isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.totalFare) : null) ??
+      readNumber(data.estimatedPrice) ??
+      estimate.estimatedPrice;
+    const optionalFees =
+      isRecord(data.fareBreakdown) && isRecord(data.fareBreakdown.optionalServiceCharges)
+        ? data.fareBreakdown.optionalServiceCharges
+        : undefined;
 
     if (capacityPassengerCount > 6) {
       return NextResponse.json(
@@ -167,6 +162,16 @@ export async function POST(request: NextRequest) {
     }
 
     if (data.serviceType === "CHILDREN") {
+      if (!data.educationalDestinationValidated) {
+        return NextResponse.json(
+          {
+            error:
+              "Please select a verified school, college, university, or approved educational institution.",
+          },
+          { status: 400 }
+        );
+      }
+
       const educationalText = `${data.dropoffAddress} ${data.educationalInstitutionName || ""} ${data.institutionName || ""} ${data.institutionAddress || ""}`.toLowerCase();
       const allowedDestination =
         data.educationalDestinationValidated ||
@@ -187,6 +192,14 @@ export async function POST(request: NextRequest) {
       if (data.paymentMethod === "CASH") {
         return NextResponse.json(
           { error: "Cash is not available for children's scheduled transport." },
+          { status: 400 }
+        );
+      }
+
+      const children = data.childrenDetails || [];
+      if (children.length !== data.passengerCount) {
+        return NextResponse.json(
+          { error: "Child details must match the selected number of children." },
           { status: 400 }
         );
       }
@@ -258,10 +271,12 @@ export async function POST(request: NextRequest) {
         scheduledRide: data.scheduledRide,
         recurrence: data.recurrence || data.recurrenceType || null,
         recurrenceCustom: data.recurrenceCustom || null,
-        childFullName: data.childFullName || null,
-        childName: data.childName || data.childFullName || null,
-        childAge: data.childAge ?? null,
-        childSpecialRequirements: data.childSpecialRequirements || null,
+        childrenDetails: data.childrenDetails || undefined,
+        childFullName: data.childrenDetails?.[0]?.fullName || data.childFullName || null,
+        childName: data.childrenDetails?.[0]?.fullName || data.childName || data.childFullName || null,
+        childAge: data.childrenDetails?.[0]?.age ?? data.childAge ?? null,
+        childSpecialRequirements:
+          data.childrenDetails?.[0]?.specialRequirements || data.childSpecialRequirements || null,
         parentFullName: data.parentFullName || null,
         guardianName: data.guardianName || data.parentFullName || null,
         parentPrimaryPhone: data.parentPrimaryPhone || null,
@@ -297,6 +312,14 @@ export async function POST(request: NextRequest) {
         estimatedPrice: finalEstimatedPrice,
         distanceKm: estimate.distanceKm,
         vehicleRequired: estimate.vehicleRequired,
+        fareBaseFare: isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.baseFare) : null,
+        fareDistanceCharge: isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.distanceCharge) : null,
+        fareWaitingCharge: isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.waitingCharge) : null,
+        fareOptionalFees: optionalFees,
+        fareNightCharge: isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.nightServiceCharge) : null,
+        fareMinimumAdjustment: isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.minimumFareAdjustment) : null,
+        fareTotalFare: isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.totalFare) : finalEstimatedPrice,
+        fareBreakdown: isRecord(data.fareBreakdown) ? data.fareBreakdown : undefined,
       },
     });
 
@@ -380,6 +403,7 @@ export async function POST(request: NextRequest) {
         childName: booking.childName,
         childAge: booking.childAge,
         childSpecialRequirements: booking.childSpecialRequirements,
+        childrenDetails: booking.childrenDetails,
         parentFullName: booking.parentFullName,
         guardianName: booking.guardianName,
         parentPrimaryPhone: booking.parentPrimaryPhone,
@@ -409,6 +433,14 @@ export async function POST(request: NextRequest) {
         estimatedPrice: booking.estimatedPrice,
         distanceKm: booking.distanceKm,
         vehicleRequired: booking.vehicleRequired,
+        fareBaseFare: booking.fareBaseFare,
+        fareDistanceCharge: booking.fareDistanceCharge,
+        fareWaitingCharge: booking.fareWaitingCharge,
+        fareOptionalFees: booking.fareOptionalFees,
+        fareNightCharge: booking.fareNightCharge,
+        fareMinimumAdjustment: booking.fareMinimumAdjustment,
+        fareTotalFare: booking.fareTotalFare,
+        fareBreakdown: booking.fareBreakdown,
 
         emailSent: {
           admin: false,

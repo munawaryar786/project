@@ -54,6 +54,11 @@ interface Booking {
   childName?: string | null;
   childAge?: number | null;
   childSpecialRequirements?: string | null;
+  childrenDetails?: Array<{
+    fullName?: string | null;
+    age?: number | string | null;
+    specialRequirements?: string | null;
+  }> | null;
   parentFullName?: string | null;
   guardianName?: string | null;
   parentPrimaryPhone?: string | null;
@@ -86,6 +91,29 @@ interface Booking {
   estimatedPrice?: number | null;
   distanceKm?: number | null;
   vehicleRequired?: string | null;
+  fareBaseFare?: number | null;
+  fareDistanceCharge?: number | null;
+  fareWaitingCharge?: number | null;
+  fareOptionalFees?: Record<string, number> | null;
+  fareNightCharge?: number | null;
+  fareMinimumAdjustment?: number | null;
+  fareTotalFare?: number | null;
+  earning?: {
+    totalFare: number;
+    driverAmount: number;
+    platformAmount: number;
+    commissionRate: number;
+  } | null;
+  financialBreakdown?: {
+    totalFare: number;
+    platformCommission: number;
+    driverEarnings: number;
+    platformEarnings: number;
+    serviceType: string;
+    commissionPercentageUsed: number;
+    commissionSource?: string;
+    commissionSourceId?: string | null;
+  } | null;
 
   driverId?: string | null;
   driver?: Driver | null;
@@ -1037,6 +1065,53 @@ function BookingPanel({
           />
         </Section>
 
+        <Section title="Financial Breakdown">
+          <Info
+            label="Service Type"
+            value={formatValue(booking.financialBreakdown?.serviceType || booking.serviceType)}
+          />
+          <Info
+            label="Base Fare"
+            value={formatMoney(booking.fareBaseFare)}
+          />
+          <Info
+            label="Distance Charge"
+            value={formatMoney(booking.fareDistanceCharge)}
+          />
+          <Info
+            label="Waiting Time Charge"
+            value={formatMoney(booking.fareWaitingCharge)}
+          />
+          <Info
+            label="Additional Services"
+            value={formatOptionalFees(booking.fareOptionalFees)}
+          />
+          <Info
+            label="Night Service Charge"
+            value={formatMoney(booking.fareNightCharge)}
+          />
+          <Info
+            label="Minimum Fare Adjustment"
+            value={formatMoney(booking.fareMinimumAdjustment)}
+          />
+          <Info
+            label="Total Fare"
+            value={formatMoney(booking.financialBreakdown?.totalFare ?? booking.fareTotalFare ?? booking.estimatedPrice)}
+          />
+          <Info
+            label="Commission"
+            value={`${Number(booking.financialBreakdown?.commissionPercentageUsed || booking.earning?.commissionRate || 0).toFixed(2)}%`}
+          />
+          <Info
+            label="Platform Earnings"
+            value={formatMoney(booking.financialBreakdown?.platformEarnings ?? booking.earning?.platformAmount)}
+          />
+          <Info
+            label="Driver Earnings"
+            value={formatMoney(booking.financialBreakdown?.driverEarnings ?? booking.earning?.driverAmount)}
+          />
+        </Section>
+
         {(booking.serviceType === "CHILDREN" || booking.scheduledRide) && (
           <Section title="Children Transport">
             <Info label="Service" value="Children Transport" />
@@ -1051,9 +1126,13 @@ function BookingPanel({
             <Info label="Recurrence Type" value={formatValue(booking.recurrenceType || booking.recurrence)} />
             <Info label="Estimated Service Days" value={String(getChildrenServiceDays(booking))} />
             <Info label="Children Price Breakdown" value={getChildrenPriceBreakdown(booking)} />
-            <Info label="Child Name" value={booking.childName || booking.childFullName || "N/A"} />
-            <Info label="Age" value={booking.childAge === null || booking.childAge === undefined ? "N/A" : String(booking.childAge)} />
-            <Info label="Special Requirements" value={booking.childSpecialRequirements || "N/A"} />
+            {getChildrenRows(booking).map((child, index) => (
+              <Info
+                key={`${child.fullName}-${index}`}
+                label={`Child ${index + 1}`}
+                value={`${child.fullName || "N/A"}${child.age !== null && child.age !== undefined && child.age !== "" ? `, ${child.age}` : ""}${child.specialRequirements ? ` - ${child.specialRequirements}` : ""}`}
+              />
+            ))}
             <Info label="Parent/Guardian" value={booking.guardianName || booking.parentFullName || "N/A"} />
             <Info label="Primary Phone" value={booking.guardianPhone || booking.parentPrimaryPhone || "N/A"} />
             <Info label="Emergency Phone" value={booking.guardianEmergencyPhone || booking.parentEmergencyPhone || "N/A"} />
@@ -1302,13 +1381,51 @@ function formatValue(value: unknown) {
   return String(value).replaceAll("_", " ");
 }
 
-const CHILDREN_KM_RATE = 1.5;
+function formatMoney(value: unknown) {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount)) return "EUR 0.00";
+  return `EUR ${amount.toFixed(2)}`;
+}
+
+function formatOptionalFees(value?: Record<string, number> | null) {
+  if (!value || Object.keys(value).length === 0) return "EUR 0.00";
+
+  return Object.entries(value)
+    .map(([key, amount]) => `${formatValue(key)}: ${formatMoney(amount)}`)
+    .join(", ");
+}
 
 function parseChildrenDays(value?: string | null) {
   const match = value?.match(/\d+/);
   if (!match) return null;
   const days = Number(match[0]);
   return Number.isFinite(days) && days > 0 ? days : null;
+}
+
+function getChildrenRows(booking: Booking) {
+  if (Array.isArray(booking.childrenDetails) && booking.childrenDetails.length > 0) {
+    return booking.childrenDetails.map((child) => ({
+      fullName: child.fullName || "",
+      age: child.age ?? "",
+      specialRequirements: child.specialRequirements || "",
+    }));
+  }
+
+  if (
+    booking.childName ||
+    booking.childFullName ||
+    (booking.childAge !== null && booking.childAge !== undefined)
+  ) {
+    return [
+      {
+        fullName: booking.childName || booking.childFullName || "",
+        age: booking.childAge ?? "",
+        specialRequirements: booking.childSpecialRequirements || "",
+      },
+    ];
+  }
+
+  return [];
 }
 
 function getChildrenServiceDays(booking: Booking) {
@@ -1323,13 +1440,11 @@ function getChildrenServiceDays(booking: Booking) {
 }
 
 function getChildrenPriceBreakdown(booking: Booking) {
-  const distance = Number(booking.distanceKm || 0);
-  const children = Number(booking.passengerCount || 0);
   const serviceDays = getChildrenServiceDays(booking);
   const returnLegs = booking.returnDate && booking.returnTime ? 2 : 1;
-  const total = Number(booking.estimatedPrice || 0);
+  const total = Number(booking.fareTotalFare || booking.estimatedPrice || 0);
 
-  return `${distance} km x EUR ${CHILDREN_KM_RATE.toFixed(2)} x ${children} children x ${returnLegs} trip leg${returnLegs === 1 ? "" : "s"} x ${serviceDays} service day${serviceDays === 1 ? "" : "s"} = EUR ${total.toFixed(2)}`;
+  return `Pricing Engine V1 x ${returnLegs} trip leg${returnLegs === 1 ? "" : "s"} x ${serviceDays} service day${serviceDays === 1 ? "" : "s"} = EUR ${total.toFixed(2)}`;
 }
 
 function StatusBadge({

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import type {
@@ -31,6 +31,14 @@ type Coords = {
 
 type JsonRecord = Record<string, unknown>;
 
+type FareBreakdown = Record<string, unknown>;
+
+type ChildDetail = {
+  fullName: string;
+  age: string;
+  specialRequirements: string;
+};
+
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -39,8 +47,25 @@ function readError(data: unknown, fallback: string) {
   return isRecord(data) && typeof data.error === "string" ? data.error : fallback;
 }
 
+function createEmptyChild(): ChildDetail {
+  return { fullName: "", age: "", specialRequirements: "" };
+}
+
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function waitingMinutesFromDuration(value: WaitingDuration, customValue: string) {
+  if (value === "30_MINUTES") return 30;
+  if (value === "1_HOUR") return 60;
+  if (value === "2_HOURS") return 120;
+  if (value === "3_HOURS") return 180;
+  if (value === "4_HOURS") return 240;
+  if (value === "CUSTOM") {
+    const match = customValue.match(/\d+/);
+    return match ? Number(match[0]) : 0;
+  }
+  return 0;
 }
 
 const EDUCATIONAL_DESTINATION_TERMS = [
@@ -124,9 +149,11 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 export default function BookingForm({
   onPickupChange,
   onDropoffChange,
+  onServiceTypeChange,
 }: {
   onPickupChange?: (v: string) => void;
   onDropoffChange?: (v: string) => void;
+  onServiceTypeChange?: (v: ServiceType) => void;
 }) {
   const { t } = useLanguage();
   const [step, setStep] = useState<BookingStep>(1);
@@ -184,6 +211,10 @@ export default function BookingForm({
   const [childFullName, setChildFullName] = useState("");
   const [childAge, setChildAge] = useState("");
   const [childSpecialRequirements, setChildSpecialRequirements] = useState("");
+  const [childrenDetails, setChildrenDetails] = useState<ChildDetail[]>([
+    createEmptyChild(),
+    createEmptyChild(),
+  ]);
   const [parentFullName, setParentFullName] = useState("");
   const [parentPrimaryPhone, setParentPrimaryPhone] = useState("");
   const [parentEmergencyPhone, setParentEmergencyPhone] = useState("");
@@ -195,11 +226,16 @@ export default function BookingForm({
   const [bookingRef, setBookingRef] = useState("");
   const [devOtp, setDevOtp] = useState<string | undefined>(undefined);
   const [estimatedPrice, setEstimatedPrice] = useState<number | undefined>();
+  const [fareBreakdown, setFareBreakdown] = useState<FareBreakdown | null>(null);
   const [passengerProfile, setPassengerProfile] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [step]);
+
+  useEffect(() => {
+    onServiceTypeChange?.(serviceType);
+  }, [onServiceTypeChange, serviceType]);
 
   const today = useMemo(() => new Date().toISOString().split("T")[0], []);
   const assistedTransport = serviceType === "accessible";
@@ -219,17 +255,38 @@ export default function BookingForm({
   const contactStepNumber = showMedicalReturnDetails ? 6 : assistedTransport ? 5 : 4;
   const childrenTransport = serviceType === "children";
   const institutionAddress = dropoffAddress.trim();
+  const currentBookingTime = useMemo(() => new Date().toTimeString().slice(0, 5), []);
+  const estimateScheduledDate = childrenTransport || rideMode === "schedule" ? scheduledDate : today;
+  const estimateScheduledTime = childrenTransport || rideMode === "schedule" ? scheduledTime : currentBookingTime;
+  const estimateWaitingMinutes = showWaitingDuration
+    ? waitingMinutesFromDuration(waitingDuration, customWaitingDuration)
+    : 0;
   const selectedInstitutionName =
     educationalInstitutionName.trim() || getInstitutionName(institutionAddress);
-  const educationalDestinationSelected = isEducationalDestination(
-    `${institutionAddress} ${selectedInstitutionName}`
+  const activeChildrenDetails = useMemo(
+    () => childrenDetails.slice(0, passengers),
+    [childrenDetails, passengers]
   );
+  const primaryChild = activeChildrenDetails[0] || createEmptyChild();
+
+  const updateChildDetail = (index: number, patch: Partial<ChildDetail>) => {
+    setChildrenDetails((current) =>
+      current.map((child, childIndex) =>
+        childIndex === index ? { ...child, ...patch } : child
+      )
+    );
+  };
 
   useEffect(() => {
     const nextLuggage: LuggageType =
       largeBags > 0 ? "large" : smallBags > 0 ? "small" : "none";
     setLuggage(nextLuggage);
   }, [smallBags, largeBags]);
+
+  const handleFareChange = useCallback((price: number, breakdown: FareBreakdown) => {
+    setEstimatedPrice(price);
+    setFareBreakdown(breakdown);
+  }, []);
 
   useEffect(() => {
     if (!assistedTransport) {
@@ -257,6 +314,24 @@ export default function BookingForm({
       setLuggage("none");
     }
   }, [childrenTransport]);
+
+  useEffect(() => {
+    if (!childrenTransport) return;
+
+    setChildrenDetails((current) => {
+      const next = current.slice(0, passengers);
+      while (next.length < passengers) {
+        next.push(createEmptyChild());
+      }
+      return next;
+    });
+  }, [childrenTransport, passengers]);
+
+  useEffect(() => {
+    setChildFullName(primaryChild.fullName);
+    setChildAge(primaryChild.age);
+    setChildSpecialRequirements(primaryChild.specialRequirements);
+  }, [primaryChild.fullName, primaryChild.age, primaryChild.specialRequirements]);
 
   useEffect(() => {
     if (!seniorPassenger) setAssistanceLevel("");
@@ -520,14 +595,19 @@ useEffect(() => {
       );
 
       if (!scheduledDate || !scheduledTime) return "Pickup date and time are required for children's transport.";
-      if (!returnDate || !returnTime) return "Return date and time are required for children's transport.";
       if (!recurrence) return "Please select recurrence.";
       if (recurrence === "CUSTOM" && !recurrenceCustom.trim()) return "Please enter custom recurrence.";
-      if (!childFullName.trim()) return "Child full name is required.";
-      if (!childAge.trim()) return "Child age is required.";
+      for (let index = 0; index < activeChildrenDetails.length; index += 1) {
+        const child = activeChildrenDetails[index];
+        if (!child.fullName.trim()) return `Child ${index + 1} full name is required.`;
+        if (!child.age.trim()) return `Child ${index + 1} age is required.`;
+        const age = Number(child.age);
+        if (!Number.isFinite(age) || age < 0 || age > 18) {
+          return `Child ${index + 1} age must be between 0 and 18.`;
+        }
+      }
       if (!parentFullName.trim()) return "Parent full name is required.";
       if (!parentPrimaryPhone.trim()) return "Parent primary phone is required.";
-      if (!parentEmergencyPhone.trim()) return "Emergency phone is required.";
       if (!parentEmail.trim() || !isValidEmail(parentEmail.trim())) return "Valid parent email is required.";
       if (!institutionSuggestionSelected && !educationDestination) {
         return t(
@@ -567,6 +647,12 @@ useEffect(() => {
 
       if (resolvedPickupCoords) setPickupCoords(resolvedPickupCoords);
       if (resolvedDropoffCoords) setDropoffCoords(resolvedDropoffCoords);
+      const childrenPayload = activeChildrenDetails.map((child) => ({
+        fullName: child.fullName.trim(),
+        age: Number(child.age),
+        specialRequirements: child.specialRequirements.trim() || null,
+      }));
+      const firstChild = childrenPayload[0];
 
       const bookingRes = await fetch("/api/bookings", {
         method: "POST",
@@ -622,10 +708,11 @@ scheduledTime:
           recurrence: childrenTransport ? recurrence : null,
           recurrenceType: childrenTransport ? recurrence : null,
           recurrenceCustom: recurrenceCustom.trim() || null,
-          childFullName: childFullName.trim() || null,
-          childName: childFullName.trim() || null,
-          childAge: childAge.trim() ? Number(childAge) : null,
-          childSpecialRequirements: childSpecialRequirements.trim() || null,
+          childrenDetails: childrenTransport ? childrenPayload : null,
+          childFullName: childrenTransport ? firstChild?.fullName || null : null,
+          childName: childrenTransport ? firstChild?.fullName || null : null,
+          childAge: childrenTransport && firstChild ? firstChild.age : null,
+          childSpecialRequirements: childrenTransport ? firstChild?.specialRequirements || null : null,
           parentFullName: parentFullName.trim() || null,
           guardianName: parentFullName.trim() || null,
           parentPrimaryPhone: parentPrimaryPhone.trim() || null,
@@ -651,6 +738,8 @@ scheduledTime:
           specialNotes: specialNotes.trim() || null,
           paymentMethod: paymentMap[paymentMethod],
           cashAgreed,
+          estimatedPrice: estimatedPrice ?? null,
+          fareBreakdown,
         }),
       });
 
@@ -824,10 +913,11 @@ scheduledTime:
           recurrence,
           recurrenceType: recurrence,
           recurrenceCustom,
-          childFullName,
-          childName: childFullName,
-          childAge,
-          childSpecialRequirements,
+          childrenDetails: activeChildrenDetails,
+          childFullName: primaryChild.fullName,
+          childName: primaryChild.fullName,
+          childAge: primaryChild.age,
+          childSpecialRequirements: primaryChild.specialRequirements,
           parentFullName,
           guardianName: parentFullName,
           parentPrimaryPhone,
@@ -848,6 +938,8 @@ scheduledTime:
           customerEmail,
           paymentMethod,
           specialNotes,
+          estimatedPrice,
+          fareBreakdown,
           bookingRef,
           status: "VERIFIED",
         }}
@@ -1003,9 +1095,9 @@ scheduledTime:
                 }
                 onDropoffChange?.(v);
               }}
-              onSelect={(v) => {
+              onSelect={(v, suggestion) => {
                 if (childrenTransport) {
-                  setEducationalInstitutionName(getInstitutionName(v));
+                  setEducationalInstitutionName(suggestion?.mainText || getInstitutionName(v));
                   setInstitutionSuggestionSelected(true);
                 }
               }}
@@ -1015,6 +1107,7 @@ scheduledTime:
                   : t("booking.dropoffPlaceholder")
               }
               suggestionBias={childrenTransport ? "school college university training centre" : undefined}
+              noResultsText={t("booking.noVerifiedInstitution", "No verified educational institution found.")}
             />
 
             {childrenTransport && (
@@ -1055,7 +1148,12 @@ scheduledTime:
                 returnTime={childrenTransport ? returnTime : ""}
                 recurrenceType={childrenTransport ? recurrence : "ONE_TIME"}
                 recurrenceCustom={childrenTransport ? recurrenceCustom : ""}
+                scheduledDate={estimateScheduledDate}
+                scheduledTime={estimateScheduledTime}
+                waitAndGreet={waitAndGreet}
+                waitingMinutes={estimateWaitingMinutes}
                 onPriceChange={setEstimatedPrice}
+                onFareChange={handleFareChange}
               />
             )}
 
@@ -1138,7 +1236,12 @@ scheduledTime:
           </div>
 
           <div className="space-y-5">
-            <PassengerCounter value={passengers} onChange={setPassengers} label={childrenTransport ? t("booking.numberOfChildren", "Number of Children") : undefined} />
+            <PassengerCounter
+              value={passengers}
+              onChange={setPassengers}
+              max={childrenTransport ? 6 : undefined}
+              label={childrenTransport ? t("booking.numberOfChildren", "Number of Children") : undefined}
+            />
 
             {!childrenTransport && (
             <div className="grid sm:grid-cols-2 gap-4">
@@ -1561,14 +1664,53 @@ onChange={(e) => {
                   returnTime={returnTime}
                   recurrenceType={recurrence}
                   recurrenceCustom={recurrenceCustom}
+                  scheduledDate={estimateScheduledDate}
+                  scheduledTime={estimateScheduledTime}
+                  waitAndGreet={waitAndGreet}
+                  waitingMinutes={estimateWaitingMinutes}
                   onPriceChange={setEstimatedPrice}
+                  onFareChange={handleFareChange}
                 />
               )}
-              <div className="grid sm:grid-cols-2 gap-4">
-                <input className="input" value={childFullName} onChange={(e) => setChildFullName(e.target.value)} placeholder={`${t("booking.childFullName", "Child Full Name")} *`} />
-                <input className="input" type="number" min="0" max="18" value={childAge} onChange={(e) => setChildAge(e.target.value)} placeholder={`${t("booking.childAge", "Child Age")} *`} />
+              <div className="space-y-3">
+                <h4 className="text-[13px] font-bold text-drivo-text">
+                  {t("booking.childDetails", "Children Details")}
+                </h4>
+                {activeChildrenDetails.map((child, index) => (
+                  <div
+                    key={index}
+                    className="space-y-3 rounded-2xl border border-drivo-border-light bg-white p-4"
+                  >
+                    <div className="text-[12px] font-black uppercase tracking-wide text-drivo-text-secondary">
+                      Child {index + 1}
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <input
+                        className="input"
+                        value={child.fullName}
+                        onChange={(e) => updateChildDetail(index, { fullName: e.target.value })}
+                        placeholder={`${t("booking.childFullName", "Child Full Name")} *`}
+                      />
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        max="18"
+                        value={child.age}
+                        onChange={(e) => updateChildDetail(index, { age: e.target.value })}
+                        placeholder={`${t("booking.childAge", "Child Age")} *`}
+                      />
+                    </div>
+                    <textarea
+                      className="input resize-none"
+                      rows={2}
+                      value={child.specialRequirements}
+                      onChange={(e) => updateChildDetail(index, { specialRequirements: e.target.value })}
+                      placeholder={t("booking.childSpecialRequirements", "Special Requirements")}
+                    />
+                  </div>
+                ))}
               </div>
-              <textarea className="input resize-none" rows={2} value={childSpecialRequirements} onChange={(e) => setChildSpecialRequirements(e.target.value)} placeholder={t("booking.childSpecialRequirements", "Special Requirements")} />
               <div className="grid sm:grid-cols-2 gap-4">
                 <input className="input" value={parentFullName} onChange={(e) => setParentFullName(e.target.value)} placeholder={`${t("booking.parentFullName", "Parent Full Name")} *`} />
                 <input className="input" value={parentPrimaryPhone} onChange={(e) => setParentPrimaryPhone(e.target.value)} placeholder={`${t("booking.parentPrimaryPhone", "Primary Phone")} *`} />

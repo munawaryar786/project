@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
     const bookings = await prisma.booking.findMany({
       where: { driverId },
       orderBy: { scheduledDate: "asc" },
+      include: { earning: true },
     });
 
     const today = new Date().toISOString().split("T")[0];

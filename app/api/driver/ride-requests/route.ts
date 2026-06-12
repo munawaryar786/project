@@ -120,6 +120,7 @@ export async function GET(request: NextRequest) {
         childName: true,
         childAge: true,
         childSpecialRequirements: true,
+        childrenDetails: true,
         parentFullName: true,
         guardianName: true,
         parentPrimaryPhone: true,

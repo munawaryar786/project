@@ -30,6 +30,14 @@ export interface GeocodeResult {
   placeId?: string;
 }
 
+export interface AddressSuggestion {
+  description: string;
+  placeId?: string;
+  mainText?: string;
+  secondaryText?: string;
+  types?: string[];
+}
+
 /**
  * Calculate distance and duration between two addresses using Google Maps Distance Matrix API
  * @param origin - Pickup address
@@ -127,7 +135,10 @@ export async function geocodeAddress(address: string): Promise<GeocodeResult> {
  * @param input - Partial address input
  * @returns Array of address suggestions
  */
-export async function getAddressSuggestions(input: string, educational = false): Promise<string[]> {
+export async function getAddressSuggestionItems(
+  input: string,
+  educational = false
+): Promise<AddressSuggestion[]> {
   if (!GOOGLE_MAPS_API_KEY) {
     console.error("❌ Google Maps not configured");
     return [];
@@ -136,7 +147,7 @@ export async function getAddressSuggestions(input: string, educational = false):
   try {
     // Use direct fetch to Google Places Autocomplete API
     const type = educational ? "establishment" : "geocode";
-    const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&key=${GOOGLE_MAPS_API_KEY}&types=${type}&components=country:sk`;
+    const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&key=${GOOGLE_MAPS_API_KEY}&types=${type}&components=country:sk&language=sk`;
     
     const response = await fetch(url);
     const data = await response.json();
@@ -145,11 +156,22 @@ export async function getAddressSuggestions(input: string, educational = false):
       return [];
     }
 
-    return data.predictions.slice(0, 5).map((p: any) => p.description);
+    return data.predictions.slice(0, 5).map((p: any) => ({
+      description: p.description,
+      placeId: p.place_id,
+      mainText: p.structured_formatting?.main_text,
+      secondaryText: p.structured_formatting?.secondary_text,
+      types: Array.isArray(p.types) ? p.types : [],
+    }));
   } catch (error: any) {
     console.error("❌ Address autocomplete error:", error.message);
     return [];
   }
+}
+
+export async function getAddressSuggestions(input: string, educational = false): Promise<string[]> {
+  const items = await getAddressSuggestionItems(input, educational);
+  return items.map((item) => item.description);
 }
 
 /**

@@ -14,6 +14,7 @@ export default function BookPage() {
   const { t } = useLanguage();
   const [pickupAddress, setPickupAddress] = useState("");
   const [dropoffAddress, setDropoffAddress] = useState("");
+  const [serviceType, setServiceType] = useState("standard");
 
   return (
     <>
@@ -72,13 +73,14 @@ export default function BookPage() {
                     <span className="w-8 h-8 bg-drivo-green-light rounded-lg flex items-center justify-center text-[13px] font-bold text-drivo-green-dark">🗺️</span>
                     {t('booking.routePreview', 'Route preview')}
                   </h3>
-                  <RouteMap pickupAddress={pickupAddress} dropoffAddress={dropoffAddress} />
+                  <RouteMap pickupAddress={pickupAddress} dropoffAddress={dropoffAddress} hideEstimate={serviceType === "children"} />
                 </div>
               )}
 
               <BookingForm 
                 onPickupChange={setPickupAddress}
                 onDropoffChange={setDropoffAddress}
+                onServiceTypeChange={setServiceType}
               />
             </div>
 

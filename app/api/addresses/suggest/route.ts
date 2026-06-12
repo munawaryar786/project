@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAddressSuggestions } from "@/lib/google-maps";
+import { getAddressSuggestionItems } from "@/lib/google-maps";
 
 /**
  * GET /api/addresses/suggest - Get address autocomplete suggestions
@@ -18,11 +18,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const suggestions = await getAddressSuggestions(query, educational);
+    const suggestionItems = await getAddressSuggestionItems(query, educational);
 
     return NextResponse.json({
       success: true,
-      suggestions,
+      suggestions: suggestionItems.map((item) => item.description),
+      suggestionItems,
     });
   } catch (error: any) {
     console.error("❌ Address autocomplete error:", error.message);
