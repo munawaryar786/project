@@ -210,7 +210,7 @@ export default function Header({ forceSolid = false }: { forceSolid?: boolean })
       </div>
 
       {open && (
-  <div className="fixed inset-x-0 top-[78px] bottom-0 z-40 overflow-y-auto overscroll-contain border-t border-white/10 bg-[linear-gradient(180deg,#051d31_0%,#08263b_100%)] px-5 py-5 pb-28 lg:hidden">
+  <div className="fixed inset-0 z-[9999] overflow-y-auto overscroll-contain border-t border-white/10 bg-[linear-gradient(180deg,#051d31_0%,#08263b_100%)] px-5 pb-28 pt-[98px] lg:hidden">
     <div className="container-main space-y-3 px-0">
       <div className="grid gap-2 rounded-[28px] border border-white/10 bg-white/6 p-3 backdrop-blur-sm">
         {SERVICES.map((service) => (
