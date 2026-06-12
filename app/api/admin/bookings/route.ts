@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   calculateBookingFinancialBreakdown,
@@ -18,9 +19,41 @@ const VALID_STATUSES = [
 
 const TERMINAL_STATUSES = ["COMPLETED", "CANCELLED", "NO_SHOW"];
 
-async function withFinancialBreakdown<T extends any>(booking: T) {
-  const earning = (booking as any).earning;
-  const driver = (booking as any).driver;
+const adminBookingInclude = {
+  driver: true,
+  earning: true,
+  passenger: {
+    include: {
+      bookings: {
+        select: { id: true },
+      },
+    },
+  },
+} satisfies Prisma.BookingInclude;
+
+const bookingFinancialInclude = {
+  driver: true,
+  earning: true,
+} satisfies Prisma.BookingInclude;
+
+type AdminBookingWithRelations = Prisma.BookingGetPayload<{
+  include: typeof adminBookingInclude;
+}>;
+
+type BookingWithFinancialRelations = Prisma.BookingGetPayload<{
+  include: typeof bookingFinancialInclude;
+}>;
+
+type BookingForFinancialBreakdown =
+  | AdminBookingWithRelations
+  | BookingWithFinancialRelations;
+
+async function withFinancialBreakdown(
+  booking: BookingForFinancialBreakdown | null | undefined
+) {
+  if (!booking) return null;
+
+  const { earning, driver } = booking;
 
   if (earning) {
     return {
@@ -30,7 +63,7 @@ async function withFinancialBreakdown<T extends any>(booking: T) {
         platformCommission: Number(earning.platformAmount || 0),
         platformEarnings: Number(earning.platformAmount || 0),
         driverEarnings: Number(earning.driverAmount || 0),
-        serviceType: (booking as any).serviceType || "UNKNOWN",
+        serviceType: booking.serviceType || "UNKNOWN",
         commissionPercentageUsed: Number(earning.commissionRate || 0),
         commissionSource: "EARNING",
         commissionSourceId: earning.id,
@@ -39,11 +72,11 @@ async function withFinancialBreakdown<T extends any>(booking: T) {
   }
 
   const financialBreakdown = await calculateBookingFinancialBreakdown({
-    driverId: (booking as any).driverId,
-    fleetId: driver?.fleetId || null,
-    serviceType: (booking as any).serviceType,
-    fareTotalFare: (booking as any).fareTotalFare,
-    estimatedPrice: (booking as any).estimatedPrice,
+    driverId: booking.driverId,
+    fleetId: null,
+    serviceType: booking.serviceType,
+    fareTotalFare: booking.fareTotalFare,
+    estimatedPrice: booking.estimatedPrice,
   });
 
   return {
@@ -56,22 +89,12 @@ export async function GET() {
   try {
     const bookings = await prisma.booking.findMany({
       orderBy: { createdAt: "desc" },
-      include: {
-        driver: true,
-        earning: true,
-        passenger: {
-          include: {
-            bookings: {
-              select: { id: true },
-            },
-          },
-        },
-      },
+      include: adminBookingInclude,
       take: 100,
     });
-    const bookingsWithFinancials = await Promise.all(
-      bookings.map(withFinancialBreakdown)
-    );
+    const bookingsWithFinancials = (
+      await Promise.all(bookings.map(withFinancialBreakdown))
+    ).filter((booking) => booking !== null);
 
     return NextResponse.json({
       success: true,
@@ -200,7 +223,7 @@ export async function PATCH(request: NextRequest) {
 
     const bookingWithFinancials = await prisma.booking.findUnique({
       where: { id: updatedBooking.id },
-      include: { driver: true, earning: true },
+      include: bookingFinancialInclude,
     });
 
     console.log("═══════════════════════════════════════");
