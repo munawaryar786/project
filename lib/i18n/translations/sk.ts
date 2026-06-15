@@ -9,13 +9,13 @@ const sk = {
   "nav.driverPortal": "Portál vodiča",
 
   // Hero
-  "hero.title": "Kam vás odvezieme?",
+  "hero.title": "Dôveryhodné taxi a asistovaná doprava pre seniorov a deti v Bratislave",
   "hero.subtitle":
-    "Spoľahlivá mobilná platforma pre taxi, ZŤP transport, seniorov a letiská v Bratislave.",
-  "hero.bookNow": "Objednať jazdu",
+    "Bezpečné a spoľahlivé jazdy po meste, letiskové transfery, bezbariérová doprava a profesionálna asistencia pre seniorov, držiteľov preukazu ZŤP, deti a rodiny v Bratislave a okolí.",
+  "hero.bookNow": "Objednať jazdu",            
   "hero.whatsapp": "Objednať cez WhatsApp",
   "hero.badge1": "Licencovaní vodiči",
-  "hero.badge2": "Prístupnosť na 1. mieste",
+  "hero.badge2": "Starostlivosť, bezpečnosť a mobilita pre každého",
   "hero.badge3": "Jednoduché objednávanie",
 
   // Services

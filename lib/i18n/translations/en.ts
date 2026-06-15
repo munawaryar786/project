@@ -9,15 +9,15 @@ const en = {
   "nav.driverPortal": "Driver Portal",
 
   // Hero
-  "hero.title": "Where can we take you?",
+  "hero.title": "Trusted Taxi & Assisted Transport for Seniors and Children in Bratislava",
   "hero.subtitle":
-    "Reliable mobility platform for taxi, accessible transport, seniors and airport transfers in Bratislava.",
+    "Safe and reliable city rides, airport transfers, wheelchair-accessible transport, and professional assistance for seniors, ZŤP passengers, children, and families across Bratislava and nearby areas.",
   "hero.bookNow": "Book a Ride",
   "hero.whatsapp": "Book via WhatsApp",
   "hero.badge1": "Licensed drivers",
-  "hero.badge2": "Accessibility first",
+  "hero.badge2": "Care, Safety & Mobility for Everyone",
   "hero.badge3": "Simple booking",
-
+               
   // Services
   "services.title": "Our Services",
   "services.subtitle": "Choose the service that suits you best",

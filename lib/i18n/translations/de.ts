@@ -7,18 +7,18 @@ const de = {
   "nav.contact": "Kontakt",
   "nav.driverPortal": "Fahrer-Portal",
 
-  "hero.title": "Wohin dürfen wir Sie bringen?",
+  "hero.title": "Vertrauenswürdiges Taxi und begleitete Beförderung für Senioren und Kinder in Bratislava",
   "hero.subtitle":
-    "Zuverlässige Mobilitätsplattform für Taxi, barrierefreien Transport, Senioren und Flughafentransfers in Bratislava.",
+    "Sichere und zuverlässige Stadtfahrten, Flughafentransfers, rollstuhlgerechte Beförderung und professionelle Unterstützung für Senioren, ZŤP-Ausweisinhaber, Kinder und Familien in Bratislava und Umgebung.",
   "hero.bookNow": "Fahrt buchen",
   "hero.whatsapp": "Per WhatsApp buchen",
   "hero.badge1": "Lizenzierte Fahrer",
-  "hero.badge2": "Barrierefreiheit zuerst",
+  "hero.badge2": "Fürsorge, Sicherheit und Mobilität für alle",
   "hero.badge3": "Einfache Buchung",
 
   "services.title": "Unsere Dienstleistungen",
   "services.subtitle":
-    "Wählen Sie den Service, der am besten zu Ihnen passt",
+    "Wählen Sie den Service, der am besten zu Ihnen passt",                                   
   "services.taxi.title": "Standard-Taxi",
   "services.taxi.tagline": "Schnell, sicher, professionell.",
   "services.taxi.desc":
