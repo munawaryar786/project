@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import {
-  createPassengerSession,
+  createVerificationProof,
   normalizePassengerPhone,
-  publicPassenger,
-  setPassengerCookie,
-  setTrustedDeviceCookie,
 } from "@/lib/passenger-auth";
 import { prisma } from "@/lib/prisma";
 import { rateLimits, withRateLimit } from "@/lib/rate-limit";
@@ -13,9 +10,7 @@ import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 const VerifySchema = z.object({
   phone: z.string().trim().min(6),
   otpCode: z.string().trim().length(6),
-  loginAttemptId: z.string().min(10),
-  bookingId: z.string().optional().nullable(),
-  rememberDevice: z.boolean().optional().default(true),
+  resetAttemptId: z.string().min(10),
 });
 
 async function handler(request: NextRequest) {
@@ -40,8 +35,8 @@ async function handler(request: NextRequest) {
       where: {
         passengerId: passenger.id,
         phone: normalizedPhone,
-        purpose: "PASSENGER_LOGIN_STEP_UP",
-        loginAttemptId: parsed.data.loginAttemptId,
+        purpose: "PASSENGER_PASSWORD_RESET",
+        resetAttemptId: parsed.data.resetAttemptId,
         expiresAt: { gte: new Date() },
         used: false,
       },
@@ -63,38 +58,20 @@ async function handler(request: NextRequest) {
       data: { used: true },
     });
 
-    const updated = await prisma.passenger.update({
-      where: { id: passenger.id },
-      data: { phoneVerified: true, phoneVerifiedAt: new Date(), lastLoginAt: new Date() },
+    const proofToken = await createVerificationProof({
+      passengerId: passenger.id,
+      normalizedPhone,
+      purpose: "PASSENGER_PASSWORD_RESET",
+      resetAttemptId: parsed.data.resetAttemptId,
     });
 
-    if (parsed.data.bookingId) {
-      await prisma.booking.updateMany({
-        where: { id: parsed.data.bookingId, normalizedPhone },
-        data: {
-          passengerId: passenger.id,
-          passengerAuthStatus: "AUTHENTICATED",
-          passengerAuthCompletedAt: new Date(),
-          phoneVerified: true,
-        },
-      });
-    }
-
-    const token = await createPassengerSession(updated);
-    const response = NextResponse.json({
+    return NextResponse.json({
       success: true,
-      passenger: publicPassenger(updated),
+      proofToken,
     });
-    setPassengerCookie(response, token);
-    if (parsed.data.rememberDevice) {
-      await setTrustedDeviceCookie(request, response, passenger.id);
-    }
-
-    console.log(`Passenger step-up login success: ${passenger.id}`);
-    return response;
   } catch (error) {
-    console.error("Passenger login OTP verify error:", error);
-    return NextResponse.json({ error: "Could not verify login." }, { status: 500 });
+    console.error("Password reset verify error:", error);
+    return NextResponse.json({ error: "Could not verify reset code." }, { status: 500 });
   }
 }
 

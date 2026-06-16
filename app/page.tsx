@@ -27,107 +27,111 @@ const HOME_IMAGES = {
 
 function Hero() {
   const { t } = useLanguage();
+  const stats = [
+    ["2,400+", t("home.stats.riders")],
+    ["50+", t("home.stats.drivers")],
+    ["15+", t("home.stats.vehicles")],
+    ["5", t("home.stats.services")],
+  ] as const;
 
   return (
-    <section className="relative overflow-hidden bg-drivo-navy">
+    <section className="relative isolate overflow-hidden bg-drivo-navy">
       <div className="absolute inset-0">
         <Image
-          src={HOME_IMAGES.senior}
+          src={HOME_IMAGES.comfortableInterior}
           alt=""
           fill
           priority
           sizes="100vw"
-          className="object-cover opacity-30"
+          className="object-cover object-[64%_center] opacity-80 md:object-[70%_center] lg:object-[76%_center]"
         />
-        <div className="absolute inset-0 bg-gradient-to-br from-drivo-navy via-drivo-navy/94 to-drivo-teal/65" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_30%,rgba(67,211,203,0.22),transparent_34%)]" />
+        <div className="absolute inset-0 bg-gradient-to-r from-drivo-navy via-drivo-navy/88 to-drivo-navy/42" />
+        <div className="absolute inset-0 bg-gradient-to-b from-drivo-navy/30 via-drivo-navy/10 to-drivo-navy/70" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_82%_24%,rgba(67,211,203,0.24),transparent_30%)]" />
       </div>
 
-      <div className="relative container-main pt-28 pb-28 sm:pb-20 md:pt-36 md:pb-20 lg:pt-40 lg:pb-24">
-        <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.95fr)] lg:gap-14 xl:gap-20">
-          <div className="animate-fade-up">
-            <div className="pill mb-6 max-w-full flex-wrap border border-white/15 bg-white/10 text-white/90 backdrop-blur-sm">
+      <div className="relative container-main pt-24 pb-32 sm:pt-28 md:pt-32 lg:pt-36 lg:pb-24 xl:pt-40">
+        <div className="grid items-start gap-7 md:gap-9 lg:grid-cols-[minmax(0,1.42fr)_minmax(320px,1fr)] lg:gap-10 xl:gap-14">
+          <div className="min-w-0 animate-fade-up">
+            <div className="pill mb-4 max-w-full flex-wrap border border-white/15 bg-white/10 text-[12px] leading-snug text-white/90 backdrop-blur-sm sm:mb-5 sm:text-[13px] lg:mb-6">
               <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-drivo-aqua" />
               {t("hero.badge2")}
             </div>
 
-            <h1 className="mb-6 max-w-[780px] text-[clamp(2.25rem,8vw,3.55rem)] font-extrabold leading-[1.08] text-white lg:text-[clamp(3.35rem,5vw,4.35rem)]">
+            <h1 className="mb-5 max-w-[780px] text-[clamp(2.375rem,10vw,2.75rem)] font-extrabold leading-[1.08] text-white [hyphens:auto] [overflow-wrap:break-word] [text-wrap:balance] md:text-[clamp(2.875rem,6vw,3.5rem)] md:leading-[1.07] lg:text-[clamp(3.625rem,5vw,4.375rem)] lg:leading-[1.04]">
               {t("hero.title")}
             </h1>
 
-            <p className="mb-8 max-w-[690px] text-[16px] leading-8 text-white/[0.78] md:text-[18px] md:leading-9">
+            <p className="mb-6 max-w-[680px] text-[17px] leading-[1.55] text-white/[0.82] [hyphens:auto] [overflow-wrap:break-word] sm:mb-7 md:text-[18px] md:leading-[1.6] lg:text-[19px]">
               {t("hero.subtitle")}
             </p>
 
-            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:gap-4">
-              <Link href="/book" className="btn-primary min-h-14 w-full px-7 text-[16px] sm:w-auto">
+            <div className="flex w-full flex-col sm:w-auto sm:flex-row">
+              <Link href="/book" className="btn-primary min-h-[52px] w-full px-7 text-[16px] sm:w-auto">
                 {t("hero.bookNow")}
               </Link>
-
-              <a
-                href={WHATSAPP_URL}
-                className="btn-outline min-h-14 w-full border-white/25 bg-white/5 px-7 text-[16px] text-white hover:bg-white/10 hover:text-white sm:w-auto"
-              >
-                {t("hero.whatsapp")}
-              </a>
             </div>
           </div>
 
-          <div className="relative mx-auto w-full max-w-[430px] lg:mx-0 lg:justify-self-end">
-            <div className="relative overflow-hidden rounded-[28px] border border-white/[0.12] bg-white/[0.08] p-3 shadow-[0_24px_70px_rgba(0,0,0,0.28)] backdrop-blur-md">
-              <div className="relative hidden aspect-[4/3] overflow-hidden rounded-3xl lg:block">
-                <Image
-                  src={HOME_IMAGES.comfortableInterior}
-                  alt="DRIVO taxi prepared for professional Bratislava transport"
-                  fill
-                  sizes="(min-width: 1024px) 430px, 100vw"
-                  className="object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-drivo-navy/88 via-drivo-navy/22 to-transparent" />
-                <div className="absolute bottom-4 left-4 right-4 rounded-2xl border border-white/15 bg-drivo-navy/72 px-4 py-3 backdrop-blur-md">
-                  <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.16em] text-drivo-aqua">
-                    <span className="h-2 w-2 rounded-full bg-drivo-aqua" />
+          <div className="min-w-0 space-y-5 lg:justify-self-end lg:pt-2">
+            <a
+              href={WHATSAPP_URL}
+              className="btn-outline min-h-[52px] w-full border-white/25 bg-white/[0.08] px-7 text-[16px] text-white backdrop-blur-sm hover:bg-white/[0.12] hover:text-white"
+            >
+              {t("hero.whatsapp")}
+            </a>
+
+            <div className="rounded-3xl border border-white/[0.12] bg-drivo-navy/[0.68] p-4 shadow-[0_20px_55px_rgba(0,0,0,0.24)] backdrop-blur-md sm:p-5">
+              <div className="flex flex-col gap-4 min-[390px]:flex-row min-[390px]:items-center">
+                <div className="flex shrink-0 -space-x-2 pr-1">
+                  {[
+                    "https://i.pravatar.cc/48?img=1",
+                    "https://i.pravatar.cc/48?img=2",
+                    "https://i.pravatar.cc/48?img=3",
+                    "https://i.pravatar.cc/48?img=4",
+                    "https://i.pravatar.cc/48?img=5",
+                  ].map((src) => (
+                    <Image
+                      key={src}
+                      src={src}
+                      alt=""
+                      width={40}
+                      height={40}
+                      className="h-9 w-9 rounded-full border-2 border-drivo-navy object-cover sm:h-10 sm:w-10"
+                    />
+                  ))}
+                </div>
+
+                <div className="min-w-0">
+                  <div className="text-[15px] font-bold leading-snug text-white [hyphens:auto] [overflow-wrap:break-word] sm:text-[16px]">
+                    2,400+ {t("home.stats.riders")}
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] font-semibold uppercase tracking-[0.12em] text-drivo-aqua">
+                    <span className="h-1.5 w-1.5 rounded-full bg-drivo-aqua" />
                     4.9 / 5
                   </div>
-                  <p className="text-[14px] font-semibold leading-snug text-white">
+                  <div className="mt-1 text-[13px] leading-relaxed text-white/68 [hyphens:auto] [overflow-wrap:break-word] sm:text-[14px]">
                     {t("hero.reviewsLine")}
-                  </p>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-white/10 bg-drivo-navy/75 p-4 backdrop-blur-sm sm:p-5 lg:mt-3">
-                <div className="flex flex-col gap-4 min-[390px]:flex-row min-[390px]:items-center">
-                  <div className="flex shrink-0 -space-x-2">
-                    {[
-                      "https://i.pravatar.cc/48?img=1",
-                      "https://i.pravatar.cc/48?img=2",
-                      "https://i.pravatar.cc/48?img=3",
-                      "https://i.pravatar.cc/48?img=4",
-                      "https://i.pravatar.cc/48?img=5",
-                    ].map((src) => (
-                      <Image
-                        key={src}
-                        src={src}
-                        alt=""
-                        width={40}
-                        height={40}
-                        className="h-9 w-9 rounded-full border-2 border-drivo-navy object-cover sm:h-10 sm:w-10"
-                      />
-                    ))}
-                  </div>
-
-                  <div className="min-w-0">
-                    <div className="text-[15px] font-bold leading-snug text-white sm:text-[16px]">
-                      2,400+ {t("home.stats.riders")}
-                    </div>
-                    <div className="mt-1 text-[13px] leading-relaxed text-white/65 sm:text-[14px]">
-                      {t("hero.reviewsLine")}
-                    </div>
                   </div>
                 </div>
               </div>
             </div>
-            <div className="pointer-events-none absolute -right-8 top-10 hidden h-28 w-28 rounded-full border border-drivo-aqua/25 bg-drivo-aqua/10 blur-xl lg:block" />
+
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+              {stats.map(([value, label]) => (
+                <div
+                  key={label}
+                  className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.075] px-4 py-3.5 backdrop-blur-sm sm:px-5 sm:py-4"
+                >
+                  <div className="text-[24px] font-extrabold leading-none text-white sm:text-[28px]">
+                    {value}
+                  </div>
+                  <div className="mt-2 text-[12px] font-semibold leading-snug text-white/66 [hyphens:auto] [overflow-wrap:break-word] sm:text-[13px]">
+                    {label}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>

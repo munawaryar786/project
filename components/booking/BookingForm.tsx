@@ -32,6 +32,7 @@ type Coords = {
 type JsonRecord = Record<string, unknown>;
 
 type FareBreakdown = Record<string, unknown>;
+type AuthMode = "first-time" | "login" | "forgot" | "step-up";
 
 type ChildDetail = {
   fullName: string;
@@ -225,6 +226,24 @@ export default function BookingForm({
   const [bookingId, setBookingId] = useState("");
   const [bookingRef, setBookingRef] = useState("");
   const [devOtp, setDevOtp] = useState<string | undefined>(undefined);
+  const [verificationProof, setVerificationProof] = useState("");
+  const [authMode, setAuthMode] = useState<AuthMode>("first-time");
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginAttemptId, setLoginAttemptId] = useState("");
+  const [loginOtp, setLoginOtp] = useState("");
+  const [rememberDevice, setRememberDevice] = useState(true);
+  const [resetAttemptId, setResetAttemptId] = useState("");
+  const [resetOtp, setResetOtp] = useState("");
+  const [resetProof, setResetProof] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetConfirmPassword, setResetConfirmPassword] = useState("");
+  const [accountPassword, setAccountPassword] = useState("");
+  const [accountConfirmPassword, setAccountConfirmPassword] = useState("");
+  const [showAccountPassword, setShowAccountPassword] = useState(false);
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
   const [estimatedPrice, setEstimatedPrice] = useState<number | undefined>();
   const [fareBreakdown, setFareBreakdown] = useState<FareBreakdown | null>(null);
   const [passengerProfile, setPassengerProfile] = useState<Record<string, unknown> | null>(null);
@@ -770,6 +789,11 @@ scheduledTime:
         setEstimatedPrice(price);
       }
 
+      if (passengerProfile) {
+        await continueAuthenticatedBooking(passengerProfile, newBookingId);
+        return;
+      }
+
       const otpRes = await fetch("/api/otp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -813,11 +837,224 @@ scheduledTime:
       throw new Error(readError(data, "OTP verification failed"));
     }
 
-    if (isRecord(data) && isRecord(data.passenger)) {
-      setPassengerProfile(data.passenger);
+    if (!isRecord(data) || typeof data.proofToken !== "string") {
+      throw new Error("Verification response was invalid");
     }
 
+    setVerificationProof(data.proofToken);
+    if (typeof data.email === "string" && data.email && !customerEmail) {
+      setCustomerEmail(data.email);
+    }
+    setStep(4);
+  };
+
+  const continueAuthenticatedBooking = async (
+    passenger?: Record<string, unknown> | null,
+    activeBookingId = bookingId
+  ) => {
+    if (passenger) setPassengerProfile(passenger);
+
+    if (!activeBookingId) {
+      return;
+    }
+
+    const res = await fetch("/api/passenger/booking/continue", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ bookingId: activeBookingId }),
+    });
+    const data = await safeJson(res);
+    if (!res.ok) {
+      throw new Error(readError(data, "Could not continue booking"));
+    }
     setStep(3);
+  };
+
+  const handleCreateAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError("");
+
+    if (accountPassword !== accountConfirmPassword) {
+      setAuthError(t("passenger.passwordMismatch", "Passwords do not match."));
+      return;
+    }
+
+    setAuthLoading(true);
+    try {
+      const res = await fetch("/api/passenger/account/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          bookingId,
+          proofToken: verificationProof,
+          phone: phoneCode + customerPhone.trim(),
+          fullName: customerName.trim(),
+          email: customerEmail.trim(),
+          password: accountPassword,
+          confirmPassword: accountConfirmPassword,
+          rememberDevice,
+        }),
+      });
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(readError(data, "Could not create account"));
+      await continueAuthenticatedBooking(isRecord(data) && isRecord(data.passenger) ? data.passenger : null);
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : "Could not create account");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handlePassengerLogin = async (e: React.FormEvent | React.MouseEvent) => {
+    e.preventDefault();
+    setAuthError("");
+    setAuthLoading(true);
+
+    try {
+      const activeBookingId = bookingId;
+      const res = await fetch("/api/passenger/login/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          phone: phoneCode + customerPhone.trim(),
+          password: loginPassword,
+          bookingId: activeBookingId || null,
+        }),
+      });
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(readError(data, "Phone number or password is incorrect."));
+
+      if (isRecord(data) && data.stepUpRequired) {
+        setLoginAttemptId(String(data.loginAttemptId || ""));
+        if (typeof data.devOtp === "string") setDevOtp(data.devOtp);
+        setAuthMode("step-up");
+        return;
+      }
+
+      await continueAuthenticatedBooking(isRecord(data) && isRecord(data.passenger) ? data.passenger : null, activeBookingId);
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : "Phone number or password is incorrect.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLoginStepUp = async (e: React.FormEvent | React.MouseEvent) => {
+    e.preventDefault();
+    setAuthError("");
+    setAuthLoading(true);
+
+    try {
+      const res = await fetch("/api/passenger/login/otp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          phone: phoneCode + customerPhone.trim(),
+          otpCode: loginOtp,
+          loginAttemptId,
+          bookingId: bookingId || null,
+          rememberDevice,
+        }),
+      });
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(readError(data, "Could not verify login."));
+      await continueAuthenticatedBooking(isRecord(data) && isRecord(data.passenger) ? data.passenger : null);
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : "Could not verify login.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleForgotSend = async (e: React.FormEvent | React.MouseEvent) => {
+    e.preventDefault();
+    setAuthError("");
+    setAuthLoading(true);
+
+    try {
+      const res = await fetch("/api/passenger/password-reset/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ phone: phoneCode + customerPhone.trim() }),
+      });
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(readError(data, "Could not send reset code."));
+      if (isRecord(data)) {
+        setResetAttemptId(String(data.resetAttemptId || ""));
+        if (typeof data.devOtp === "string") setDevOtp(data.devOtp);
+      }
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : "Could not send reset code.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleForgotVerify = async (e: React.FormEvent | React.MouseEvent) => {
+    e.preventDefault();
+    setAuthError("");
+    setAuthLoading(true);
+
+    try {
+      const res = await fetch("/api/passenger/password-reset/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          phone: phoneCode + customerPhone.trim(),
+          otpCode: resetOtp,
+          resetAttemptId,
+        }),
+      });
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(readError(data, "Could not verify reset code."));
+      if (isRecord(data) && typeof data.proofToken === "string") {
+        setResetProof(data.proofToken);
+      }
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : "Could not verify reset code.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleResetComplete = async (e: React.FormEvent | React.MouseEvent) => {
+    e.preventDefault();
+    setAuthError("");
+    if (resetPassword !== resetConfirmPassword) {
+      setAuthError(t("passenger.passwordMismatch", "Passwords do not match."));
+      return;
+    }
+    setAuthLoading(true);
+
+    try {
+      const res = await fetch("/api/passenger/password-reset/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({
+          phone: phoneCode + customerPhone.trim(),
+          proofToken: resetProof,
+          resetAttemptId,
+          bookingId: bookingId || null,
+          password: resetPassword,
+          confirmPassword: resetConfirmPassword,
+          rememberDevice,
+        }),
+      });
+      const data = await safeJson(res);
+      if (!res.ok) throw new Error(readError(data, "Password reset could not be completed."));
+      await continueAuthenticatedBooking(isRecord(data) && isRecord(data.passenger) ? data.passenger : null);
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : "Password reset could not be completed.");
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   const serviceOptions: {
@@ -944,6 +1181,87 @@ scheduledTime:
           status: "VERIFIED",
         }}
       />
+    );
+  }
+
+  if (step === 4) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-8 md:py-16">
+        <form onSubmit={handleCreateAccount} className="card">
+          <div className="mb-6 text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-drivo-green-light text-2xl">
+              ✓
+            </div>
+            <h2 className="text-[22px] font-bold text-drivo-text">
+              {t("passenger.createAccountTitle", "Create your Drivo account")}
+            </h2>
+            <p className="mt-2 text-[14px] text-drivo-text-secondary">
+              {t(
+                "passenger.createAccountDesc",
+                "Your phone number has been verified. Create a password so your future bookings are faster."
+              )}
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <FieldLabel>{t("booking.phone")}</FieldLabel>
+              <input className="input bg-drivo-bg-soft" value={phoneCode + customerPhone} readOnly />
+            </div>
+
+            <div>
+              <FieldLabel>{t("booking.email")}</FieldLabel>
+              <input
+                className="input"
+                type="email"
+                value={customerEmail}
+                onChange={(e) => setCustomerEmail(e.target.value)}
+                required
+              />
+            </div>
+
+            <PasswordInput
+              label={t("passenger.password")}
+              value={accountPassword}
+              onChange={setAccountPassword}
+              visible={showAccountPassword}
+              onToggle={() => setShowAccountPassword((current) => !current)}
+            />
+            <PasswordInput
+              label={t("passenger.confirmPassword", "Confirm password")}
+              value={accountConfirmPassword}
+              onChange={setAccountConfirmPassword}
+              visible={showAccountPassword}
+              onToggle={() => setShowAccountPassword((current) => !current)}
+            />
+
+            <p className="text-[12px] text-drivo-text-secondary">
+              {t("passenger.passwordGuidance", "Use at least 12 characters. Spaces and passphrases are allowed.")}
+            </p>
+
+            <label className="flex items-center gap-2 text-[13px] font-semibold text-drivo-text-secondary">
+              <input
+                type="checkbox"
+                checked={rememberDevice}
+                onChange={(e) => setRememberDevice(e.target.checked)}
+              />
+              {t("passenger.rememberDevice", "Remember this device")}
+            </label>
+
+            {authError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] font-semibold text-red-700">
+                {authError}
+              </div>
+            )}
+
+            <button type="submit" className="btn-primary w-full" disabled={authLoading}>
+              {authLoading
+                ? t("passenger.saving")
+                : t("passenger.createAccountContinue", "Create Account & Continue Booking")}
+            </button>
+          </div>
+        </form>
+      </div>
     );
   }
 
@@ -1836,6 +2154,200 @@ onChange={(e) => {
               />
             </div>
 
+            {passengerProfile ? (
+              <div className="rounded-2xl border border-drivo-green/20 bg-drivo-green-light/40 p-4 text-[13px]">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="font-semibold text-drivo-text">
+                    {t("passenger.loggedInAs", "Logged in as")}{" "}
+                    {String(passengerProfile.phone || passengerProfile.normalizedPhone || phoneCode + customerPhone)}
+                  </p>
+                  <button
+                    type="button"
+                    className="text-left text-[13px] font-bold text-drivo-green hover:underline"
+                    onClick={async () => {
+                      await fetch("/api/passenger/logout", { method: "POST" }).catch(() => null);
+                      setPassengerProfile(null);
+                      setLoginPassword("");
+                      setAuthMode("first-time");
+                    }}
+                  >
+                    {t("passenger.useAnotherAccount", "Use another account")}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-drivo-border-light bg-drivo-bg-soft/60 p-4">
+                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-[13px] font-semibold text-drivo-text">
+                    {authMode === "first-time"
+                      ? t("passenger.firstTimePrompt", "First time with Drivo? Verify phone and create account.")
+                      : t("passenger.returningPrompt", "Already have a Drivo account? Log in")}
+                  </p>
+                  <button
+                    type="button"
+                    className="text-left text-[13px] font-bold text-drivo-green hover:underline"
+                    onClick={() => {
+                      setAuthError("");
+                      setAuthMode(authMode === "first-time" ? "login" : "first-time");
+                    }}
+                  >
+                    {authMode === "first-time"
+                      ? t("passenger.loginLink", "Already have a Drivo account? Log in")
+                      : t("passenger.firstTimeLink", "First time with Drivo? Verify phone and create account")}
+                  </button>
+                </div>
+
+                {authMode === "login" && (
+                  <div className="space-y-3">
+                    <PasswordInput
+                      label={t("passenger.password")}
+                      value={loginPassword}
+                      onChange={setLoginPassword}
+                      visible={showLoginPassword}
+                      onToggle={() => setShowLoginPassword((current) => !current)}
+                    />
+                    {authError && (
+                      <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] font-semibold text-red-700">
+                        {authError}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => handlePassengerLogin(e)}
+                      className="btn-primary w-full"
+                      disabled={authLoading}
+                    >
+                      {authLoading ? t("passenger.loading") : t("passenger.loginContinue", "Login & Continue")}
+                    </button>
+                    <button
+                      type="button"
+                      className="text-[13px] font-bold text-drivo-green hover:underline"
+                      onClick={() => {
+                        setAuthError("");
+                        setAuthMode("forgot");
+                      }}
+                    >
+                      {t("passenger.forgotPassword", "Forgot password?")}
+                    </button>
+                  </div>
+                )}
+
+                {authMode === "step-up" && (
+                  <div className="space-y-3">
+                    <input
+                      className="input"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={loginOtp}
+                      onChange={(e) => setLoginOtp(e.target.value)}
+                      placeholder={t("passenger.otpCode")}
+                      required
+                    />
+                    <label className="flex items-center gap-2 text-[13px] font-semibold text-drivo-text-secondary">
+                      <input
+                        type="checkbox"
+                        checked={rememberDevice}
+                        onChange={(e) => setRememberDevice(e.target.checked)}
+                      />
+                      {t("passenger.rememberDevice", "Remember this device")}
+                    </label>
+                    {authError && (
+                      <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] font-semibold text-red-700">
+                        {authError}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => handleLoginStepUp(e)}
+                      className="btn-primary w-full"
+                      disabled={authLoading}
+                    >
+                      {authLoading ? t("otp.verifying", "Verifying...") : t("passenger.verifyOtp")}
+                    </button>
+                  </div>
+                )}
+
+                {authMode === "forgot" && (
+                  <div className="space-y-3">
+                    {!resetAttemptId && (
+                      <div className="space-y-3">
+                        <button
+                          type="button"
+                          onClick={(e) => handleForgotSend(e)}
+                          className="btn-primary w-full"
+                          disabled={authLoading}
+                        >
+                          {authLoading ? t("passenger.loading") : t("passenger.sendResetCode", "Send reset code")}
+                        </button>
+                      </div>
+                    )}
+                    {resetAttemptId && !resetProof && (
+                      <div className="space-y-3">
+                        <input
+                          className="input"
+                          inputMode="numeric"
+                          maxLength={6}
+                          value={resetOtp}
+                          onChange={(e) => setResetOtp(e.target.value)}
+                          placeholder={t("passenger.otpCode")}
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => handleForgotVerify(e)}
+                          className="btn-primary w-full"
+                          disabled={authLoading}
+                        >
+                          {authLoading ? t("otp.verifying", "Verifying...") : t("passenger.verifyOtp")}
+                        </button>
+                      </div>
+                    )}
+                    {resetProof && (
+                      <div className="space-y-3">
+                        <PasswordInput
+                          label={t("passenger.newPassword")}
+                          value={resetPassword}
+                          onChange={setResetPassword}
+                          visible={showResetPassword}
+                          onToggle={() => setShowResetPassword((current) => !current)}
+                        />
+                        <PasswordInput
+                          label={t("passenger.confirmPassword", "Confirm password")}
+                          value={resetConfirmPassword}
+                          onChange={setResetConfirmPassword}
+                          visible={showResetPassword}
+                          onToggle={() => setShowResetPassword((current) => !current)}
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => handleResetComplete(e)}
+                          className="btn-primary w-full"
+                          disabled={authLoading}
+                        >
+                          {authLoading ? t("passenger.saving") : t("passenger.resetContinue", "Reset Password & Continue")}
+                        </button>
+                      </div>
+                    )}
+                    {authError && (
+                      <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] font-semibold text-red-700">
+                        {authError}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="text-[13px] font-bold text-drivo-green hover:underline"
+                      onClick={() => {
+                        setAuthError("");
+                        setAuthMode("login");
+                      }}
+                    >
+                      {t("passenger.backToLogin", "Back to login")}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             <select
               value={languagePref}
               onChange={(e) => setLanguagePref(e.target.value)}
@@ -1948,6 +2460,45 @@ onChange={(e) => {
           </p>
         </div>
       </form>
+    </div>
+  );
+}
+
+function PasswordInput({
+  label,
+  value,
+  onChange,
+  visible,
+  onToggle,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  visible: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div>
+      <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">
+        {label}
+      </label>
+      <div className="relative">
+        <input
+          className="input pr-20"
+          type={visible ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          autoComplete="new-password"
+          required
+        />
+        <button
+          type="button"
+          onClick={onToggle}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] font-bold text-drivo-green"
+        >
+          {visible ? "Hide" : "Show"}
+        </button>
+      </div>
     </div>
   );
 }

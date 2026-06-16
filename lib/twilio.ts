@@ -20,6 +20,17 @@ function getTwilioClient() {
 
 const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER;
 
+export type OTPDeliveryResult =
+  | {
+      success: true;
+      method: string;
+    }
+  | {
+      success: false;
+      method: string;
+      error: string;
+    };
+
 /**
  * Send OTP via SMS using Twilio
  * @param phone - Full phone number with country code (e.g., +421908467335)
@@ -130,22 +141,32 @@ export async function sendWhatsAppOTP(phone: string, otp: string) {
  * @param otp - 6-digit OTP code
  * @returns Success status and method used
  */
-export async function sendOTPWithFallback(phone: string, otp: string) {
+export async function sendOTPWithFallback(phone: string, otp: string): Promise<OTPDeliveryResult> {
   // Try WhatsApp first
   const whatsappResult = await sendWhatsAppOTP(phone, otp);
   
   if (whatsappResult.success) {
-    return whatsappResult;
+    return {
+      success: true,
+      method: whatsappResult.method,
+    };
   }
 
   console.log("⚠️ WhatsApp failed, falling back to SMS...");
   
   // Fallback to SMS
   const smsResult = await sendSMSOTP(phone, otp);
+
+  if (smsResult.success) {
+    return {
+      success: true,
+      method: smsResult.method,
+    };
+  }
   
   return {
-    ...smsResult,
-    fallbackUsed: true,
-    whatsappError: whatsappResult.error
+    success: false,
+    method: smsResult.method,
+    error: smsResult.error || whatsappResult.error || "OTP delivery failed",
   };
 }

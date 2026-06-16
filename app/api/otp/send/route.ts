@@ -2,22 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { sendOTPWithFallback } from "@/lib/twilio";
+import type { OTPDeliveryResult } from "@/lib/twilio";
+import { normalizePassengerPhone } from "@/lib/passenger-auth";
+import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 
 const OTPSchema = z.object({
   bookingId: z.string().min(1),
   phone: z.string().min(6),
 });
 
-/**
- * POST /api/otp/send — Send OTP to verify phone
- * Production: Sends via WhatsApp/SMS using Twilio with fallback
- * Development: Also returns OTP in response for testing
- */
-export async function POST(request: NextRequest) {
+async function handler(request: NextRequest) {
   try {
-    const body = await request.json();
-
-    const parsed = OTPSchema.safeParse(body);
+    const parsed = OTPSchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json(
         { error: "Invalid request", details: parsed.error.flatten().fieldErrors },
@@ -25,71 +21,60 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { bookingId, phone } = parsed.data;
+    const { bookingId } = parsed.data;
+    const normalizedPhone = normalizePassengerPhone(parsed.data.phone);
 
-    // Verify booking exists in database
-    const booking = await prisma.booking.findUnique({
-      where: { id: bookingId },
-    });
-
+    const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
     if (!booking) {
       return NextResponse.json({ error: "Booking not found" }, { status: 404 });
     }
 
-    // Generate OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    if (booking.normalizedPhone && booking.normalizedPhone !== normalizedPhone) {
+      return NextResponse.json({ error: "Phone number does not match booking" }, { status: 400 });
+    }
 
-    // Save OTP to database
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
     await prisma.oTP.create({
       data: {
         code: otp,
-        phone,
+        phone: normalizedPhone,
+        purpose: "PASSENGER_REGISTRATION",
         bookingId,
-        expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
       },
     });
 
-    // Send OTP via WhatsApp/SMS (Production)
-    let deliveryResult;
-    
+    let deliveryResult: OTPDeliveryResult = { success: true, method: "console" };
     if (process.env.TWILIO_ACCOUNT_SID && process.env.NODE_ENV === "production") {
-      // Production: Use Twilio for real OTP delivery
-      deliveryResult = await sendOTPWithFallback(phone, otp);
-      
+      deliveryResult = await sendOTPWithFallback(normalizedPhone, otp);
       if (!deliveryResult.success) {
-        console.error("❌ OTP delivery failed:", deliveryResult.error);
-        // Still return success to user (OTP is saved in DB), but log the failure
-        // Admin can manually contact user if needed
+        console.error("Passenger registration OTP delivery failed:", deliveryResult.error);
       }
-    } else {
-      // Development: Log to console for testing
-      console.log("═══════════════════════════════════════");
-      console.log("📱 OTP CODE — SAVED TO DATABASE ✅");
-      console.log("═══════════════════════════════════════");
-      console.log(`📋 Booking:  ${bookingId}`);
-      console.log(`📱 Phone:    ${phone}`);
-      console.log(`🔢 OTP Code: ${otp}`);
-      console.log(`⏰ Expires:  5 minutes`);
-      console.log("═══════════════════════════════════════");
-      
-      deliveryResult = { success: true, method: "console" };
+    } else if (process.env.NODE_ENV !== "production") {
+      console.log(`Passenger registration OTP for booking ${bookingId}: ${otp}`);
     }
 
-    return NextResponse.json(
-      {
-        success: true,
-        message: "OTP sent successfully",
-        method: deliveryResult.method,
-        // DEV ONLY — remove in production
-        devOtp: process.env.NODE_ENV === "development" ? otp : undefined,
+    await prisma.booking.update({
+      where: { id: bookingId },
+      data: {
+        normalizedPhone,
+        passengerAuthStatus: "PENDING_PHONE_VERIFICATION",
       },
-      { status: 200 }
-    );
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: "OTP sent successfully",
+      method: deliveryResult.method,
+      devOtp: process.env.NODE_ENV === "development" ? otp : undefined,
+    });
   } catch (error) {
-    console.error("❌ OTP send error:", error);
+    console.error("OTP send error:", error);
     return NextResponse.json(
       { error: "Failed to send OTP. Please try again." },
       { status: 500 }
     );
   }
 }
+
+export const POST = withRateLimit(handler, rateLimits.otp);

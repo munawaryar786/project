@@ -89,9 +89,12 @@ model Booking {
   customerEmail     String?
   customerPhone     String
   customerPhoneCode String  @default("+421")
+  normalizedPhone   String?
   languagePref      String  @default("slovak")
   specialNotes      String?
   phoneVerified     Boolean @default(false)
+  passengerAuthStatus String @default("PENDING_PHONE_VERIFICATION")
+  passengerAuthCompletedAt DateTime?
 
   paymentMethod String
   cashAgreed    Boolean @default(false)
@@ -127,6 +130,8 @@ model Booking {
 
   @@index([status])
   @@index([passengerId])
+  @@index([normalizedPhone])
+  @@index([passengerAuthStatus])
   @@index([driverId])
   @@index([dispatchStatus])
   @@index([createdAt])
@@ -138,28 +143,43 @@ model Booking {
 model Passenger {
   id               String  @id @default(auto()) @map("_id") @db.ObjectId
   phone            String  @unique
+  normalizedPhone  String?
   phoneVerified    Boolean @default(false)
+  phoneVerifiedAt  DateTime?
   fullName         String?
   email            String?
   passwordHash     String?
   profileCompleted Boolean @default(false)
+  status           String  @default("ACTIVE")
+  lastLoginAt      DateTime?
+  passwordResetAt  DateTime?
 
   bookings Booking[]
   otps     PassengerOtp[]
+  sessions PassengerSession[]
+  trustedDevices PassengerTrustedDevice[]
+  proofs PassengerVerificationProof[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([email])
   @@index([phoneVerified])
+  @@index([normalizedPhone])
 }
 
 model PassengerOtp {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   code      String
   phone     String
+  purpose   String   @default("PASSENGER_REGISTRATION")
+  bookingId String?  @db.ObjectId
+  loginAttemptId String?
+  resetAttemptId String?
   expiresAt DateTime
   used      Boolean  @default(false)
+  attempts  Int      @default(0)
+  maxAttempts Int    @default(5)
 
   passengerId String    @db.ObjectId
   passenger   Passenger @relation(fields: [passengerId], references: [id])
@@ -168,6 +188,7 @@ model PassengerOtp {
 
   @@index([passengerId, code])
   @@index([phone, code])
+  @@index([phone, purpose])
   @@index([expiresAt])
   @@map("passenger_otps")
 }
@@ -179,8 +200,12 @@ model OTP {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   code      String
   phone     String
+  purpose   String   @default("PASSENGER_REGISTRATION")
+  proofTokenHash String?
   expiresAt DateTime
   used      Boolean  @default(false)
+  attempts  Int      @default(0)
+  maxAttempts Int    @default(5)
 
   bookingId String  @db.ObjectId
   booking   Booking @relation(fields: [bookingId], references: [id])
@@ -188,7 +213,62 @@ model OTP {
   createdAt DateTime @default(now())
 
   @@index([bookingId, code])
+  @@index([bookingId, purpose])
   @@index([expiresAt])
+}
+
+model PassengerSession {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  passengerId String @db.ObjectId
+  passenger Passenger @relation(fields: [passengerId], references: [id])
+  tokenHash String @unique
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  lastUsedAt DateTime?
+  revokedAt DateTime?
+
+  @@index([passengerId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("passenger_sessions")
+}
+
+model PassengerTrustedDevice {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  passengerId String @db.ObjectId
+  passenger Passenger @relation(fields: [passengerId], references: [id])
+  deviceTokenHash String @unique
+  createdAt DateTime @default(now())
+  lastUsedAt DateTime?
+  expiresAt DateTime
+  revokedAt DateTime?
+  userAgent String?
+
+  @@index([passengerId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("passenger_trusted_devices")
+}
+
+model PassengerVerificationProof {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  proofTokenHash String @unique
+  passengerId String? @db.ObjectId
+  passenger Passenger? @relation(fields: [passengerId], references: [id])
+  normalizedPhone String
+  purpose String
+  bookingId String? @db.ObjectId
+  loginAttemptId String?
+  resetAttemptId String?
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  consumedAt DateTime?
+
+  @@index([normalizedPhone, purpose])
+  @@index([passengerId])
+  @@index([bookingId])
+  @@index([expiresAt])
+  @@map("passenger_verification_proofs")
 }
 
 // ============================================

@@ -7,12 +7,13 @@ import {
   getPassengerFromRequest,
   publicPassenger,
   setPassengerCookie,
+  validatePassengerPassword,
 } from "@/lib/passenger-auth";
 
 const ProfileSchema = z.object({
   fullName: z.string().trim().min(2).max(120),
   email: z.string().trim().email().max(160),
-  password: z.string().min(8).max(120),
+  password: z.string().min(1).max(128),
   bookingId: z.string().optional().nullable(),
 });
 
@@ -34,6 +35,10 @@ export async function POST(request: NextRequest) {
   }
 
   const email = parsed.data.email.toLowerCase();
+  const passwordError = validatePassengerPassword(parsed.data.password);
+  if (passwordError) {
+    return NextResponse.json({ error: passwordError }, { status: 400 });
+  }
   const existingEmail = await prisma.passenger.findFirst({
     where: {
       email,

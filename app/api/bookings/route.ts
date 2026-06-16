@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { generateBookingRef, getSourceDomain } from "@/lib/utils";
 import { estimateBookingPrice } from "@/lib/pricing";
+import { getPassengerFromRequest, normalizePassengerPhone } from "@/lib/passenger-auth";
 
 const BookingSchema = z.object({
   serviceType: z.enum([
@@ -124,6 +125,8 @@ export async function POST(request: NextRequest) {
     }
 
     const data = parsed.data;
+    const normalizedPhone = normalizePassengerPhone(`${data.customerPhoneCode}${data.customerPhone}`);
+    const currentPassenger = await getPassengerFromRequest(request);
     const capacityPassengerCount = data.passengerCount + data.companionCount;
     const wavRequired =
       data.wavRequired ||
@@ -302,8 +305,20 @@ export async function POST(request: NextRequest) {
         customerEmail: data.customerEmail || null,
         customerPhone: data.customerPhone,
         customerPhoneCode: data.customerPhoneCode,
+        normalizedPhone,
         languagePref: data.languagePref === "sk" ? "slovak" : data.languagePref,
         specialNotes: data.specialNotes || null,
+        phoneVerified: Boolean(currentPassenger && currentPassenger.normalizedPhone === normalizedPhone),
+        passengerAuthStatus:
+          currentPassenger && currentPassenger.normalizedPhone === normalizedPhone
+            ? "AUTHENTICATED"
+            : "PENDING_PHONE_VERIFICATION",
+        passengerAuthCompletedAt:
+          currentPassenger && currentPassenger.normalizedPhone === normalizedPhone ? new Date() : null,
+        passengerId:
+          currentPassenger && currentPassenger.normalizedPhone === normalizedPhone
+            ? currentPassenger.id
+            : null,
 
         paymentMethod: data.paymentMethod,
         cashAgreed: data.cashAgreed,

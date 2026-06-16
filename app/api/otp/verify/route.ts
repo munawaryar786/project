@@ -1,149 +1,99 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { bookingToEmailData, sendBookingCompletionEmails } from "@/lib/email";
 import {
-  createPassengerSession,
-  publicPassenger,
-  setPassengerCookie,
+  createVerificationProof,
+  normalizePassengerPhone,
 } from "@/lib/passenger-auth";
+import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 
-/**
- * POST /api/otp/verify — Verify OTP code
- */
-export async function POST(request: NextRequest) {
+async function handler(request: NextRequest) {
   try {
     const body = await request.json();
+    const bookingId = String(body.bookingId || body.booking_id || "");
+    const code = String(body.code || body.otp || body.otpCode || "").trim();
 
-    console.log("🔍 OTP VERIFY — RECEIVED:", JSON.stringify(body, null, 2));
-
-    // Extract fields flexibly
-    const bookingId = body.bookingId || body.booking_id || body.bookingRef || "";
-    const phone = body.phone || body.customerPhone || "";
-    const code = (body.code || body.otp || body.otpCode || "").toString();
-
-    if (!code || code.length < 4) {
+    if (!bookingId || code.length !== 6) {
       return NextResponse.json(
         { error: "Please enter the verification code" },
         { status: 400 }
       );
     }
 
-    // Find matching OTP in database
+    const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!booking) {
+      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+    }
+
+    const normalizedPhone =
+      booking.normalizedPhone ||
+      normalizePassengerPhone(`${booking.customerPhoneCode}${booking.customerPhone}`);
+
     const otpRecord = await prisma.oTP.findFirst({
       where: {
-        bookingId: bookingId,
-        code: code,
+        bookingId,
+        phone: normalizedPhone,
+        purpose: "PASSENGER_REGISTRATION",
         expiresAt: { gte: new Date() },
         used: false,
       },
+      orderBy: { createdAt: "desc" },
     });
 
-    if (!otpRecord) {
-      console.log(`❌ OTP VERIFY FAILED — No matching OTP for code: ${code}`);
+    if (!otpRecord || otpRecord.code !== code || otpRecord.attempts >= otpRecord.maxAttempts) {
+      if (otpRecord) {
+        await prisma.oTP.update({
+          where: { id: otpRecord.id },
+          data: { attempts: { increment: 1 } },
+        });
+      }
       return NextResponse.json(
         { error: "Invalid or expired verification code" },
         { status: 400 }
       );
     }
 
-    // Mark OTP as used
     await prisma.oTP.update({
       where: { id: otpRecord.id },
       data: { used: true },
     });
 
-    // Mark booking as phone verified
-    let booking = await prisma.booking.update({
-      where: { id: bookingId },
-      data: { phoneVerified: true },
+    const passenger = await prisma.passenger.findUnique({
+      where: { phone: normalizedPhone },
     });
-
-    const passengerPhone = `${booking.customerPhoneCode}${booking.customerPhone}`;
-    let passenger = await prisma.passenger.findUnique({
-      where: { phone: passengerPhone },
-    });
-
-    if (!passenger) {
-      passenger = await prisma.passenger.create({
-        data: {
-          phone: passengerPhone,
-          phoneVerified: true,
-          fullName: booking.customerName || null,
-          email: null,
-          profileCompleted: false,
-        },
-      });
-    } else {
-      passenger = await prisma.passenger.update({
-        where: { id: passenger.id },
-        data: {
-          phoneVerified: true,
-          fullName: passenger.fullName || booking.customerName || null,
-        },
-      });
-    }
-
-    if (booking.passengerId !== passenger.id) {
-      booking = await prisma.booking.update({
-        where: { id: bookingId },
-        data: { passengerId: passenger.id },
-      });
-    }
-
-    console.log("═══════════════════════════════════════");
-    console.log("✅ OTP VERIFIED — DATABASE UPDATED ✅");
-    console.log(`📋 Booking: ${bookingId}`);
-    console.log(`📱 Phone:   ${phone}`);
-    console.log(`🔢 Code:    ${code}`);
-    console.log("═══════════════════════════════════════");
-// AUTO START DISPATCH AFTER OTP VERIFIED
-try {
-  const dispatchRes = await fetch(`${request.nextUrl.origin}/api/dispatch/start`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+    const proofToken = await createVerificationProof({
+      passengerId: passenger?.id || null,
+      normalizedPhone,
+      purpose: "PASSENGER_REGISTRATION",
       bookingId,
-    }),
-  });
+    });
 
-  const dispatchData = await dispatchRes.json().catch(() => null);
-
-  if (!dispatchRes.ok) {
-    console.log("⚠️ Auto dispatch failed:", dispatchData?.error || "Unknown error");
-  } else {
-    console.log("✅ Auto dispatch started after OTP verification");
-  }
-} catch (err) {
-  console.error("❌ Auto dispatch error:", err);
-}
-    if (booking.paymentMethod === "CARD") {
-      console.log(
-        `[email] Booking ${booking.bookingRef} uses card payment. Completion emails will be sent after Stripe confirms payment.`
-      );
-    } else {
-      await sendBookingCompletionEmails(bookingToEmailData(booking));
-    }
-
-    const token = await createPassengerSession(passenger);
-    const response = NextResponse.json(
-      {
-        success: true,
-        verified: true,
-        message: "Phone verified successfully",
-        passenger: publicPassenger(passenger),
+    await prisma.booking.update({
+      where: { id: bookingId },
+      data: {
+        phoneVerified: true,
+        normalizedPhone,
+        passengerAuthStatus:
+          passenger?.passwordHash ? "ACCOUNT_SETUP_REQUIRED" : "ACCOUNT_SETUP_REQUIRED",
       },
-      { status: 200 }
-    );
-    setPassengerCookie(response, token);
+    });
 
-    return response;
+    return NextResponse.json({
+      success: true,
+      verified: true,
+      accountSetupRequired: true,
+      existingPasswordAccount: Boolean(passenger?.passwordHash),
+      proofToken,
+      phone: normalizedPhone,
+      email: booking.customerEmail || "",
+      message: "Phone verified successfully",
+    });
   } catch (error) {
-    console.error("❌ OTP verify error:", error);
+    console.error("OTP verify error:", error);
     return NextResponse.json(
       { error: "Verification failed. Please try again." },
       { status: 500 }
     );
   }
 }
+
+export const POST = withRateLimit(handler, rateLimits.otp);

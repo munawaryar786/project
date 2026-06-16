@@ -2,7 +2,7 @@ export type ServiceType = 'standard' | 'accessible' | 'senior' | 'children' | 'a
 export type LuggageType = 'none' | 'small' | 'large';
 export type PaymentMethod = '' | 'card' | 'cash' | 'invoice';
 export type LanguageType = 'slovak' | 'english' | 'ukrainian' | 'other';
-export type BookingStep = 1 | 2 | 3;
+export type BookingStep = 1 | 2 | 3 | 4;
 
 export type AssistanceLevel = '' | 'LIGHT' | 'DOOR_TO_DOOR' | 'BOARDING_HELP';
 export type WheelchairType = '' | 'MANUAL' | 'ELECTRIC' | 'FOLDABLE';
