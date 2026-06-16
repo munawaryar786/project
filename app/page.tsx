@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import Header from "@/components/layout/Header";
@@ -26,123 +25,109 @@ const HOME_IMAGES = {
   sevenSeater: "https://images.unsplash.com/photo-1750210506021-05f1f5bdad23?auto=format&fit=crop&w=900&q=70",
 } as const;
 
-function Counter({ end, suffix = "", duration = 1600 }: { end: number; suffix?: string; duration?: number }) {
-  const [count, setCount] = useState(0);
-
-  useEffect(() => {
-    let start = 0;
-    const step = end / (duration / 16);
-    const timer = setInterval(() => {
-      start += step;
-      if (start >= end) {
-        setCount(end);
-        clearInterval(timer);
-      } else {
-        setCount(Math.floor(start));
-      }
-    }, 16);
-
-    return () => clearInterval(timer);
-  }, [end, duration]);
-
-  return <>{count.toLocaleString()}{suffix}</>;
-}
-
 function Hero() {
   const { t } = useLanguage();
 
-  const stats = [
-    [2400, "+", t("home.stats.riders")],
-    [50, "+", t("home.stats.drivers")],
-    [15, "+", t("home.stats.vehicles")],
-    [5, "", t("home.stats.services")],
-  ] as const;
-
   return (
-    <section className="relative min-h-screen overflow-hidden bg-drivo-navy">
+    <section className="relative overflow-hidden bg-drivo-navy">
       <div className="absolute inset-0">
         <Image
-          src="https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=1920&q=80"
+          src={HOME_IMAGES.senior}
           alt=""
           fill
           priority
           sizes="100vw"
-          className="object-cover opacity-20"
+          className="object-cover opacity-30"
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-drivo-navy via-drivo-navy/95 to-drivo-navy/70" />
+        <div className="absolute inset-0 bg-gradient-to-br from-drivo-navy via-drivo-navy/94 to-drivo-teal/65" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_30%,rgba(67,211,203,0.22),transparent_34%)]" />
       </div>
 
-      <div className="relative container-main pt-32 pb-20 md:pt-40">
-        <div className="grid gap-12 lg:gap-16 items-start">
-          <div className="max-w-2xl animate-fade-up">
-            <div className="pill mb-8 border border-white/10 bg-white/10 text-white/80 backdrop-blur-sm">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-drivo-green" />
+      <div className="relative container-main pt-28 pb-28 sm:pb-20 md:pt-36 md:pb-20 lg:pt-40 lg:pb-24">
+        <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.95fr)] lg:gap-14 xl:gap-20">
+          <div className="animate-fade-up">
+            <div className="pill mb-6 max-w-full flex-wrap border border-white/15 bg-white/10 text-white/90 backdrop-blur-sm">
+              <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-drivo-aqua" />
               {t("hero.badge2")}
             </div>
 
-            <h1 className="mb-6 text-[40px] font-extrabold leading-[1.05] tracking-tight text-white md:text-[56px] lg:text-[64px]">
+            <h1 className="mb-6 max-w-[780px] text-[clamp(2.25rem,8vw,3.55rem)] font-extrabold leading-[1.08] text-white lg:text-[clamp(3.35rem,5vw,4.35rem)]">
               {t("hero.title")}
             </h1>
 
-            <p className="mb-10 max-w-lg text-[17px] leading-relaxed text-white/60 md:text-[19px]">
+            <p className="mb-8 max-w-[690px] text-[16px] leading-8 text-white/[0.78] md:text-[18px] md:leading-9">
               {t("hero.subtitle")}
             </p>
 
-            <div className="mb-10 flex flex-col gap-4 sm:flex-row">
-              <Link href="/book" className="btn-primary px-8 text-[16px]">
-                {t("cta.bookNow")}
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:gap-4">
+              <Link href="/book" className="btn-primary min-h-14 w-full px-7 text-[16px] sm:w-auto">
+                {t("hero.bookNow")}
               </Link>
 
               <a
                 href={WHATSAPP_URL}
-                className="btn-outline border-white/20 text-white hover:bg-white/10"
+                className="btn-outline min-h-14 w-full border-white/25 bg-white/5 px-7 text-[16px] text-white hover:bg-white/10 hover:text-white sm:w-auto"
               >
-                {t("common.whatsapp")}
+                {t("hero.whatsapp")}
               </a>
             </div>
+          </div>
 
-            <div className="mb-10 flex max-w-lg items-center gap-4 rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
-              <div className="flex shrink-0 -space-x-2 pr-2 sm:-space-x-3 sm:pr-0">
-                {[
-                  "https://i.pravatar.cc/48?img=1",
-                  "https://i.pravatar.cc/48?img=2",
-                  "https://i.pravatar.cc/48?img=3",
-                  "https://i.pravatar.cc/48?img=4",
-                  "https://i.pravatar.cc/48?img=5",
-                ].map((src) => (
-                  <Image
-                    key={src}
-                    src={src}
-                    alt=""
-                    width={40}
-                    height={40}
-                    className="h-9 w-9 rounded-full border-2 border-drivo-navy object-cover sm:h-10 sm:w-10"
-                  />
-                ))}
+          <div className="relative mx-auto w-full max-w-[430px] lg:mx-0 lg:justify-self-end">
+            <div className="relative overflow-hidden rounded-[28px] border border-white/[0.12] bg-white/[0.08] p-3 shadow-[0_24px_70px_rgba(0,0,0,0.28)] backdrop-blur-md">
+              <div className="relative hidden aspect-[4/3] overflow-hidden rounded-3xl lg:block">
+                <Image
+                  src={HOME_IMAGES.comfortableInterior}
+                  alt="DRIVO taxi prepared for professional Bratislava transport"
+                  fill
+                  sizes="(min-width: 1024px) 430px, 100vw"
+                  className="object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-drivo-navy/88 via-drivo-navy/22 to-transparent" />
+                <div className="absolute bottom-4 left-4 right-4 rounded-2xl border border-white/15 bg-drivo-navy/72 px-4 py-3 backdrop-blur-md">
+                  <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-[0.16em] text-drivo-aqua">
+                    <span className="h-2 w-2 rounded-full bg-drivo-aqua" />
+                    4.9 / 5
+                  </div>
+                  <p className="text-[14px] font-semibold leading-snug text-white">
+                    {t("hero.reviewsLine")}
+                  </p>
+                </div>
               </div>
 
-              <div className="min-w-0 pl-1 sm:pl-0">
-                <div className="text-[14px] font-bold leading-snug text-white sm:text-[15px]">
-                  2,400+ {t("home.stats.riders")}
-                </div>
-                <div className="text-[12px] leading-snug text-white/55 sm:text-[13px]">
-                  {t("hero.reviewsLine")}
+              <div className="rounded-3xl border border-white/10 bg-drivo-navy/75 p-4 backdrop-blur-sm sm:p-5 lg:mt-3">
+                <div className="flex flex-col gap-4 min-[390px]:flex-row min-[390px]:items-center">
+                  <div className="flex shrink-0 -space-x-2">
+                    {[
+                      "https://i.pravatar.cc/48?img=1",
+                      "https://i.pravatar.cc/48?img=2",
+                      "https://i.pravatar.cc/48?img=3",
+                      "https://i.pravatar.cc/48?img=4",
+                      "https://i.pravatar.cc/48?img=5",
+                    ].map((src) => (
+                      <Image
+                        key={src}
+                        src={src}
+                        alt=""
+                        width={40}
+                        height={40}
+                        className="h-9 w-9 rounded-full border-2 border-drivo-navy object-cover sm:h-10 sm:w-10"
+                      />
+                    ))}
+                  </div>
+
+                  <div className="min-w-0">
+                    <div className="text-[15px] font-bold leading-snug text-white sm:text-[16px]">
+                      2,400+ {t("home.stats.riders")}
+                    </div>
+                    <div className="mt-1 text-[13px] leading-relaxed text-white/65 sm:text-[14px]">
+                      {t("hero.reviewsLine")}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-
-            <div className="grid max-w-md grid-cols-[1.25fr_1fr_1fr_.8fr] gap-4 sm:grid-cols-4 sm:gap-6">
-              {stats.map(([value, suffix, label]) => (
-                <div key={label} className="min-w-0">
-                  <div className="whitespace-nowrap text-[22px] font-extrabold leading-none text-white sm:text-[24px]">
-                    <Counter end={value} suffix={suffix} />
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-white/40">
-                    {label}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <div className="pointer-events-none absolute -right-8 top-10 hidden h-28 w-28 rounded-full border border-drivo-aqua/25 bg-drivo-aqua/10 blur-xl lg:block" />
           </div>
         </div>
       </div>
