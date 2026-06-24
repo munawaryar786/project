@@ -6,7 +6,10 @@ type AddressSuggestion = {
   placeId?: string;
   mainText?: string;
   secondaryText?: string;
+  typeLabel?: string;
   types?: string[];
+  lat?: number;
+  lng?: number;
 };
 
 interface AddressAutocompleteProps {
@@ -16,6 +19,7 @@ interface AddressAutocompleteProps {
   label: string;
   id: string;
   suggestionBias?: string;
+  educationalOnly?: boolean;
   noResultsText?: string;
   onSelect?: (value: string, suggestion?: AddressSuggestion) => void;
 }
@@ -27,6 +31,7 @@ export default function AddressAutocomplete({
   label,
   id,
   suggestionBias,
+  educationalOnly = false,
   noResultsText = "No matching address found.",
   onSelect,
 }: AddressAutocompleteProps) {
@@ -36,7 +41,9 @@ export default function AddressAutocomplete({
   const [searched, setSearched] = useState(false);
 
   useEffect(() => {
-    if (value.length < 3) {
+    const trimmedValue = value.trim();
+
+    if (trimmedValue.length < 3) {
       setSuggestions([]);
       setSearched(false);
       return;
@@ -45,9 +52,11 @@ export default function AddressAutocomplete({
     setLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const query = suggestionBias ? `${value} ${suggestionBias}` : value;
-        const educationalParam = suggestionBias ? "&educational=1" : "";
-        const response = await fetch(`/api/addresses/suggest?q=${encodeURIComponent(query)}${educationalParam}`);
+        const params = new URLSearchParams({ q: trimmedValue });
+        if (educationalOnly) params.set("educationalOnly", "true");
+        if (suggestionBias) params.set("bias", suggestionBias);
+
+        const response = await fetch(`/api/addresses/suggest?${params.toString()}`);
         const data = await response.json();
         
         if (data.success) {
@@ -68,7 +77,7 @@ export default function AddressAutocomplete({
     }, 300); // Debounce 300ms
 
     return () => clearTimeout(timer);
-  }, [value, suggestionBias]);
+  }, [value, suggestionBias, educationalOnly]);
 
   const handleSelect = (suggestion: AddressSuggestion) => {
     onChange(suggestion.description);
@@ -108,9 +117,9 @@ export default function AddressAutocomplete({
               className="px-4 py-3 cursor-pointer hover:bg-drivo-bg-soft border-b border-drivo-border-light last:border-0 text-[14px] text-drivo-text"
             >
               <span className="block font-semibold">{suggestion.mainText || suggestion.description}</span>
-              {suggestion.secondaryText && (
+              {(suggestion.typeLabel || suggestion.secondaryText) && (
                 <span className="mt-0.5 block text-[12px] text-drivo-text-muted">
-                  {suggestion.secondaryText}
+                  {[suggestion.typeLabel, suggestion.secondaryText].filter(Boolean).join(" - ")}
                 </span>
               )}
             </li>

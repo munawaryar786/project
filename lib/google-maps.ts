@@ -35,8 +35,12 @@ export interface AddressSuggestion {
   placeId?: string;
   mainText?: string;
   secondaryText?: string;
+  typeLabel?: string;
   types?: string[];
+  lat?: number;
+  lng?: number;
 }
+
 
 /**
  * Calculate distance and duration between two addresses using Google Maps Distance Matrix API
@@ -85,7 +89,7 @@ export async function calculateDistance(
       destination,
     };
   } catch (error: any) {
-    console.error("❌ Distance calculation error:", error.message);
+    console.error("Distance calculation error:", error.message);
     throw error;
   }
 }
@@ -125,46 +129,192 @@ export async function geocodeAddress(address: string): Promise<GeocodeResult> {
       placeId: result.place_id,
     };
   } catch (error: any) {
-    console.error("❌ Geocoding error:", error.message);
+    console.error("Geocoding error:", error.message);
     throw error;
   }
 }
 
+type AddressSuggestionOptions = {
+  educationalOnly?: boolean;
+};
+
+const BRATISLAVA_LOCATION = "48.1486,17.1077";
+const BRATISLAVA_RADIUS_METERS = "70000";
+
+const EDUCATIONAL_TERMS = [
+  "school",
+  "college",
+  "university",
+  "educational",
+  "education",
+  "training",
+  "academy",
+  "institute",
+  "skola",
+  "skola",
+  "gymnasium",
+  "gymnazium",
+  "univerzita",
+];
+
+const EDUCATIONAL_TYPES = new Set([
+  "school",
+  "primary_school",
+  "secondary_school",
+  "university",
+]);
+
+const TYPE_LABELS: Array<[string, string]> = [
+  ["shopping_mall", "Shopping mall"],
+  ["hospital", "Hospital"],
+  ["doctor", "Clinic"],
+  ["health", "Healthcare"],
+  ["airport", "Airport"],
+  ["train_station", "Train station"],
+  ["bus_station", "Bus station"],
+  ["transit_station", "Station"],
+  ["lodging", "Hotel"],
+  ["tourist_attraction", "Tourist location"],
+  ["restaurant", "Restaurant"],
+  ["local_government_office", "Public office"],
+  ["city_hall", "Public office"],
+  ["embassy", "Public office"],
+  ["school", "School"],
+  ["primary_school", "School"],
+  ["secondary_school", "School"],
+  ["university", "University"],
+  ["route", "Street"],
+  ["street_address", "Address"],
+  ["premise", "Address"],
+];
+
+function normalizeText(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function normalizeEducationalOption(options?: boolean | AddressSuggestionOptions) {
+  if (typeof options === "boolean") return options;
+  return Boolean(options?.educationalOnly);
+}
+
+function typeLabelFor(types: string[] = []) {
+  const match = TYPE_LABELS.find(([type]) => types.includes(type));
+  if (match) return match[1];
+  if (types.includes("point_of_interest") || types.includes("establishment")) return "Place";
+  if (types.includes("locality") || types.includes("sublocality")) return "Area";
+  return undefined;
+}
+
+function isEducationalSuggestion(prediction: any) {
+  const types = Array.isArray(prediction.types) ? prediction.types : [];
+  if (types.some((type: string) => EDUCATIONAL_TYPES.has(type))) return true;
+
+  const description = normalizeText(String(prediction.description || ""));
+  return EDUCATIONAL_TERMS.some((term) => description.includes(term));
+}
+
+async function fetchPlaceDetails(placeId: string) {
+  if (!GOOGLE_MAPS_API_KEY) return null;
+
+  const params = new URLSearchParams({
+    place_id: placeId,
+    key: GOOGLE_MAPS_API_KEY,
+    fields: "geometry,type",
+    language: "sk",
+  });
+
+  const response = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?${params.toString()}`);
+  const data = await response.json();
+
+  if (data.status !== "OK" || !data.result) return null;
+
+  const location = data.result.geometry?.location;
+  const lat = Number(location?.lat);
+  const lng = Number(location?.lng);
+  const types = Array.isArray(data.result.types) ? data.result.types : [];
+
+  return {
+    lat: Number.isFinite(lat) ? lat : undefined,
+    lng: Number.isFinite(lng) ? lng : undefined,
+    types,
+  };
+}
+
 /**
- * Autocomplete address suggestions
- * @param input - Partial address input
- * @returns Array of address suggestions
+ * Autocomplete address and place suggestions around Bratislava/Slovakia.
+ * Normal mode intentionally does not use types=geocode, so POIs are included.
  */
 export async function getAddressSuggestionItems(
   input: string,
-  educational = false
+  options: boolean | AddressSuggestionOptions = false
 ): Promise<AddressSuggestion[]> {
-  if (!GOOGLE_MAPS_API_KEY) {
-    console.error("❌ Google Maps not configured");
+  const educationalOnly = normalizeEducationalOption(options);
+  const trimmedInput = input.trim();
+
+  if (!GOOGLE_MAPS_API_KEY || trimmedInput.length < 3) {
+    if (!GOOGLE_MAPS_API_KEY) console.error("Google Maps not configured");
     return [];
   }
 
   try {
-    // Use direct fetch to Google Places Autocomplete API
-    const type = educational ? "establishment" : "geocode";
-    const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&key=${GOOGLE_MAPS_API_KEY}&types=${type}&components=country:sk&language=sk`;
-    
-    const response = await fetch(url);
+    const params = new URLSearchParams({
+      input: trimmedInput,
+      key: GOOGLE_MAPS_API_KEY,
+      components: "country:sk",
+      language: "sk",
+      location: BRATISLAVA_LOCATION,
+      radius: BRATISLAVA_RADIUS_METERS,
+    });
+
+    if (educationalOnly) {
+      params.set("types", "establishment");
+    }
+
+    const response = await fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?${params.toString()}`);
     const data = await response.json();
 
-    if (data.status !== 'OK' || !data.predictions) {
+    if (data.status !== "OK" || !Array.isArray(data.predictions)) {
       return [];
     }
 
-    return data.predictions.slice(0, 5).map((p: any) => ({
-      description: p.description,
-      placeId: p.place_id,
-      mainText: p.structured_formatting?.main_text,
-      secondaryText: p.structured_formatting?.secondary_text,
-      types: Array.isArray(p.types) ? p.types : [],
-    }));
+    const seen = new Set<string>();
+    const predictions = data.predictions
+      .filter((prediction: any) => !educationalOnly || isEducationalSuggestion(prediction))
+      .filter((prediction: any) => {
+        const key = String(prediction.place_id || prediction.description || "").toLowerCase();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 6);
+
+    const details = await Promise.all(
+      predictions.map((prediction: any) =>
+        prediction.place_id ? fetchPlaceDetails(prediction.place_id).catch(() => null) : Promise.resolve(null)
+      )
+    );
+
+    return predictions.map((p: any, index: number) => {
+      const predictionTypes = Array.isArray(p.types) ? p.types : [];
+      const detail = details[index];
+      const types = Array.from(new Set([...(detail?.types || []), ...predictionTypes]));
+
+      return {
+        description: p.description,
+        placeId: p.place_id,
+        mainText: p.structured_formatting?.main_text,
+        secondaryText: p.structured_formatting?.secondary_text,
+        typeLabel: typeLabelFor(types),
+        types,
+        lat: detail?.lat,
+        lng: detail?.lng,
+      };
+    });
   } catch (error: any) {
-    console.error("❌ Address autocomplete error:", error.message);
+    console.error("Address autocomplete error:", error.message);
     return [];
   }
 }

@@ -464,6 +464,14 @@ useEffect(() => {
     }
   };
 
+  const coordsFromSuggestion = (suggestion?: { lat?: number; lng?: number }): Coords | null => {
+    const lat = Number(suggestion?.lat);
+    const lng = Number(suggestion?.lng);
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return { lat, lng };
+  };
+
   const extractCoords = (item: unknown): Coords | null => {
     if (!isRecord(item)) return null;
 
@@ -504,10 +512,11 @@ useEffect(() => {
       const data = await safeJson(res);
       const list =
         isRecord(data)
-          ? data.suggestions ||
+          ? data.suggestionItems ||
             data.results ||
             data.addresses ||
             data.items ||
+            data.suggestions ||
             []
           : [];
 
@@ -1352,6 +1361,13 @@ scheduledTime:
               key={s.value}
               type="button"
               onClick={() => {
+                if (serviceType !== s.value) {
+                  setError("");
+                }
+                if (serviceType === "children" && s.value !== "children") {
+                  setEducationalInstitutionName("");
+                  setInstitutionSuggestionSelected(false);
+                }
                 setServiceType(s.value);
                 setWheelchair(s.value === "accessible");
                 if (s.value === "accessible") {
@@ -1441,6 +1457,11 @@ scheduledTime:
                   onPickupChange?.(v);
                 }}
                 placeholder={t("booking.pickupPlaceholder")}
+                noResultsText={t("booking.noMatchingAddress", "No matching address found.")}
+                onSelect={(_, suggestion) => {
+                  const coords = coordsFromSuggestion(suggestion);
+                  if (coords) setPickupCoords(coords);
+                }}
               />
 
               <button
@@ -1472,6 +1493,8 @@ scheduledTime:
                 onDropoffChange?.(v);
               }}
               onSelect={(v, suggestion) => {
+                const coords = coordsFromSuggestion(suggestion);
+                if (coords) setDropoffCoords(coords);
                 if (childrenTransport) {
                   setEducationalInstitutionName(suggestion?.mainText || getInstitutionName(v));
                   setInstitutionSuggestionSelected(true);
@@ -1482,8 +1505,12 @@ scheduledTime:
                   ? t("booking.searchEducationalInstitution", "Search educational institution")
                   : t("booking.dropoffPlaceholder")
               }
-              suggestionBias={childrenTransport ? "school college university training centre" : undefined}
-              noResultsText={t("booking.noVerifiedInstitution", "No verified educational institution found.")}
+              educationalOnly={childrenTransport}
+              noResultsText={
+                childrenTransport
+                  ? t("booking.noVerifiedInstitution", "No verified educational institution found.")
+                  : t("booking.noMatchingAddress", "No matching address found.")
+              }
             />
 
             {childrenTransport && (
