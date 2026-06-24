@@ -114,4 +114,4 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.auth);
+export const POST = withRateLimit(handler, rateLimits.passengerPasswordReset);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 interface Props {
@@ -8,6 +8,7 @@ interface Props {
   bookingId: string;
   phone: string;
   devOtp?: string;
+  initialError?: string;
 }
 
 export default function OTPVerification({
@@ -15,14 +16,19 @@ export default function OTPVerification({
   bookingId,
   phone,
   devOtp,
+  initialError = "",
 }: Props) {
   const { t } = useLanguage();
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(initialError);
   const [resending, setResending] = useState(false);
   const [currentDevOtp, setCurrentDevOtp] = useState<string | undefined>(devOtp);
   const refs = useRef<(HTMLInputElement | null)[]>([]);
+
+  useEffect(() => {
+    setError(initialError);
+  }, [initialError]);
 
   const handleChange = (i: number, v: string) => {
     if (v.length > 1) return;

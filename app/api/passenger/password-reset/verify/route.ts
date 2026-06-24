@@ -58,7 +58,7 @@ async function handler(request: NextRequest) {
       data: { used: true },
     });
 
-    const proofToken = await createVerificationProof({
+    const proof = await createVerificationProof({
       passengerId: passenger.id,
       normalizedPhone,
       purpose: "PASSENGER_PASSWORD_RESET",
@@ -67,7 +67,8 @@ async function handler(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      proofToken,
+      proofToken: proof.proofToken,
+      expiresAt: proof.expiresAt.toISOString(),
     });
   } catch (error) {
     console.error("Password reset verify error:", error);
@@ -75,4 +76,4 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.otp);
+export const POST = withRateLimit(handler, rateLimits.passengerPasswordReset);

@@ -36,11 +36,7 @@ export async function sendOTP(bookingId: string, phone: string) {
     return result;
   }
 
-  // Development: Log OTP to server console (GDPR: phone masked)
-  console.log("=========================================");
-  console.log(`📱 OTP for ${maskPhone(phone)}: ${otpCode}`);
-  console.log("=========================================");
-
+  // Development delivery is disabled when no provider is configured.
   return { success: true, method: "console" };
 }
 

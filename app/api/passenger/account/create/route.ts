@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import {
-  consumeVerificationProof,
+  consumeVerificationProofById,
   createPassengerSession,
+  findVerificationProof,
   normalizePassengerPhone,
   publicPassenger,
   setPassengerCookie,
@@ -16,7 +17,7 @@ import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 const CreateAccountSchema = z
   .object({
     bookingId: z.string().min(1),
-    proofToken: z.string().min(20),
+    registrationProofToken: z.string().min(20),
     phone: z.string().min(6),
     fullName: z.string().trim().min(2).max(120),
     email: z.string().trim().email().max(160),
@@ -29,9 +30,23 @@ const CreateAccountSchema = z
     message: "Passwords do not match.",
   });
 
+function normalizeCreateAccountBody(body: unknown) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
+  const record = body as Record<string, unknown>;
+  return {
+    ...record,
+    registrationProofToken:
+      typeof record.registrationProofToken === "string"
+        ? record.registrationProofToken
+        : record.proofToken,
+  };
+}
+
 async function handler(request: NextRequest) {
   try {
-    const parsed = CreateAccountSchema.safeParse(await request.json());
+    const parsed = CreateAccountSchema.safeParse(
+      normalizeCreateAccountBody(await request.json())
+    );
     if (!parsed.success) {
       return NextResponse.json(
         { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
@@ -46,20 +61,6 @@ async function handler(request: NextRequest) {
     }
 
     const normalizedPhone = normalizePassengerPhone(data.phone);
-    const proof = await consumeVerificationProof({
-      proofToken: data.proofToken,
-      normalizedPhone,
-      purpose: "PASSENGER_REGISTRATION",
-      bookingId: data.bookingId,
-    });
-
-    if (!proof) {
-      return NextResponse.json(
-        { error: "Phone verification expired. Please verify again." },
-        { status: 400 }
-      );
-    }
-
     const booking = await prisma.booking.findUnique({ where: { id: data.bookingId } });
     if (!booking) {
       return NextResponse.json({ error: "Booking not found" }, { status: 404 });
@@ -72,7 +73,20 @@ async function handler(request: NextRequest) {
       return NextResponse.json({ error: "Phone verification does not match booking" }, { status: 400 });
     }
 
-    const passwordHash = await bcrypt.hash(data.password, 12);
+    const proof = await findVerificationProof({
+      proofToken: data.registrationProofToken,
+      normalizedPhone,
+      purpose: "PASSENGER_REGISTRATION",
+      bookingId: data.bookingId,
+    });
+
+    if (!proof) {
+      return NextResponse.json(
+        { error: "Phone verification expired. Please verify again." },
+        { status: 400 }
+      );
+    }
+
     const existing = await prisma.passenger.findFirst({
       where: {
         OR: [{ phone: normalizedPhone }, { normalizedPhone }],
@@ -86,6 +100,7 @@ async function handler(request: NextRequest) {
       );
     }
 
+    const passwordHash = await bcrypt.hash(data.password, 12);
     const passenger = existing
       ? await prisma.passenger.update({
           where: { id: existing.id },
@@ -130,6 +145,8 @@ async function handler(request: NextRequest) {
       },
     });
 
+    await consumeVerificationProofById(proof.id);
+
     const token = await createPassengerSession(passenger);
     const response = NextResponse.json({
       success: true,
@@ -151,4 +168,4 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.auth);
+export const POST = withRateLimit(handler, rateLimits.passengerAccountCreate);

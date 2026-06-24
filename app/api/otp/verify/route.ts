@@ -60,7 +60,7 @@ async function handler(request: NextRequest) {
     const passenger = await prisma.passenger.findUnique({
       where: { phone: normalizedPhone },
     });
-    const proofToken = await createVerificationProof({
+    const proof = await createVerificationProof({
       passengerId: passenger?.id || null,
       normalizedPhone,
       purpose: "PASSENGER_REGISTRATION",
@@ -82,7 +82,9 @@ async function handler(request: NextRequest) {
       verified: true,
       accountSetupRequired: true,
       existingPasswordAccount: Boolean(passenger?.passwordHash),
-      proofToken,
+      registrationProofToken: proof.proofToken,
+      expiresAt: proof.expiresAt.toISOString(),
+      phoneVerified: true,
       phone: normalizedPhone,
       email: booking.customerEmail || "",
       message: "Phone verified successfully",
@@ -96,4 +98,4 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.otp);
+export const POST = withRateLimit(handler, rateLimits.passengerRegistrationOtpVerify);

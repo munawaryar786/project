@@ -50,8 +50,6 @@ async function handler(request: NextRequest) {
       if (!deliveryResult.success) {
         console.error("Passenger registration OTP delivery failed:", deliveryResult.error);
       }
-    } else if (process.env.NODE_ENV !== "production") {
-      console.log(`Passenger registration OTP for booking ${bookingId}: ${otp}`);
     }
 
     await prisma.booking.update({
@@ -66,7 +64,6 @@ async function handler(request: NextRequest) {
       success: true,
       message: "OTP sent successfully",
       method: deliveryResult.method,
-      devOtp: process.env.NODE_ENV === "development" ? otp : undefined,
     });
   } catch (error) {
     console.error("OTP send error:", error);
@@ -77,4 +74,4 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.otp);
+export const POST = withRateLimit(handler, rateLimits.passengerRegistrationOtpSend);

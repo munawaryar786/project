@@ -71,15 +71,12 @@ async function handler(request: NextRequest) {
         if (!deliveryResult.success) {
           console.error("Passenger login step-up OTP delivery failed:", deliveryResult.error);
         }
-      } else if (process.env.NODE_ENV !== "production") {
-        console.log(`Passenger login step-up OTP for ${passenger.id}: ${otp}`);
       }
 
       return NextResponse.json({
         success: true,
         stepUpRequired: true,
         loginAttemptId,
-        devOtp: process.env.NODE_ENV === "development" ? otp : undefined,
         message: "We need to verify this login. A code has been sent to your phone.",
       });
     }
@@ -117,4 +114,4 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.auth);
+export const POST = withRateLimit(handler, rateLimits.passengerLoginPassword);

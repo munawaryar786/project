@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import type {
@@ -227,6 +227,8 @@ export default function BookingForm({
   const [bookingRef, setBookingRef] = useState("");
   const [devOtp, setDevOtp] = useState<string | undefined>(undefined);
   const [verificationProof, setVerificationProof] = useState("");
+  const [verificationProofExpiresAt, setVerificationProofExpiresAt] = useState("");
+  const [verificationProofPhone, setVerificationProofPhone] = useState("");
   const [authMode, setAuthMode] = useState<AuthMode>("first-time");
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
@@ -247,10 +249,18 @@ export default function BookingForm({
   const [estimatedPrice, setEstimatedPrice] = useState<number | undefined>();
   const [fareBreakdown, setFareBreakdown] = useState<FareBreakdown | null>(null);
   const [passengerProfile, setPassengerProfile] = useState<Record<string, unknown> | null>(null);
+  const accountCreateInFlight = useRef(false);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [step]);
+
+  useEffect(() => {
+    if (step === 4 && !verificationProof) {
+      setError("Phone verification expired. Please verify again.");
+      setStep(2);
+    }
+  }, [step, verificationProof]);
 
   useEffect(() => {
     onServiceTypeChange?.(serviceType);
@@ -783,6 +793,9 @@ scheduledTime:
 
       setBookingId(newBookingId);
       setBookingRef(newBookingRef);
+      setVerificationProof("");
+      setVerificationProofExpiresAt("");
+      setVerificationProofPhone("");
 
       const price = Number(bookingData.estimatedPrice);
       if (Number.isFinite(price)) {
@@ -837,11 +850,24 @@ scheduledTime:
       throw new Error(readError(data, "OTP verification failed"));
     }
 
-    if (!isRecord(data) || typeof data.proofToken !== "string") {
+    if (!isRecord(data)) {
       throw new Error("Verification response was invalid");
     }
 
-    setVerificationProof(data.proofToken);
+    const registrationProofToken =
+      typeof data.registrationProofToken === "string"
+        ? data.registrationProofToken
+        : typeof data.proofToken === "string"
+          ? data.proofToken
+          : "";
+
+    if (!registrationProofToken) {
+      throw new Error("Verification response was invalid");
+    }
+
+    setVerificationProof(registrationProofToken);
+    setVerificationProofExpiresAt(typeof data.expiresAt === "string" ? data.expiresAt : "");
+    setVerificationProofPhone(typeof data.phone === "string" ? data.phone : phoneCode + customerPhone.trim());
     if (typeof data.email === "string" && data.email && !customerEmail) {
       setCustomerEmail(data.email);
     }
@@ -873,6 +899,7 @@ scheduledTime:
 
   const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (authLoading || accountCreateInFlight.current) return;
     setAuthError("");
 
     if (accountPassword !== accountConfirmPassword) {
@@ -880,6 +907,26 @@ scheduledTime:
       return;
     }
 
+    if (!verificationProof) {
+      const message = "Phone verification expired. Please verify again.";
+      setAuthError(message);
+      setError(message);
+      setStep(2);
+      return;
+    }
+
+    if (verificationProofExpiresAt && new Date(verificationProofExpiresAt).getTime() <= Date.now()) {
+      const message = "Phone verification expired. Please verify again.";
+      setVerificationProof("");
+      setVerificationProofExpiresAt("");
+      setVerificationProofPhone("");
+      setAuthError(message);
+      setError(message);
+      setStep(2);
+      return;
+    }
+
+    accountCreateInFlight.current = true;
     setAuthLoading(true);
     try {
       const res = await fetch("/api/passenger/account/create", {
@@ -888,8 +935,8 @@ scheduledTime:
         cache: "no-store",
         body: JSON.stringify({
           bookingId,
-          proofToken: verificationProof,
-          phone: phoneCode + customerPhone.trim(),
+          registrationProofToken: verificationProof,
+          phone: verificationProofPhone || phoneCode + customerPhone.trim(),
           fullName: customerName.trim(),
           email: customerEmail.trim(),
           password: accountPassword,
@@ -901,8 +948,18 @@ scheduledTime:
       if (!res.ok) throw new Error(readError(data, "Could not create account"));
       await continueAuthenticatedBooking(isRecord(data) && isRecord(data.passenger) ? data.passenger : null);
     } catch (err) {
-      setAuthError(err instanceof Error ? err.message : "Could not create account");
+      const message = err instanceof Error ? err.message : "Could not create account";
+      if (message === "Phone verification expired. Please verify again.") {
+        setVerificationProof("");
+        setVerificationProofExpiresAt("");
+        setVerificationProofPhone("");
+        setError(message);
+        setStep(2);
+      } else {
+        setAuthError(message);
+      }
     } finally {
+      accountCreateInFlight.current = false;
       setAuthLoading(false);
     }
   };
@@ -1101,6 +1158,7 @@ scheduledTime:
         bookingId={bookingId}
         phone={phoneCode + customerPhone}
         devOtp={devOtp}
+        initialError={error}
       />
     );
   }

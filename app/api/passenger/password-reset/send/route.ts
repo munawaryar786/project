@@ -45,14 +45,11 @@ async function handler(request: NextRequest) {
       if (!deliveryResult.success) {
         console.error("Passenger password reset OTP delivery failed:", deliveryResult.error);
       }
-    } else if (process.env.NODE_ENV !== "production") {
-      console.log(`Passenger password reset OTP for ${passenger.id}: ${otp}`);
     }
 
     return NextResponse.json({
       ...generic,
       resetAttemptId,
-      devOtp: process.env.NODE_ENV === "development" ? otp : undefined,
     });
   } catch (error) {
     console.error("Password reset send error:", error);
@@ -60,4 +57,4 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.otp);
+export const POST = withRateLimit(handler, rateLimits.passengerPasswordReset);

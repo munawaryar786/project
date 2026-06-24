@@ -7,6 +7,7 @@ interface RateLimitOptions {
   max: number; // Maximum number of requests
   windowMs: number; // Time window in milliseconds
   message?: string; // Custom error message
+  scope?: string; // Stable business scope for shared endpoints
 }
 
 /**
@@ -23,8 +24,7 @@ export function withRateLimit(
                request.headers.get("x-real-ip") || 
                "unknown";
     
-    // Create a unique key per IP + endpoint
-    const key = `${ip}:${request.nextUrl.pathname}`;
+    const key = `${ip}:${options.scope || request.nextUrl.pathname}`;
     
     const now = Date.now();
     const record = rateLimitStore.get(key);
@@ -76,17 +76,60 @@ export function withRateLimit(
  * Pre-configured rate limits for different scenarios
  */
 export const rateLimits = {
-  // Strict rate limit for authentication endpoints
+  passengerRegistrationOtpSend: {
+    scope: "passenger_registration_otp_send",
+    max: 3,
+    windowMs: 5 * 60 * 1000,
+    message: "Too many OTP requests. Please wait before requesting another OTP."
+  },
+
+  passengerRegistrationOtpVerify: {
+    scope: "passenger_registration_otp_verify",
+    max: 5,
+    windowMs: 5 * 60 * 1000,
+    message: "Too many verification attempts. Please request a new code."
+  },
+
+  passengerAccountCreate: {
+    scope: "passenger_account_create",
+    max: 5,
+    windowMs: 15 * 60 * 1000,
+    message: "Too many account creation attempts. Please wait and try again."
+  },
+
+  passengerLoginPassword: {
+    scope: "passenger_login_password",
+    max: 5,
+    windowMs: 15 * 60 * 1000,
+    message: "Too many login attempts. Please try again later."
+  },
+
+  passengerLoginStepUpOtp: {
+    scope: "passenger_login_step_up_otp",
+    max: 5,
+    windowMs: 5 * 60 * 1000,
+    message: "Too many verification attempts. Please request a new code."
+  },
+
+  passengerPasswordReset: {
+    scope: "passenger_password_reset",
+    max: 5,
+    windowMs: 15 * 60 * 1000,
+    message: "Too many password reset attempts. Please wait and try again."
+  },
+
+  // Backward-compatible defaults for older routes.
   auth: {
-    max: 5, // 5 requests
-    windowMs: 15 * 60 * 1000, // per 15 minutes
+    scope: "passenger_login_password",
+    max: 5,
+    windowMs: 15 * 60 * 1000,
     message: "Too many login attempts. Please try again later."
   },
   
-  // Medium rate limit for OTP endpoints
   otp: {
-    max: 3, // 3 requests
-    windowMs: 5 * 60 * 1000, // per 5 minutes
+    scope: "passenger_registration_otp_send",
+    max: 3,
+    windowMs: 5 * 60 * 1000,
     message: "Too many OTP requests. Please wait before requesting another OTP."
   },
   

@@ -182,6 +182,16 @@ export async function setTrustedDeviceCookie(
   });
 }
 
+type VerificationProofInput = {
+  proofToken: string;
+  normalizedPhone: string;
+  purpose: string;
+  bookingId?: string | null;
+  passengerId?: string | null;
+  loginAttemptId?: string | null;
+  resetAttemptId?: string | null;
+};
+
 export async function createVerificationProof(input: {
   passengerId?: string | null;
   normalizedPhone: string;
@@ -191,6 +201,7 @@ export async function createVerificationProof(input: {
   resetAttemptId?: string | null;
 }) {
   const proofToken = createOpaqueToken();
+  const expiresAt = new Date(Date.now() + OTP_PROOF_TTL_MS);
   await prisma.passengerVerificationProof.create({
     data: {
       proofTokenHash: hashSecret(proofToken),
@@ -200,22 +211,14 @@ export async function createVerificationProof(input: {
       bookingId: input.bookingId || null,
       loginAttemptId: input.loginAttemptId || null,
       resetAttemptId: input.resetAttemptId || null,
-      expiresAt: new Date(Date.now() + OTP_PROOF_TTL_MS),
+      expiresAt,
     },
   });
-  return proofToken;
+  return { proofToken, expiresAt };
 }
 
-export async function consumeVerificationProof(input: {
-  proofToken: string;
-  normalizedPhone: string;
-  purpose: string;
-  bookingId?: string | null;
-  passengerId?: string | null;
-  loginAttemptId?: string | null;
-  resetAttemptId?: string | null;
-}) {
-  const proof = await prisma.passengerVerificationProof.findFirst({
+export async function findVerificationProof(input: VerificationProofInput) {
+  return prisma.passengerVerificationProof.findFirst({
     where: {
       proofTokenHash: hashSecret(input.proofToken),
       normalizedPhone: input.normalizedPhone,
@@ -228,13 +231,23 @@ export async function consumeVerificationProof(input: {
       ...(input.resetAttemptId ? { resetAttemptId: input.resetAttemptId } : {}),
     },
   });
+}
+
+export async function consumeVerificationProofById(proofId: string) {
+  const consumed = await prisma.passengerVerificationProof.updateMany({
+    where: { id: proofId, consumedAt: null },
+    data: { consumedAt: new Date() },
+  });
+  return consumed.count > 0;
+}
+
+export async function consumeVerificationProof(input: VerificationProofInput) {
+  const proof = await findVerificationProof(input);
 
   if (!proof) return null;
 
-  await prisma.passengerVerificationProof.update({
-    where: { id: proof.id },
-    data: { consumedAt: new Date() },
-  });
+  const consumed = await consumeVerificationProofById(proof.id);
+  if (!consumed) return null;
 
   return proof;
 }
