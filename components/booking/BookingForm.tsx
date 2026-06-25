@@ -45,7 +45,32 @@ function isRecord(value: unknown): value is JsonRecord {
 }
 
 function readError(data: unknown, fallback: string) {
-  return isRecord(data) && typeof data.error === "string" ? data.error : fallback;
+  if (!isRecord(data)) return fallback;
+  if (typeof data.message === "string") return data.message;
+  return typeof data.error === "string" ? data.error : fallback;
+}
+
+function readCode(data: unknown) {
+  return isRecord(data) && typeof data.code === "string" ? data.code : "";
+}
+
+function otpVerifyMessage(data: unknown, fallback: string) {
+  const code = readCode(data);
+  if (code === "OTP_INVALID") return "Invalid verification code.";
+  if (code === "OTP_EXPIRED") return "Verification code expired. Please request a new code.";
+  if (code === "PROOF_CREATE_FAILED") {
+    return "Verification could not be completed. Please request a new code.";
+  }
+  return readError(data, fallback);
+}
+
+function proofFailureMessage(code: string, fallback: string) {
+  if (code === "PROOF_EXPIRED") return "Phone verification expired. Please verify again.";
+  if (code === "PROOF_MISSING") return "Phone verification is missing. Please verify your number again.";
+  if (code === "PROOF_INVALID") return "Phone verification could not be confirmed. Please verify again.";
+  if (code === "PROOF_PHONE_MISMATCH") return "Phone verification could not be confirmed. Please verify again.";
+  if (code === "PROOF_BOOKING_MISMATCH") return "Phone verification could not be confirmed. Please verify again.";
+  return fallback;
 }
 
 function createEmptyChild(): ChildDetail {
@@ -226,12 +251,13 @@ export default function BookingForm({
   const [bookingId, setBookingId] = useState("");
   const [bookingRef, setBookingRef] = useState("");
   const [devOtp, setDevOtp] = useState<string | undefined>(undefined);
-  const [verificationProof, setVerificationProof] = useState("");
-  const [verificationProofExpiresAt, setVerificationProofExpiresAt] = useState("");
-  const [verificationProofPhone, setVerificationProofPhone] = useState("");
+  const [registrationProofToken, setRegistrationProofToken] = useState("");
+  const [proofExpiresAt, setProofExpiresAt] = useState("");
+  const [registrationProofPhone, setRegistrationProofPhone] = useState("");
   const [authMode, setAuthMode] = useState<AuthMode>("first-time");
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [accountNeedsPhoneReverification, setAccountNeedsPhoneReverification] = useState(false);
   const [loginPassword, setLoginPassword] = useState("");
   const [loginAttemptId, setLoginAttemptId] = useState("");
   const [loginOtp, setLoginOtp] = useState("");
@@ -256,11 +282,11 @@ export default function BookingForm({
   }, [step]);
 
   useEffect(() => {
-    if (step === 4 && !verificationProof) {
-      setError("Phone verification expired. Please verify again.");
-      setStep(2);
+    if (step === 4 && !registrationProofToken && !accountNeedsPhoneReverification) {
+      setAuthError("Phone verification is missing. Please verify your number again.");
+      setAccountNeedsPhoneReverification(true);
     }
-  }, [step, verificationProof]);
+  }, [accountNeedsPhoneReverification, registrationProofToken, step]);
 
   useEffect(() => {
     onServiceTypeChange?.(serviceType);
@@ -298,6 +324,26 @@ export default function BookingForm({
   );
   const primaryChild = activeChildrenDetails[0] || createEmptyChild();
 
+  const clearRegistrationProof = () => {
+    setRegistrationProofToken("");
+    setProofExpiresAt("");
+    setRegistrationProofPhone("");
+  };
+
+  const requirePhoneReverification = (message: string) => {
+    clearRegistrationProof();
+    setAccountNeedsPhoneReverification(true);
+    setAuthError(message);
+    setError("");
+  };
+
+  const resetOtpAttemptState = () => {
+    clearRegistrationProof();
+    setAccountNeedsPhoneReverification(false);
+    setAuthError("");
+    setError("");
+    setDevOtp(undefined);
+  };
   const updateChildDetail = (index: number, patch: Partial<ChildDetail>) => {
     setChildrenDetails((current) =>
       current.map((child, childIndex) =>
@@ -802,9 +848,7 @@ scheduledTime:
 
       setBookingId(newBookingId);
       setBookingRef(newBookingRef);
-      setVerificationProof("");
-      setVerificationProofExpiresAt("");
-      setVerificationProofPhone("");
+      resetOtpAttemptState();
 
       const price = Number(bookingData.estimatedPrice);
       if (Number.isFinite(price)) {
@@ -856,27 +900,29 @@ scheduledTime:
     const data = await safeJson(res);
 
     if (!res.ok) {
-      throw new Error(readError(data, "OTP verification failed"));
+      throw new Error(otpVerifyMessage(data, "OTP verification failed"));
     }
 
     if (!isRecord(data)) {
       throw new Error("Verification response was invalid");
     }
 
-    const registrationProofToken =
-      typeof data.registrationProofToken === "string"
-        ? data.registrationProofToken
-        : typeof data.proofToken === "string"
-          ? data.proofToken
-          : "";
+    const nextRegistrationProofToken =
+      typeof data.registrationProofToken === "string" ? data.registrationProofToken : "";
 
-    if (!registrationProofToken) {
-      throw new Error("Verification response was invalid");
+    if (data.success !== true || !nextRegistrationProofToken) {
+      throw new Error("Verification could not be completed. Please request a new code.");
     }
 
-    setVerificationProof(registrationProofToken);
-    setVerificationProofExpiresAt(typeof data.expiresAt === "string" ? data.expiresAt : "");
-    setVerificationProofPhone(typeof data.phone === "string" ? data.phone : phoneCode + customerPhone.trim());
+    if (typeof data.bookingId === "string" && data.bookingId !== bookingId) {
+      throw new Error("Verification could not be completed. Please request a new code.");
+    }
+
+    setRegistrationProofToken(nextRegistrationProofToken);
+    setProofExpiresAt(typeof data.proofExpiresAt === "string" ? data.proofExpiresAt : "");
+    setRegistrationProofPhone(typeof data.normalizedPhone === "string" ? data.normalizedPhone : phoneCode + customerPhone.trim());
+    setAccountNeedsPhoneReverification(false);
+    setAuthError("");
     if (typeof data.email === "string" && data.email && !customerEmail) {
       setCustomerEmail(data.email);
     }
@@ -916,22 +962,13 @@ scheduledTime:
       return;
     }
 
-    if (!verificationProof) {
-      const message = "Phone verification expired. Please verify again.";
-      setAuthError(message);
-      setError(message);
-      setStep(2);
+    if (!registrationProofToken) {
+      requirePhoneReverification("Phone verification is missing. Please verify your number again.");
       return;
     }
 
-    if (verificationProofExpiresAt && new Date(verificationProofExpiresAt).getTime() <= Date.now()) {
-      const message = "Phone verification expired. Please verify again.";
-      setVerificationProof("");
-      setVerificationProofExpiresAt("");
-      setVerificationProofPhone("");
-      setAuthError(message);
-      setError(message);
-      setStep(2);
+    if (proofExpiresAt && new Date(proofExpiresAt).getTime() <= Date.now()) {
+      requirePhoneReverification("Phone verification expired. Please verify again.");
       return;
     }
 
@@ -944,8 +981,8 @@ scheduledTime:
         cache: "no-store",
         body: JSON.stringify({
           bookingId,
-          registrationProofToken: verificationProof,
-          phone: verificationProofPhone || phoneCode + customerPhone.trim(),
+          registrationProofToken,
+          phone: registrationProofPhone || phoneCode + customerPhone.trim(),
           fullName: customerName.trim(),
           email: customerEmail.trim(),
           password: accountPassword,
@@ -954,19 +991,19 @@ scheduledTime:
         }),
       });
       const data = await safeJson(res);
-      if (!res.ok) throw new Error(readError(data, "Could not create account"));
+      if (!res.ok) {
+        const code = readCode(data);
+        if (code.startsWith("PROOF_")) {
+          requirePhoneReverification(proofFailureMessage(code, readError(data, "Phone verification could not be confirmed. Please verify again.")));
+          return;
+        }
+        setAuthError(readError(data, "Could not create account"));
+        return;
+      }
       await continueAuthenticatedBooking(isRecord(data) && isRecord(data.passenger) ? data.passenger : null);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not create account";
-      if (message === "Phone verification expired. Please verify again.") {
-        setVerificationProof("");
-        setVerificationProofExpiresAt("");
-        setVerificationProofPhone("");
-        setError(message);
-        setStep(2);
-      } else {
-        setAuthError(message);
-      }
+      setAuthError(message);
     } finally {
       accountCreateInFlight.current = false;
       setAuthLoading(false);
@@ -1168,6 +1205,10 @@ scheduledTime:
         phone={phoneCode + customerPhone}
         devOtp={devOtp}
         initialError={error}
+        onResendStart={resetOtpAttemptState}
+        onResendSuccess={(data) => {
+          if (typeof data.devOtp === "string") setDevOtp(data.devOtp);
+        }}
       />
     );
   }
@@ -1321,7 +1362,20 @@ scheduledTime:
               </div>
             )}
 
-            <button type="submit" className="btn-primary w-full" disabled={authLoading}>
+            {accountNeedsPhoneReverification && (
+              <button
+                type="button"
+                className="btn-secondary w-full"
+                onClick={() => {
+                  setError("");
+                  setStep(2);
+                }}
+              >
+                {t("passenger.verifyPhoneAgain", "Verify phone again")}
+              </button>
+            )}
+
+            <button type="submit" className="btn-primary w-full" disabled={authLoading || accountNeedsPhoneReverification}>
               {authLoading
                 ? t("passenger.saving")
                 : t("passenger.createAccountContinue", "Create Account & Continue Booking")}

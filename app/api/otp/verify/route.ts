@@ -6,6 +6,10 @@ import {
 } from "@/lib/passenger-auth";
 import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 
+function otpError(code: string, message: string, status = 400) {
+  return NextResponse.json({ success: false, code, message, error: message }, { status });
+}
+
 async function handler(request: NextRequest) {
   try {
     const body = await request.json();
@@ -13,15 +17,12 @@ async function handler(request: NextRequest) {
     const code = String(body.code || body.otp || body.otpCode || "").trim();
 
     if (!bookingId || code.length !== 6) {
-      return NextResponse.json(
-        { error: "Please enter the verification code" },
-        { status: 400 }
-      );
+      return otpError("OTP_INVALID", "Invalid verification code.");
     }
 
     const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
     if (!booking) {
-      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      return otpError("BOOKING_NOT_FOUND", "Booking not found", 404);
     }
 
     const normalizedPhone =
@@ -33,22 +34,53 @@ async function handler(request: NextRequest) {
         bookingId,
         phone: normalizedPhone,
         purpose: "PASSENGER_REGISTRATION",
-        expiresAt: { gte: new Date() },
         used: false,
       },
       orderBy: { createdAt: "desc" },
     });
 
-    if (!otpRecord || otpRecord.code !== code || otpRecord.attempts >= otpRecord.maxAttempts) {
-      if (otpRecord) {
-        await prisma.oTP.update({
-          where: { id: otpRecord.id },
-          data: { attempts: { increment: 1 } },
-        });
-      }
-      return NextResponse.json(
-        { error: "Invalid or expired verification code" },
-        { status: 400 }
+    if (!otpRecord) {
+      return otpError("OTP_INVALID", "Invalid verification code.");
+    }
+
+    if (otpRecord.expiresAt.getTime() <= Date.now()) {
+      return otpError("OTP_EXPIRED", "Verification code expired. Please request a new code.");
+    }
+
+    if (otpRecord.attempts >= otpRecord.maxAttempts || otpRecord.code !== code) {
+      await prisma.oTP.update({
+        where: { id: otpRecord.id },
+        data: { attempts: { increment: 1 } },
+      });
+      return otpError("OTP_INVALID", "Invalid verification code.");
+    }
+
+    const passenger = await prisma.passenger.findUnique({
+      where: { phone: normalizedPhone },
+    });
+
+    let proof: { proofToken: string; expiresAt: Date };
+    try {
+      proof = await createVerificationProof({
+        passengerId: passenger?.id || null,
+        normalizedPhone,
+        purpose: "PASSENGER_REGISTRATION",
+        bookingId,
+      });
+    } catch (error) {
+      console.error("Passenger registration proof creation failed:", error);
+      return otpError(
+        "PROOF_CREATE_FAILED",
+        "Verification could not be completed. Please request a new code.",
+        500
+      );
+    }
+
+    if (!proof.proofToken) {
+      return otpError(
+        "PROOF_CREATE_FAILED",
+        "Verification could not be completed. Please request a new code.",
+        500
       );
     }
 
@@ -57,25 +89,16 @@ async function handler(request: NextRequest) {
       data: { used: true },
     });
 
-    const passenger = await prisma.passenger.findUnique({
-      where: { phone: normalizedPhone },
-    });
-    const proof = await createVerificationProof({
-      passengerId: passenger?.id || null,
-      normalizedPhone,
-      purpose: "PASSENGER_REGISTRATION",
-      bookingId,
-    });
-
     await prisma.booking.update({
       where: { id: bookingId },
       data: {
         phoneVerified: true,
         normalizedPhone,
-        passengerAuthStatus:
-          passenger?.passwordHash ? "ACCOUNT_SETUP_REQUIRED" : "ACCOUNT_SETUP_REQUIRED",
+        passengerAuthStatus: "ACCOUNT_SETUP_REQUIRED",
       },
     });
+
+    console.log("OTP verify returned proof: yes");
 
     return NextResponse.json({
       success: true,
@@ -83,16 +106,17 @@ async function handler(request: NextRequest) {
       accountSetupRequired: true,
       existingPasswordAccount: Boolean(passenger?.passwordHash),
       registrationProofToken: proof.proofToken,
-      expiresAt: proof.expiresAt.toISOString(),
+      proofExpiresAt: proof.expiresAt.toISOString(),
+      normalizedPhone,
+      bookingId,
       phoneVerified: true,
-      phone: normalizedPhone,
       email: booking.customerEmail || "",
       message: "Phone verified successfully",
     });
   } catch (error) {
     console.error("OTP verify error:", error);
     return NextResponse.json(
-      { error: "Verification failed. Please try again." },
+      { success: false, code: "OTP_VERIFY_FAILED", message: "Verification failed. Please try again.", error: "Verification failed. Please try again." },
       { status: 500 }
     );
   }

@@ -33,6 +33,16 @@ async function handler(request: NextRequest) {
       return NextResponse.json({ error: "Phone number does not match booking" }, { status: 400 });
     }
 
+    await prisma.oTP.updateMany({
+      where: {
+        bookingId,
+        phone: normalizedPhone,
+        purpose: "PASSENGER_REGISTRATION",
+        used: false,
+      },
+      data: { used: true },
+    });
+
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     await prisma.oTP.create({
       data: {
@@ -62,7 +72,7 @@ async function handler(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: "OTP sent successfully",
+      message: "A new verification code has been sent.",
       method: deliveryResult.method,
     });
   } catch (error) {

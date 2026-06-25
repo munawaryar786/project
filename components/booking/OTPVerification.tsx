@@ -3,13 +3,22 @@
 import { useEffect, useRef, useState } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
+type ResendData = {
+  devOtp?: string;
+  message?: string;
+};
+
 interface Props {
   onVerify: (otpCode: string) => Promise<void>;
   bookingId: string;
   phone: string;
   devOtp?: string;
   initialError?: string;
+  onResendStart?: () => void;
+  onResendSuccess?: (data: ResendData) => void;
 }
+
+const emptyOtp = ["", "", "", "", "", ""];
 
 export default function OTPVerification({
   onVerify,
@@ -17,24 +26,33 @@ export default function OTPVerification({
   phone,
   devOtp,
   initialError = "",
+  onResendStart,
+  onResendSuccess,
 }: Props) {
   const { t } = useLanguage();
-  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
+  const [otp, setOtp] = useState(emptyOtp);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(initialError);
+  const [successMessage, setSuccessMessage] = useState("");
   const [resending, setResending] = useState(false);
   const [currentDevOtp, setCurrentDevOtp] = useState<string | undefined>(devOtp);
   const refs = useRef<(HTMLInputElement | null)[]>([]);
+  const showDevelopmentOtp = process.env.NODE_ENV !== "production" && currentDevOtp;
 
   useEffect(() => {
     setError(initialError);
   }, [initialError]);
 
+  useEffect(() => {
+    setCurrentDevOtp(devOtp);
+  }, [devOtp]);
+
   const handleChange = (i: number, v: string) => {
-    if (v.length > 1) return;
+    if (v.length > 1 || (v && !/^\d$/.test(v))) return;
     const next = [...otp];
     next[i] = v;
     setOtp(next);
+    setSuccessMessage("");
     if (v && i < 5) refs.current[i + 1]?.focus();
   };
 
@@ -52,6 +70,7 @@ export default function OTPVerification({
     }
 
     setError("");
+    setSuccessMessage("");
     setLoading(true);
 
     try {
@@ -68,6 +87,10 @@ export default function OTPVerification({
   const handleResend = async () => {
     setResending(true);
     setError("");
+    setSuccessMessage("");
+    setOtp(emptyOtp);
+    setCurrentDevOtp(undefined);
+    onResendStart?.();
 
     try {
       const res = await fetch("/api/otp/send", {
@@ -76,11 +99,21 @@ export default function OTPVerification({
         body: JSON.stringify({ bookingId, phone }),
       });
 
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          typeof data?.message === "string"
+            ? data.message
+            : typeof data?.error === "string"
+              ? data.error
+              : `API error: ${res.status}`
+        );
+      }
 
-      const data = await res.json();
-      setOtp(["", "", "", "", "", ""]);
-      if (data.devOtp) setCurrentDevOtp(data.devOtp);
+      if (typeof data.devOtp === "string") setCurrentDevOtp(data.devOtp);
+      onResendSuccess?.(data);
+      setSuccessMessage("A new verification code has been sent.");
+      refs.current[0]?.focus();
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : t("otp.resendFailed", "Resend failed");
@@ -101,13 +134,23 @@ export default function OTPVerification({
         </h2>
         <p className="text-[14px] text-drivo-text-secondary mb-8">
           {t("otp.subtitle")}
-          <br />
-          <span className="text-[12px]">{t("otp.devNote")}</span>
+          {showDevelopmentOtp && (
+            <>
+              <br />
+              <span className="text-[12px]">{t("passenger.devOtp", "Development OTP")}: {currentDevOtp}</span>
+            </>
+          )}
         </p>
 
         {error && (
           <div className="mb-4 p-3 bg-drivo-red-light rounded-xl">
             <p className="text-[13px] text-red-700">{error}</p>
+          </div>
+        )}
+
+        {successMessage && (
+          <div className="mb-4 p-3 rounded-xl border border-drivo-green/20 bg-drivo-green-light/40">
+            <p className="text-[13px] font-semibold text-drivo-green-dark">{successMessage}</p>
           </div>
         )}
 

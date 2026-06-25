@@ -4,7 +4,7 @@ import { z } from "zod";
 import {
   consumeVerificationProofById,
   createPassengerSession,
-  findVerificationProof,
+  hashSecret,
   normalizePassengerPhone,
   publicPassenger,
   setPassengerCookie,
@@ -17,7 +17,7 @@ import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 const CreateAccountSchema = z
   .object({
     bookingId: z.string().min(1),
-    registrationProofToken: z.string().min(20),
+    registrationProofToken: z.string().trim().min(1),
     phone: z.string().min(6),
     fullName: z.string().trim().min(2).max(120),
     email: z.string().trim().email().max(160),
@@ -30,23 +30,31 @@ const CreateAccountSchema = z
     message: "Passwords do not match.",
   });
 
-function normalizeCreateAccountBody(body: unknown) {
-  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
-  const record = body as Record<string, unknown>;
-  return {
-    ...record,
-    registrationProofToken:
-      typeof record.registrationProofToken === "string"
-        ? record.registrationProofToken
-        : record.proofToken,
-  };
+function proofError(code: string, message: string, status = 400) {
+  console.log(`Proof validation failed with code: ${code}`);
+  return NextResponse.json({ success: false, code, message, error: message }, { status });
 }
 
 async function handler(request: NextRequest) {
   try {
-    const parsed = CreateAccountSchema.safeParse(
-      normalizeCreateAccountBody(await request.json())
-    );
+    const body = await request.json();
+    const record = body && typeof body === "object" && !Array.isArray(body)
+      ? (body as Record<string, unknown>)
+      : null;
+    const rawProof = typeof record?.registrationProofToken === "string"
+      ? record.registrationProofToken.trim()
+      : "";
+
+    console.log(`Account create received proof: ${rawProof ? "yes" : "no"}`);
+
+    if (!rawProof) {
+      return proofError(
+        "PROOF_MISSING",
+        "Phone verification is missing. Please verify your number again."
+      );
+    }
+
+    const parsed = CreateAccountSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
         { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
@@ -70,20 +78,48 @@ async function handler(request: NextRequest) {
       booking.normalizedPhone ||
       normalizePassengerPhone(`${booking.customerPhoneCode}${booking.customerPhone}`);
     if (bookingPhone !== normalizedPhone) {
-      return NextResponse.json({ error: "Phone verification does not match booking" }, { status: 400 });
+      return proofError(
+        "PROOF_PHONE_MISMATCH",
+        "Phone verification could not be confirmed. Please verify again."
+      );
     }
 
-    const proof = await findVerificationProof({
-      proofToken: data.registrationProofToken,
-      normalizedPhone,
-      purpose: "PASSENGER_REGISTRATION",
-      bookingId: data.bookingId,
+    const proof = await prisma.passengerVerificationProof.findUnique({
+      where: { proofTokenHash: hashSecret(data.registrationProofToken) },
     });
 
     if (!proof) {
-      return NextResponse.json(
-        { error: "Phone verification expired. Please verify again." },
-        { status: 400 }
+      return proofError(
+        "PROOF_INVALID",
+        "Phone verification could not be confirmed. Please verify again."
+      );
+    }
+
+    if (proof.purpose !== "PASSENGER_REGISTRATION") {
+      return proofError(
+        "PROOF_INVALID",
+        "Phone verification could not be confirmed. Please verify again."
+      );
+    }
+
+    if (proof.consumedAt || proof.expiresAt.getTime() <= Date.now()) {
+      return proofError(
+        "PROOF_EXPIRED",
+        "Phone verification expired. Please verify again."
+      );
+    }
+
+    if (proof.normalizedPhone !== normalizedPhone) {
+      return proofError(
+        "PROOF_PHONE_MISMATCH",
+        "Phone verification could not be confirmed. Please verify again."
+      );
+    }
+
+    if (proof.bookingId !== data.bookingId) {
+      return proofError(
+        "PROOF_BOOKING_MISMATCH",
+        "Phone verification could not be confirmed. Please verify again."
       );
     }
 
