@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -22,8 +22,6 @@ import OTPVerification from "./OTPVerification";
 import BookingConfirmation from "./BookingConfirmation";
 import AddressAutocomplete from "./AddressAutocomplete";
 import PriceEstimate from "./PriceEstimate";
-import PopularRouteShortcuts from "./PopularRouteShortcuts";
-import { BRATISLAVA_PICKUP_ADDRESS, getPopularRouteBySlug, type PopularRoute } from "@/lib/popular-routes";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
 type Coords = {
@@ -122,8 +120,6 @@ function waitingMinutesFromDuration(value: WaitingDuration, customValue: string)
   return 0;
 }
 
-const BRATISLAVA_COORDS: Coords = { lat: 48.1486, lng: 17.1077 };
-
 const EDUCATIONAL_DESTINATION_TERMS = [
   "school",
   "college",
@@ -136,9 +132,9 @@ const EDUCATIONAL_DESTINATION_TERMS = [
   "institute",
   "academy",
   "skola",
-  "Å¡kola",
+  "škola",
   "gymnasium",
-  "gymnÃ¡zium",
+  "gymnázium",
   "univerzita",
 ];
 
@@ -229,8 +225,6 @@ export default function BookingForm({
   const [pickupCoords, setPickupCoords] = useState<Coords | null>(null);
   const [dropoffCoords, setDropoffCoords] = useState<Coords | null>(null);
   const [locatingPickup, setLocatingPickup] = useState(false);
-  const [selectedPopularRouteSlug, setSelectedPopularRouteSlug] = useState("");
-  const routePrefillApplied = useRef(false);
 
   const [rideMode, setRideMode] = useState<"now" | "schedule">("now");
 
@@ -397,30 +391,6 @@ export default function BookingForm({
     setPasswordResetProofToken("");
     setPasswordResetProofExpiresAt("");
   };
-  const applyPopularRoute = useCallback((route: PopularRoute) => {
-    setSelectedPopularRouteSlug(route.slug);
-    setServiceType("airport");
-    onServiceTypeChange?.("airport");
-    setRideMode("now");
-    setPickupAddress(route.pickupAddress || BRATISLAVA_PICKUP_ADDRESS);
-    setDropoffAddress(route.dropoffAddress);
-    setPickupCoords(BRATISLAVA_COORDS);
-    setDropoffCoords(route.destinationCoords || null);
-    setEducationalInstitutionName("");
-    setInstitutionSuggestionSelected(false);
-    onPickupChange?.(route.pickupAddress || BRATISLAVA_PICKUP_ADDRESS);
-    onDropoffChange?.(route.dropoffAddress);
-    setError("");
-  }, [onDropoffChange, onPickupChange, onServiceTypeChange]);
-
-  useEffect(() => {
-    if (routePrefillApplied.current || typeof window === "undefined") return;
-    routePrefillApplied.current = true;
-
-    const slug = new URLSearchParams(window.location.search).get("route");
-    const route = getPopularRouteBySlug(slug);
-    if (route) applyPopularRoute(route);
-  }, [applyPopularRoute]);
   const updateChildDetail = (index: number, patch: Partial<ChildDetail>) => {
     setChildrenDetails((current) =>
       current.map((child, childIndex) =>
@@ -806,7 +776,7 @@ useEffect(() => {
         );
       }
       const destinationText = `${dropoffAddress} ${educationalInstitutionName}`.toLowerCase();
-      const educationDestination = ["school", "college", "university", "educational", "education", "training", "institute", "skola", "Å¡kola", "gymnasium", "academy"].some((term) =>
+      const educationDestination = ["school", "college", "university", "educational", "education", "training", "institute", "skola", "škola", "gymnasium", "academy"].some((term) =>
         destinationText.includes(term)
       );
 
@@ -1415,28 +1385,28 @@ scheduledTime:
     {
       value: "standard",
       label: t("services.taxi.title"),
-      icon: "ðŸš•",
+      icon: "🚕",
       desc: t("services.taxi.tagline"),
       img: "/drivo-taxi-service.jpeg",
     },
     {
       value: "airport",
       label: t("services.airport.title"),
-      icon: "âœˆï¸",
+      icon: "✈️",
       desc: t("services.airport.tagline"),
       img: "/drivo-airport-transfer.jpeg",
     },
     {
       value: "accessible",
       label: t("services.accessible.title"),
-      icon: "â™¿",
-      desc: "ZÅ¤P / SeniorskÃ¡ doprava",
+      icon: "♿",
+      desc: "ZŤP / Seniorská doprava",
       img: "/drivo-wav-wheelchair.jpeg",
     },
     {
       value: "children",
       label: t("services.children.title"),
-      icon: "ðŸ‘§",
+      icon: "👧",
       desc: t("services.children.tagline"),
       img: "/drivo-children-dropoff.jpeg",
     },
@@ -1548,7 +1518,7 @@ scheduledTime:
         <form onSubmit={handleCreateAccount} className="card">
           <div className="mb-6 text-center">
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-drivo-green-light text-2xl">
-              âœ“
+              ✓
             </div>
             <h2 className="text-[22px] font-bold text-drivo-text">
               {authMode === "legacyPasswordSetup"
@@ -1646,7 +1616,7 @@ scheduledTime:
     <div className="space-y-6">
       {error && (
         <div className="p-4 bg-drivo-red-light border-2 border-red-300 rounded-2xl animate-fade-in">
-          <p className="text-[14px] text-red-700 font-medium">âš ï¸ {error}</p>
+          <p className="text-[14px] text-red-700 font-medium">⚠️ {error}</p>
         </div>
       )}
 
@@ -1720,7 +1690,7 @@ scheduledTime:
 
               {serviceType === s.value && (
                 <div className="absolute top-2 right-2 w-5 h-5 bg-drivo-green rounded-full flex items-center justify-center">
-                  <span className="text-white text-[10px]">âœ“</span>
+                  <span className="text-white text-[10px]">✓</span>
                 </div>
               )}
             </button>
@@ -1730,7 +1700,7 @@ scheduledTime:
         {serviceType === "accessible" && (
           <div className="mt-4 p-4 bg-drivo-purple-light/50 rounded-2xl border border-drivo-purple/20 animate-fade-in">
             <p className="text-[13px] font-semibold text-drivo-purple">
-              â™¿ {t("services.accessible.title")}
+              ♿ {t("services.accessible.title")}
             </p>
             <p className="text-[12px] text-drivo-text-secondary mt-1">
               {t("fleet.wavNote")}
@@ -1740,11 +1710,6 @@ scheduledTime:
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        <PopularRouteShortcuts
-          selectedRouteSlug={selectedPopularRouteSlug}
-          onSelectRoute={applyPopularRoute}
-        />
-
         <div className="card">
           <div className="flex items-center gap-3 mb-5">
             <span className="w-9 h-9 bg-drivo-green-light rounded-xl flex items-center justify-center text-[14px] font-bold text-drivo-green-dark">
@@ -1764,7 +1729,7 @@ scheduledTime:
             <div className="relative">
               <AddressAutocomplete
                 id="pickup"
-                label={`ðŸ“ ${t("booking.pickup")} *`}
+                label={`📍 ${t("booking.pickup")} *`}
                 value={pickupAddress}
                 onChange={(v) => {
                   setPickupAddress(v);
@@ -1786,7 +1751,7 @@ scheduledTime:
                 aria-label="Use current location"
                 title="Use current location"
               >
-                {locatingPickup ? "..." : "ðŸ“"}
+                {locatingPickup ? "..." : "📍"}
               </button>
             </div>
 
@@ -1886,7 +1851,7 @@ scheduledTime:
         : "bg-white border-gray-200 text-gray-700"
     }`}
   >
-    âš¡ {t("booking.rideNow")}
+    ⚡ {t("booking.rideNow")}
   </button>
 
   <button
@@ -1898,7 +1863,7 @@ scheduledTime:
         : "bg-white border-gray-200 text-gray-700"
     }`}
   >
-    ðŸ“… {t("booking.scheduleRide")}
+    📅 {t("booking.scheduleRide")}
   </button>
 </div>
 )}
@@ -1907,7 +1872,7 @@ scheduledTime:
               <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">
-                  ðŸ“… {t("booking.date")} *
+                  📅 {t("booking.date")} *
                 </label>
                 <input
                   type="date"
@@ -1921,7 +1886,7 @@ scheduledTime:
 
               <div>
                 <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">
-                  ðŸ• {t("booking.time")} *
+                  🕐 {t("booking.time")} *
                 </label>
                 <input
                   type="time"
@@ -1964,12 +1929,12 @@ scheduledTime:
             {!childrenTransport && (
             <div className="grid sm:grid-cols-2 gap-4">
               <CounterControl
-                label={`ðŸ§³ ${t("booking.smallBags", "Small bags")}`}
+                label={`🧳 ${t("booking.smallBags", "Small bags")}`}
                 value={smallBags}
                 onChange={setSmallBags}
               />
               <CounterControl
-                label={`ðŸ§³ ${t("booking.largeBags", "Large bags")}`}
+                label={`🧳 ${t("booking.largeBags", "Large bags")}`}
                 value={largeBags}
                 onChange={setLargeBags}
               />
@@ -1986,7 +1951,7 @@ scheduledTime:
               {luggageCount > 0 && (
                 <span>
                   {" "}
-                  Â· {smallBags} {t("booking.smallBags", "small bags")}, {largeBags}{" "}
+                  · {smallBags} {t("booking.smallBags", "small bags")}, {largeBags}{" "}
                   {t("booking.largeBags", "large bags")}
                 </span>
               )}
@@ -2006,14 +1971,14 @@ scheduledTime:
 
             <div className="hidden">
               <label className="text-[12px] font-semibold text-drivo-text-secondary mb-2 block">
-                ðŸ§³ {t("booking.luggage")}
+                🧳 {t("booking.luggage")}
               </label>
 
               <div className="grid grid-cols-3 gap-3">
                 {[
-                  ["none", t("booking.luggageNone"), "ðŸš¶"],
-                  ["small", t("booking.luggageSmall"), "ðŸ§³"],
-                  ["large", t("booking.luggageLarge"), "ðŸ§³ðŸ§³"],
+                  ["none", t("booking.luggageNone"), "🚶"],
+                  ["small", t("booking.luggageSmall"), "🧳"],
+                  ["large", t("booking.luggageLarge"), "🧳🧳"],
                 ].map(([v, l, icon]) => (
                   <button
                     key={v}
@@ -2048,7 +2013,7 @@ scheduledTime:
             <div className="hidden p-4 bg-drivo-purple-light/50 rounded-2xl">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-xl">â™¿</span>
+                  <span className="text-xl">♿</span>
                   <div>
                     <span className="text-[14px] font-medium text-drivo-text block">
                       {t("booking.wheelchair")}?
@@ -2078,7 +2043,7 @@ onChange={(e) => {
               {wheelchair && (
                 <div className="mt-3 p-3 bg-white rounded-xl border border-blue-200 animate-fade-in">
                   <p className="text-[12px] text-blue-700">
-                    ðŸš <strong>{t("fleet.wavBadge")}.</strong> {t("fleet.wavNote")}
+                    🚐 <strong>{t("fleet.wavBadge")}.</strong> {t("fleet.wavNote")}
                   </p>
                 </div>
               )}
@@ -2281,7 +2246,7 @@ onChange={(e) => {
           <div className="card animate-fade-in">
             <div className="flex items-center gap-3 mb-5">
               <span className="w-9 h-9 bg-pink-100 rounded-xl flex items-center justify-center text-[14px]">
-                ðŸ‘§
+                👧
               </span>
               <div>
                 <h3 className="font-bold text-drivo-text text-[16px]">
@@ -2443,7 +2408,7 @@ onChange={(e) => {
           <div className="card animate-fade-in">
             <div className="flex items-center gap-3 mb-5">
               <span className="w-9 h-9 bg-sky-100 rounded-xl flex items-center justify-center text-[14px]">
-                âœˆï¸
+                ✈️
               </span>
               <div>
                 <h3 className="font-bold text-drivo-text text-[16px]">
@@ -2478,7 +2443,7 @@ onChange={(e) => {
               <div className="flex items-center justify-between p-4 bg-sky-50 rounded-2xl border border-sky-100">
                 <div>
                   <span className="text-[14px] font-medium text-drivo-text">
-                    ðŸ¤ {t("booking.waitAndGreet")}
+                    🤝 {t("booking.waitAndGreet")}
                   </span>
                   <p className="text-[11px] text-drivo-text-muted">
                     {t("booking.waitAndGreetDesc")}
@@ -2785,23 +2750,23 @@ onChange={(e) => {
               onChange={(e) => setLanguagePref(e.target.value)}
               className="input"
             >
-              <option value="sk">ðŸ‡¸ðŸ‡° Slovak</option>
-              <option value="en">ðŸ‡¬ðŸ‡§ English</option>
-              <option value="de">ðŸ‡©ðŸ‡ª German</option>
-              <option value="uk">ðŸ‡ºðŸ‡¦ Ukrainian</option>
-              <option value="cs">ðŸ‡¨ðŸ‡¿ Czech</option>
+              <option value="sk">🇸🇰 Slovak</option>
+              <option value="en">🇬🇧 English</option>
+              <option value="de">🇩🇪 German</option>
+              <option value="uk">🇺🇦 Ukrainian</option>
+              <option value="cs">🇨🇿 Czech</option>
             </select>
 
             <div>
               <label className="text-[12px] font-semibold text-drivo-text-secondary mb-3 block">
-                ðŸ’³ {t("booking.payment")} *
+                💳 {t("booking.payment")} *
               </label>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {[
-                  ["card", "ðŸ’³", t("booking.paymentCard"), t("booking.paymentCardDesc"), t("booking.recommended", "Recommended")],
-                  ["cash", "ðŸ’°", t("booking.paymentCash"), t("booking.paymentCashDesc"), t("booking.rulesApply", "Rules apply")],
-                  ["invoice", "ðŸ¢", t("booking.paymentInvoice"), t("booking.paymentInvoiceDesc"), "Net 30"],
+                  ["card", "💳", t("booking.paymentCard"), t("booking.paymentCardDesc"), t("booking.recommended", "Recommended")],
+                  ["cash", "💰", t("booking.paymentCash"), t("booking.paymentCashDesc"), t("booking.rulesApply", "Rules apply")],
+                  ["invoice", "🏢", t("booking.paymentInvoice"), t("booking.paymentInvoiceDesc"), "Net 30"],
                 ].filter(([v]) => !(childrenTransport && v === "cash")).map(([v, icon, label, sub, tag]) => (
                   <button
                     key={v}
@@ -2842,7 +2807,7 @@ onChange={(e) => {
             {paymentMethod === "invoice" && (
               <div className="p-4 bg-drivo-blue-light rounded-2xl border border-blue-200 animate-fade-in">
                 <p className="text-[13px] text-blue-700">
-                  <strong>ðŸ¢ {t("booking.paymentInvoice")}:</strong> {t("booking.invoiceNotice", "For municipalities, healthcare, insurers. Details confirmed via email.")}
+                  <strong>🏢 {t("booking.paymentInvoice")}:</strong> {t("booking.invoiceNotice", "For municipalities, healthcare, insurers. Details confirmed via email.")}
                 </p>
               </div>
             )}
@@ -2860,7 +2825,7 @@ onChange={(e) => {
 
         <div className="card bg-gradient-to-r from-drivo-green-light/30 to-drivo-blue-light/30 border border-drivo-green/20">
           <div className="flex items-start gap-3 mb-5">
-            <span className="text-2xl">ðŸ›¡ï¸</span>
+            <span className="text-2xl">🛡️</span>
             <div>
               <p className="text-[14px] font-semibold text-drivo-text">
                 {t("booking.secureBooking", "Secure booking")}

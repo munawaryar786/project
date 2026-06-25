@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -8,7 +8,6 @@ import WhatsAppFloat from '@/components/layout/WhatsAppFloat';
 import BookingForm from '@/components/booking/BookingForm';
 import RouteMap from '@/components/booking/RouteMap';
 import { WHATSAPP_URL, PHONE_RAW } from '@/lib/constants';
-import { BOOKING_QUICK_ROUTES, popularRouteHref } from '@/lib/popular-routes';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 export default function BookPage() {
@@ -46,9 +45,9 @@ export default function BookPage() {
             {/* Progress Steps */}
             <div className="mt-8 grid grid-cols-3 gap-2 sm:mt-10 sm:flex sm:items-center sm:gap-3">
               {[
-                { n: 1, l: t('booking.tripDetails'), icon: 'ðŸ“' },
-                { n: 2, l: t('otp.title'), icon: 'ðŸ“±' },
-                { n: 3, l: t('confirmation.title'), icon: 'âœ…' },
+                { n: 1, l: t('booking.tripDetails'), icon: '📍' },
+                { n: 2, l: t('otp.title'), icon: '📱' },
+                { n: 3, l: t('confirmation.title'), icon: '✅' },
               ].map((s, i) => (
                 <div key={s.n} className="min-w-0 sm:flex sm:items-center sm:gap-3">
                   <div className="flex min-h-[54px] flex-col items-center justify-center gap-1 rounded-2xl bg-drivo-green/20 px-2 py-2 text-center sm:min-h-0 sm:flex-row sm:rounded-full sm:px-4">
@@ -71,7 +70,7 @@ export default function BookPage() {
               {pickupAddress && dropoffAddress && (
                 <div className="animate-fade-in">
                   <h3 className="text-[16px] font-bold text-drivo-text mb-3 flex items-center gap-2">
-                    <span className="w-8 h-8 bg-drivo-green-light rounded-lg flex items-center justify-center text-[13px] font-bold text-drivo-green-dark">ðŸ—ºï¸</span>
+                    <span className="w-8 h-8 bg-drivo-green-light rounded-lg flex items-center justify-center text-[13px] font-bold text-drivo-green-dark">🗺️</span>
                     {t('booking.routePreview', 'Route preview')}
                   </h3>
                   <RouteMap pickupAddress={pickupAddress} dropoffAddress={dropoffAddress} hideEstimate={serviceType === "children"} />
@@ -92,11 +91,11 @@ export default function BookPage() {
                 <h4 className="text-[15px] font-bold text-drivo-text mb-4">{t('trust.title')}</h4>
                 <div className="space-y-3">
                   {[
-                    { i: 'âœ…', t: t('how.step3.title') },
-                    { i: 'ðŸ›¡ï¸', t: t('trust.item1.title') },
-                    { i: 'â™¿', t: t('trust.item4.title') },
-                    { i: 'ðŸ’³', t: t('booking.payment') },
-                    { i: 'ðŸ”’', t: t('booking.gdprSecure', 'EU GDPR compliant. Encrypted.') },
+                    { i: '✅', t: t('how.step3.title') },
+                    { i: '🛡️', t: t('trust.item1.title') },
+                    { i: '♿', t: t('trust.item4.title') },
+                    { i: '💳', t: t('booking.payment') },
+                    { i: '🔒', t: t('booking.gdprSecure', 'EU GDPR compliant. Encrypted.') },
                   ].map((x) => (
                     <div key={x.t} className="flex items-center gap-3">
                       <span className="text-[16px]">{x.i}</span>
@@ -108,33 +107,26 @@ export default function BookPage() {
 
               {/* Popular Routes */}
               <div className="card">
-                <h4 className="text-[15px] font-bold text-drivo-text mb-2">
-                  {t('popularRoutes.bookingTitle', 'Popular transfer routes')}
-                </h4>
-                <p className="mb-3 text-[12px] text-drivo-text-secondary">
-                  {t('popularRoutes.priceNote', 'Guide prices only. Your live estimate appears in the booking form.')}
-                </p>
-                {BOOKING_QUICK_ROUTES.map((route) => (
-                  <Link
-                    key={route.slug}
-                    href={popularRouteHref(route)}
-                    className="flex items-center justify-between gap-3 border-b border-drivo-border-light py-3 last:border-0 hover:text-drivo-green"
-                  >
+                <h4 className="text-[15px] font-bold text-drivo-text mb-4">📍 {t('booking.popularRoutes', 'Popular routes')}</h4>
+                {[
+                  { from: 'BTS Airport', to: 'City Center', price: '~€15', time: '~20 min' },
+                  { from: 'Main Station', to: 'Petržalka', price: '~€8', time: '~12 min' },
+                  { from: 'Old Town', to: 'Vienna Airport', price: '~€55', time: '~55 min' },
+                ].map((r) => (
+                  <div key={r.from} className="flex items-center justify-between py-3 border-b border-drivo-border-light last:border-0">
                     <div>
-                      <p className="text-[13px] font-semibold text-drivo-text">{route.name}</p>
-                      <p className="text-[11px] text-drivo-text-muted">{route.travelTime} · {route.distance}</p>
+                      <p className="text-[13px] font-medium text-drivo-text">{r.from} → {r.to}</p>
+                      <p className="text-[11px] text-drivo-text-muted">{r.time}</p>
                     </div>
-                    <span className="shrink-0 text-[14px] font-extrabold text-drivo-green">
-                      {t('popularRoutes.from', 'from')} €{route.fromPrice}
-                    </span>
-                  </Link>
+                    <span className="text-[14px] font-bold text-drivo-green">{r.price}</span>
+                  </div>
                 ))}
               </div>
 
               {/* WAV Notice */}
               <div className="card bg-drivo-purple-light/30 border border-drivo-purple/20">
                 <div className="flex items-center gap-3 mb-2">
-                  <span className="text-2xl animate-float">ðŸš</span>
+                  <span className="text-2xl animate-float">🚐</span>
                   <div>
                     <p className="text-[14px] font-bold text-drivo-navy">{t('fleet.wavTitle')}</p>
                     <span className="pill-amber text-[10px]">{t('fleet.wavBadge')}</span>
@@ -150,8 +142,8 @@ export default function BookPage() {
                 <h4 className="text-[15px] font-bold text-drivo-text mb-2">{t('booking.needHelp', 'Need help booking?')}</h4>
                 <p className="text-[13px] text-drivo-text-secondary mb-4">{t('booking.support247', 'Our team is available 24/7')}</p>
                 <div className="space-y-2">
-                  <a href={WHATSAPP_URL} className="btn-primary w-full text-[13px] py-3">ðŸ’¬ {t('common.whatsapp')}</a>
-                  <a href={`tel:+${PHONE_RAW}`} className="btn-outline w-full text-[13px] py-3">ðŸ“ž {t('common.callUs')}</a>
+                  <a href={WHATSAPP_URL} className="btn-primary w-full text-[13px] py-3">💬 {t('common.whatsapp')}</a>
+                  <a href={`tel:+${PHONE_RAW}`} className="btn-outline w-full text-[13px] py-3">📞 {t('common.callUs')}</a>
                 </div>
               </div>
 
@@ -164,7 +156,7 @@ export default function BookPage() {
                     ))}
                   </div>
                   <div>
-                    <div className="flex gap-0.5">{[...Array(5)].map((_, j) => (<span key={j} className="text-amber-400 text-[12px]">â˜…</span>))}</div>
+                    <div className="flex gap-0.5">{[...Array(5)].map((_, j) => (<span key={j} className="text-amber-400 text-[12px]">★</span>))}</div>
                     <p className="text-[11px] text-drivo-text-muted">2,400+ happy riders</p>
                   </div>
                 </div>

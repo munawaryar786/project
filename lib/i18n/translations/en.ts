@@ -1,4 +1,4 @@
-﻿const en = {
+const en = {
   // Navigation
   "nav.home": "Home",
   "nav.services": "Services",
@@ -144,7 +144,7 @@
   "booking.paymentCashDesc": "Before ride",
   "booking.paymentInvoice": "Invoice",
   "booking.paymentInvoiceDesc": "Institutions",
-  "booking.continue": "Continue to Verification â†’",
+  "booking.continue": "Continue to Verification →",
   "booking.creating": "Creating booking...",
   "booking.termsAgree": "By submitting you agree to",
   "booking.terms": "terms",
@@ -158,7 +158,7 @@
     "Driver waits in arrivals hall with your name sign",
 
   // Cash Warning
-  "cash.title": "âš ï¸ Important â€” Cash Payment",
+  "cash.title": "⚠️ Important — Cash Payment",
   "cash.message":
     "Cash payment must be made to the driver BEFORE the journey starts.",
   "cash.rule1": "Driver must confirm cash received before starting the ride",
@@ -185,10 +185,10 @@
   "confirmation.passengers": "Passengers",
   "confirmation.payment": "Payment",
   "confirmation.status": "Status",
-  "confirmation.verified": "âœ… Verified",
-  "confirmation.whatsapp": "ðŸ’¬ WhatsApp Us",
-  "confirmation.print": "ðŸ–¨ï¸ Print Details",
-  "confirmation.backHome": "â† Back to Homepage",
+  "confirmation.verified": "✅ Verified",
+  "confirmation.whatsapp": "💬 WhatsApp Us",
+  "confirmation.print": "🖨️ Print Details",
+  "confirmation.backHome": "← Back to Homepage",
 
   // Footer
   "footer.company": "Drivo s.r.o. | Bratislava, Slovakia",
@@ -474,7 +474,7 @@
   "adminDashboard.financial.todayRevenue": "Today's revenue",
   "adminDashboard.recentBookings.title": "Recent bookings",
   "adminDashboard.recentBookings.subtitle": "Booking, dispatch, payment and driver status",
-  "adminDashboard.recentBookings.viewAll": "View all â†’",
+  "adminDashboard.recentBookings.viewAll": "View all →",
   "adminDashboard.table.ref": "Ref",
   "adminDashboard.table.status": "Status",
   "adminDashboard.table.dispatch": "Dispatch",
@@ -681,28 +681,6 @@
   "passenger.sendResetCode": "Send reset code",
   "passenger.resetContinue": "Reset Password & Continue",
   "passenger.backToLogin": "Back to login",
-
-  // Popular Routes
-  "popularRoutes.eyebrow": "Transfers",
-  "popularRoutes.title": "Popular Routes",
-  "popularRoutes.subtitle": "Fixed route guide prices for airport transfers, business travel and cross-border rides from Bratislava.",
-  "popularRoutes.advantage": "Fixed prices. Professional drivers. No hidden fees.",
-  "popularRoutes.supportingText": "Whether you're travelling to Vienna Airport, Budapest, Prague, Brno or anywhere in Slovakia, Drivo offers reliable door-to-door transportation with transparent pricing and comfortable vehicles.",
-  "popularRoutes.bookThisRoute": "Book this route",
-  "popularRoutes.moreTitle": "More popular transfers",
-  "popularRoutes.from": "from",
-  "popularRoutes.guidePrice": "Guide price",
-  "popularRoutes.liveEstimate": "Live estimate",
-  "popularRoutes.distance": "Distance",
-  "popularRoutes.travelTime": "Travel time",
-  "popularRoutes.bookingTitle": "Popular transfer routes",
-  "popularRoutes.bookingSubtitle": "Choose a frequent route to prefill your booking faster.",
-  "popularRoutes.priceNote": "Guide prices only. Your live estimate appears in the booking form.",
-  "popularRoutes.selectRoute": "Select route",
-  "popularRoutes.category.airport": "Airport",
-  "popularRoutes.category.crossBorder": "Cross-border",
-  "popularRoutes.category.city": "City transfer",
-  "popularRoutes.category.slovakia": "Slovakia transfer",
-  "common.afterSelection": "after selection",};
+};
 
 export default en;
