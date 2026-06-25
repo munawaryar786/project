@@ -17,7 +17,9 @@ import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 const CreateAccountSchema = z
   .object({
     bookingId: z.string().min(1),
-    registrationProofToken: z.string().trim().min(1),
+    registrationProofToken: z.string().trim().optional().default(""),
+    legacyPasswordSetupProofToken: z.string().trim().optional().default(""),
+    authMode: z.enum(["REGISTER", "LEGACY_SETUP"]).optional().default("REGISTER"),
     phone: z.string().min(6),
     fullName: z.string().trim().min(2).max(120),
     email: z.string().trim().email().max(160),
@@ -31,29 +33,12 @@ const CreateAccountSchema = z
   });
 
 function proofError(code: string, message: string, status = 400) {
-  console.log(`Proof validation failed with code: ${code}`);
   return NextResponse.json({ success: false, code, message, error: message }, { status });
 }
 
 async function handler(request: NextRequest) {
   try {
     const body = await request.json();
-    const record = body && typeof body === "object" && !Array.isArray(body)
-      ? (body as Record<string, unknown>)
-      : null;
-    const rawProof = typeof record?.registrationProofToken === "string"
-      ? record.registrationProofToken.trim()
-      : "";
-
-    console.log(`Account create received proof: ${rawProof ? "yes" : "no"}`);
-
-    if (!rawProof) {
-      return proofError(
-        "PROOF_MISSING",
-        "Phone verification is missing. Please verify your number again."
-      );
-    }
-
     const parsed = CreateAccountSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
@@ -63,6 +48,19 @@ async function handler(request: NextRequest) {
     }
 
     const data = parsed.data;
+    const isLegacySetup = data.authMode === "LEGACY_SETUP" || Boolean(data.legacyPasswordSetupProofToken);
+    const proofToken = isLegacySetup ? data.legacyPasswordSetupProofToken : data.registrationProofToken;
+    const expectedPurpose = isLegacySetup
+      ? "PASSENGER_LEGACY_PASSWORD_SETUP"
+      : "PASSENGER_REGISTRATION";
+
+    if (!proofToken) {
+      return proofError(
+        "PROOF_MISSING",
+        "Phone verification is missing. Please verify your number again."
+      );
+    }
+
     const passwordError = validatePassengerPassword(data.password);
     if (passwordError) {
       return NextResponse.json({ error: passwordError }, { status: 400 });
@@ -85,17 +83,10 @@ async function handler(request: NextRequest) {
     }
 
     const proof = await prisma.passengerVerificationProof.findUnique({
-      where: { proofTokenHash: hashSecret(data.registrationProofToken) },
+      where: { proofTokenHash: hashSecret(proofToken) },
     });
 
-    if (!proof) {
-      return proofError(
-        "PROOF_INVALID",
-        "Phone verification could not be confirmed. Please verify again."
-      );
-    }
-
-    if (proof.purpose !== "PASSENGER_REGISTRATION") {
+    if (!proof || proof.purpose !== expectedPurpose) {
       return proofError(
         "PROOF_INVALID",
         "Phone verification could not be confirmed. Please verify again."
@@ -131,7 +122,32 @@ async function handler(request: NextRequest) {
 
     if (existing?.passwordHash) {
       return NextResponse.json(
-        { error: "This phone already has an account. Please log in or reset your password." },
+        {
+          success: false,
+          code: "ACCOUNT_EXISTS_LOGIN_REQUIRED",
+          error: "This phone already has a Drivo account. Please log in or reset your password.",
+          message: "This phone already has a Drivo account. Please log in or reset your password.",
+        },
+        { status: 409 }
+      );
+    }
+
+    if (isLegacySetup && !existing) {
+      return proofError(
+        "LEGACY_ACCOUNT_NOT_FOUND",
+        "Phone verification could not be confirmed. Please verify again.",
+        409
+      );
+    }
+
+    if (!isLegacySetup && existing) {
+      return NextResponse.json(
+        {
+          success: false,
+          code: "LEGACY_SETUP_REQUIRED",
+          error: "Please verify your phone and create a password to continue.",
+          message: "Please verify your phone and create a password to continue.",
+        },
         { status: 409 }
       );
     }
@@ -144,7 +160,7 @@ async function handler(request: NextRequest) {
             phone: normalizedPhone,
             normalizedPhone,
             phoneVerified: true,
-            phoneVerifiedAt: new Date(),
+            phoneVerifiedAt: existing.phoneVerifiedAt || new Date(),
             fullName: data.fullName,
             email: data.email.toLowerCase(),
             passwordHash,
@@ -193,7 +209,7 @@ async function handler(request: NextRequest) {
       await setTrustedDeviceCookie(request, response, passenger.id);
     }
 
-    console.log(`Passenger account created/upgraded: ${passenger.id}`);
+    console.log(`Passenger account setup completed: ${passenger.id}`);
     return response;
   } catch (error) {
     console.error("Passenger account create error:", error);

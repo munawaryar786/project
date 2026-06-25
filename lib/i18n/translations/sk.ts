@@ -169,7 +169,7 @@
   // OTP
   "otp.title": "Overte vaÅ¡e ÄÃ­slo",
   "otp.subtitle": "6-miestny kÃ³d bol odoslanÃ½ na vÃ¡Å¡ WhatsApp.",
-  "otp.devNote": "(MVP: skontrolujte konzolu servera pre OTP)",
+  "otp.devNote": "Vývojový OTP sa zobrazuje iba mimo produkcie.",
   "otp.verify": "OveriÅ¥ a potvrdiÅ¥",
   "otp.resend": "OdoslaÅ¥ znova",
   "otp.invalid": "NeplatnÃ½ kÃ³d",

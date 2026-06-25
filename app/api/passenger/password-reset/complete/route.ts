@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import {
-  consumeVerificationProof,
+  consumeVerificationProofById,
   createPassengerSession,
+  findVerificationProof,
   normalizePassengerPhone,
   publicPassenger,
   revokePassengerSessions,
@@ -17,7 +18,7 @@ import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 const CompleteSchema = z
   .object({
     phone: z.string().trim().min(6),
-    proofToken: z.string().min(20),
+    passwordResetProofToken: z.string().min(20),
     resetAttemptId: z.string().min(10),
     bookingId: z.string().optional().nullable(),
     password: z.string().min(1).max(128),
@@ -51,15 +52,15 @@ async function handler(request: NextRequest) {
       return NextResponse.json({ error: "Password reset could not be completed." }, { status: 400 });
     }
 
-    const proof = await consumeVerificationProof({
-      proofToken: data.proofToken,
+    const proof = await findVerificationProof({
+      proofToken: data.passwordResetProofToken,
       normalizedPhone,
       purpose: "PASSENGER_PASSWORD_RESET",
       passengerId: passenger.id,
       resetAttemptId: data.resetAttemptId,
     });
     if (!proof) {
-      return NextResponse.json({ error: "Password reset expired. Please try again." }, { status: 400 });
+      return NextResponse.json({ error: "Password reset expired. Please request a new code." }, { status: 400 });
     }
 
     await revokePassengerSessions(passenger.id);
@@ -80,6 +81,8 @@ async function handler(request: NextRequest) {
         phone: normalizedPhone,
       },
     });
+
+    await consumeVerificationProofById(proof.id);
 
     if (data.bookingId) {
       await prisma.booking.updateMany({
@@ -114,4 +117,4 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.passengerPasswordReset);
+export const POST = withRateLimit(handler, rateLimits.passengerPasswordResetComplete);

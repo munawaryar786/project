@@ -154,7 +154,7 @@
 
   "otp.title": "Nummer verifizieren",
   "otp.subtitle": "6-stelliger Code an Ihr WhatsApp gesendet.",
-  "otp.devNote": "(MVP: OTP in der Server-Konsole prÃ¼fen)",
+  "otp.devNote": "Entwicklungs-OTP wird nur außerhalb der Produktion angezeigt.",
   "otp.verify": "Verifizieren & BestÃ¤tigen",
   "otp.resend": "Code erneut senden",
   "otp.invalid": "UngÃ¼ltiger Code",

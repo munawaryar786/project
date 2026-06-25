@@ -8,10 +8,13 @@ type ResendData = {
   message?: string;
 };
 
+type OtpPurpose = "PASSENGER_REGISTRATION" | "PASSENGER_LEGACY_PASSWORD_SETUP";
+
 interface Props {
   onVerify: (otpCode: string) => Promise<void>;
   bookingId: string;
   phone: string;
+  purpose: OtpPurpose;
   devOtp?: string;
   initialError?: string;
   onResendStart?: () => void;
@@ -24,6 +27,7 @@ export default function OTPVerification({
   onVerify,
   bookingId,
   phone,
+  purpose,
   devOtp,
   initialError = "",
   onResendStart,
@@ -96,7 +100,7 @@ export default function OTPVerification({
       const res = await fetch("/api/otp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookingId, phone }),
+        body: JSON.stringify({ bookingId, phone, purpose }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -133,7 +137,9 @@ export default function OTPVerification({
           {t("otp.title")}
         </h2>
         <p className="text-[14px] text-drivo-text-secondary mb-8">
-          {t("otp.subtitle")}
+          {purpose === "PASSENGER_LEGACY_PASSWORD_SETUP"
+            ? t("passenger.legacyOtpSubtitle", "Enter the code sent to your phone to create a password.")
+            : t("otp.subtitle")}
           {showDevelopmentOtp && (
             <>
               <br />

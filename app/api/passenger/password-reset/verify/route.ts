@@ -28,7 +28,7 @@ async function handler(request: NextRequest) {
       where: { OR: [{ phone: normalizedPhone }, { normalizedPhone }] },
     });
     if (!passenger?.passwordHash) {
-      return NextResponse.json({ error: "Invalid or expired verification code" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid verification code." }, { status: 400 });
     }
 
     const otp = await prisma.passengerOtp.findFirst({
@@ -50,7 +50,7 @@ async function handler(request: NextRequest) {
           data: { attempts: { increment: 1 } },
         });
       }
-      return NextResponse.json({ error: "Invalid or expired verification code" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid verification code." }, { status: 400 });
     }
 
     await prisma.passengerOtp.update({
@@ -67,8 +67,9 @@ async function handler(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      proofToken: proof.proofToken,
-      expiresAt: proof.expiresAt.toISOString(),
+      passwordResetProofToken: proof.proofToken,
+      proofExpiresAt: proof.expiresAt.toISOString(),
+      normalizedPhone,
     });
   } catch (error) {
     console.error("Password reset verify error:", error);
@@ -76,4 +77,4 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.passengerPasswordReset);
+export const POST = withRateLimit(handler, rateLimits.passengerPasswordResetOtpVerify);

@@ -34,7 +34,18 @@ type Coords = {
 type JsonRecord = Record<string, unknown>;
 
 type FareBreakdown = Record<string, unknown>;
-type AuthMode = "first-time" | "login" | "forgot" | "step-up";
+type AuthMode =
+  | "idle"
+  | "checkingPhone"
+  | "registrationOtp"
+  | "createAccount"
+  | "existingAccountLogin"
+  | "legacyPasswordSetupOtp"
+  | "legacyPasswordSetup"
+  | "forgotPasswordOtp"
+  | "resetPassword"
+  | "loginStepUp"
+  | "authenticated";
 
 type ChildDetail = {
   fullName: string;
@@ -258,9 +269,10 @@ export default function BookingForm({
   const [bookingRef, setBookingRef] = useState("");
   const [devOtp, setDevOtp] = useState<string | undefined>(undefined);
   const [registrationProofToken, setRegistrationProofToken] = useState("");
+  const [legacyPasswordSetupProofToken, setLegacyPasswordSetupProofToken] = useState("");
   const [proofExpiresAt, setProofExpiresAt] = useState("");
   const [registrationProofPhone, setRegistrationProofPhone] = useState("");
-  const [authMode, setAuthMode] = useState<AuthMode>("first-time");
+  const [authMode, setAuthMode] = useState<AuthMode>("idle");
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
   const [accountNeedsPhoneReverification, setAccountNeedsPhoneReverification] = useState(false);
@@ -270,7 +282,8 @@ export default function BookingForm({
   const [rememberDevice, setRememberDevice] = useState(true);
   const [resetAttemptId, setResetAttemptId] = useState("");
   const [resetOtp, setResetOtp] = useState("");
-  const [resetProof, setResetProof] = useState("");
+  const [passwordResetProofToken, setPasswordResetProofToken] = useState("");
+  const [passwordResetProofExpiresAt, setPasswordResetProofExpiresAt] = useState("");
   const [resetPassword, setResetPassword] = useState("");
   const [resetConfirmPassword, setResetConfirmPassword] = useState("");
   const [accountPassword, setAccountPassword] = useState("");
@@ -288,11 +301,13 @@ export default function BookingForm({
   }, [step]);
 
   useEffect(() => {
-    if (step === 4 && !registrationProofToken && !accountNeedsPhoneReverification) {
+    const hasRequiredProof =
+      authMode === "legacyPasswordSetup" ? legacyPasswordSetupProofToken : registrationProofToken;
+    if (step === 4 && !hasRequiredProof && !accountNeedsPhoneReverification) {
       setAuthError("Phone verification is missing. Please verify your number again.");
       setAccountNeedsPhoneReverification(true);
     }
-  }, [accountNeedsPhoneReverification, registrationProofToken, step]);
+  }, [accountNeedsPhoneReverification, authMode, legacyPasswordSetupProofToken, registrationProofToken, step]);
 
   useEffect(() => {
     onServiceTypeChange?.(serviceType);
@@ -332,6 +347,7 @@ export default function BookingForm({
 
   const clearRegistrationProof = () => {
     setRegistrationProofToken("");
+    setLegacyPasswordSetupProofToken("");
     setProofExpiresAt("");
     setRegistrationProofPhone("");
   };
@@ -349,6 +365,10 @@ export default function BookingForm({
     setAuthError("");
     setError("");
     setDevOtp(undefined);
+    setResetAttemptId("");
+    setResetOtp("");
+    setPasswordResetProofToken("");
+    setPasswordResetProofExpiresAt("");
   };
   const applyPopularRoute = useCallback((route: PopularRoute) => {
     setSelectedPopularRouteSlug(route.slug);
@@ -538,6 +558,58 @@ useEffect(() => {
     } catch {
       return {};
     }
+  };
+
+  const clearPasswordResetState = () => {
+    setResetAttemptId("");
+    setResetOtp("");
+    setPasswordResetProofToken("");
+    setPasswordResetProofExpiresAt("");
+    setResetPassword("");
+    setResetConfirmPassword("");
+  };
+
+  const sendBookingOtp = async (
+    activeBookingId: string,
+    phone: string,
+    purpose: "PASSENGER_REGISTRATION" | "PASSENGER_LEGACY_PASSWORD_SETUP"
+  ) => {
+    const otpRes = await fetch("/api/otp/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({
+        bookingId: activeBookingId,
+        phone,
+        purpose,
+      }),
+    });
+
+    const otpData = await safeJson(otpRes);
+    if (!otpRes.ok) {
+      throw new Error(readError(otpData, "OTP send failed"));
+    }
+
+    if (isRecord(otpData) && typeof otpData.devOtp === "string") {
+      setDevOtp(otpData.devOtp);
+    }
+  };
+
+  const resolvePassengerPhone = async (activeBookingId: string, phone: string) => {
+    const res = await fetch("/api/passenger/auth/resolve-phone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ bookingId: activeBookingId, phone }),
+    });
+    const data = await safeJson(res);
+    if (!res.ok) {
+      throw new Error(readError(data, "Could not check phone number. Please try again."));
+    }
+    if (!isRecord(data) || data.success !== true || typeof data.mode !== "string") {
+      throw new Error("Could not check phone number. Please try again.");
+    }
+    return data;
   };
 
   const coordsFromSuggestion = (suggestion?: { lat?: number; lng?: number }): Coords | null => {
@@ -886,29 +958,37 @@ scheduledTime:
       }
 
       if (passengerProfile) {
+        setAuthMode("authenticated");
         await continueAuthenticatedBooking(passengerProfile, newBookingId);
         return;
       }
 
-      const otpRes = await fetch("/api/otp/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({
-          bookingId: newBookingId,
-          phone: phoneCode + customerPhone.trim(),
-        }),
-      });
+      const submittedPhone = phoneCode + customerPhone.trim();
+      setAuthMode("checkingPhone");
+      const phoneState = await resolvePassengerPhone(newBookingId, submittedPhone);
+      const normalizedPhone =
+        typeof phoneState.normalizedPhone === "string" ? phoneState.normalizedPhone : submittedPhone;
+      setRegistrationProofPhone(normalizedPhone);
 
-      const otpData = await safeJson(otpRes);
-
-      if (!otpRes.ok) {
-        throw new Error(readError(otpData, "OTP send failed"));
+      if (phoneState.mode === "LOGIN") {
+        clearRegistrationProof();
+        setRegistrationProofPhone(normalizedPhone);
+        clearPasswordResetState();
+        setLoginPassword("");
+        setAuthError("This phone already has a Drivo account. Please log in to continue.");
+        setAuthMode("existingAccountLogin");
+        return;
       }
 
-      if (isRecord(otpData) && typeof otpData.devOtp === "string") {
-        setDevOtp(otpData.devOtp);
+      if (phoneState.mode === "LEGACY_SETUP") {
+        await sendBookingOtp(newBookingId, normalizedPhone, "PASSENGER_LEGACY_PASSWORD_SETUP");
+        setAuthMode("legacyPasswordSetupOtp");
+        setStep(2);
+        return;
       }
+
+      await sendBookingOtp(newBookingId, normalizedPhone, "PASSENGER_REGISTRATION");
+      setAuthMode("registrationOtp");
       setStep(2);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -920,21 +1000,68 @@ scheduledTime:
   const handleOTPVerify = async (otpCode: string) => {
     setError("");
 
+    const purpose =
+      authMode === "legacyPasswordSetupOtp" || authMode === "legacyPasswordSetup"
+        ? "PASSENGER_LEGACY_PASSWORD_SETUP"
+        : "PASSENGER_REGISTRATION";
+
     const res = await fetch("/api/otp/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
-      body: JSON.stringify({ bookingId, otpCode }),
+      body: JSON.stringify({ bookingId, otpCode, purpose }),
     });
 
     const data = await safeJson(res);
 
     if (!res.ok) {
+      const code = readCode(data);
+      if (code === "ACCOUNT_EXISTS_LOGIN_REQUIRED") {
+        clearRegistrationProof();
+        setAuthMode("existingAccountLogin");
+        setStep(1);
+        setAuthError("This phone already has a Drivo account. Please log in or reset your password.");
+        return;
+      }
+      if (code === "LEGACY_SETUP_REQUIRED") {
+        clearRegistrationProof();
+        setAuthMode("legacyPasswordSetupOtp");
+        setStep(1);
+        setAuthError("Please verify your phone and create a password to continue.");
+        return;
+      }
       throw new Error(otpVerifyMessage(data, "OTP verification failed"));
     }
 
     if (!isRecord(data)) {
       throw new Error("Verification response was invalid");
+    }
+
+    if (typeof data.bookingId === "string" && data.bookingId !== bookingId) {
+      throw new Error("Verification could not be completed. Please request a new code.");
+    }
+
+    const normalizedPhone =
+      typeof data.normalizedPhone === "string" ? data.normalizedPhone : phoneCode + customerPhone.trim();
+    setRegistrationProofPhone(normalizedPhone);
+    setProofExpiresAt(typeof data.proofExpiresAt === "string" ? data.proofExpiresAt : "");
+    setAccountNeedsPhoneReverification(false);
+    setAuthError("");
+    if (typeof data.email === "string" && data.email && !customerEmail) {
+      setCustomerEmail(data.email);
+    }
+
+    if (purpose === "PASSENGER_LEGACY_PASSWORD_SETUP") {
+      const nextLegacyProofToken =
+        typeof data.legacyPasswordSetupProofToken === "string" ? data.legacyPasswordSetupProofToken : "";
+      if (data.success !== true || !nextLegacyProofToken) {
+        throw new Error("Verification could not be completed. Please request a new code.");
+      }
+      setRegistrationProofToken("");
+      setLegacyPasswordSetupProofToken(nextLegacyProofToken);
+      setAuthMode("legacyPasswordSetup");
+      setStep(4);
+      return;
     }
 
     const nextRegistrationProofToken =
@@ -944,18 +1071,9 @@ scheduledTime:
       throw new Error("Verification could not be completed. Please request a new code.");
     }
 
-    if (typeof data.bookingId === "string" && data.bookingId !== bookingId) {
-      throw new Error("Verification could not be completed. Please request a new code.");
-    }
-
+    setLegacyPasswordSetupProofToken("");
     setRegistrationProofToken(nextRegistrationProofToken);
-    setProofExpiresAt(typeof data.proofExpiresAt === "string" ? data.proofExpiresAt : "");
-    setRegistrationProofPhone(typeof data.normalizedPhone === "string" ? data.normalizedPhone : phoneCode + customerPhone.trim());
-    setAccountNeedsPhoneReverification(false);
-    setAuthError("");
-    if (typeof data.email === "string" && data.email && !customerEmail) {
-      setCustomerEmail(data.email);
-    }
+    setAuthMode("createAccount");
     setStep(4);
   };
 
@@ -964,6 +1082,7 @@ scheduledTime:
     activeBookingId = bookingId
   ) => {
     if (passenger) setPassengerProfile(passenger);
+    setAuthMode("authenticated");
 
     if (!activeBookingId) {
       return;
@@ -992,7 +1111,10 @@ scheduledTime:
       return;
     }
 
-    if (!registrationProofToken) {
+    const isLegacySetup = authMode === "legacyPasswordSetup";
+    const activeProofToken = isLegacySetup ? legacyPasswordSetupProofToken : registrationProofToken;
+
+    if (!activeProofToken) {
       requirePhoneReverification("Phone verification is missing. Please verify your number again.");
       return;
     }
@@ -1011,7 +1133,9 @@ scheduledTime:
         cache: "no-store",
         body: JSON.stringify({
           bookingId,
-          registrationProofToken,
+          registrationProofToken: isLegacySetup ? "" : registrationProofToken,
+          legacyPasswordSetupProofToken: isLegacySetup ? legacyPasswordSetupProofToken : "",
+          authMode: isLegacySetup ? "LEGACY_SETUP" : "REGISTER",
           phone: registrationProofPhone || phoneCode + customerPhone.trim(),
           fullName: customerName.trim(),
           email: customerEmail.trim(),
@@ -1023,6 +1147,20 @@ scheduledTime:
       const data = await safeJson(res);
       if (!res.ok) {
         const code = readCode(data);
+        if (code === "ACCOUNT_EXISTS_LOGIN_REQUIRED") {
+          clearRegistrationProof();
+          setAuthMode("existingAccountLogin");
+          setStep(1);
+          setAuthError("This phone already has a Drivo account. Please log in or reset your password.");
+          return;
+        }
+        if (code === "LEGACY_SETUP_REQUIRED") {
+          clearRegistrationProof();
+          setAuthMode("legacyPasswordSetupOtp");
+          setStep(1);
+          setAuthError("Please verify your phone and create a password to continue.");
+          return;
+        }
         if (code.startsWith("PROOF_")) {
           requirePhoneReverification(proofFailureMessage(code, readError(data, "Phone verification could not be confirmed. Please verify again.")));
           return;
@@ -1052,7 +1190,7 @@ scheduledTime:
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
         body: JSON.stringify({
-          phone: phoneCode + customerPhone.trim(),
+          phone: registrationProofPhone || phoneCode + customerPhone.trim(),
           password: loginPassword,
           bookingId: activeBookingId || null,
         }),
@@ -1063,7 +1201,7 @@ scheduledTime:
       if (isRecord(data) && data.stepUpRequired) {
         setLoginAttemptId(String(data.loginAttemptId || ""));
         if (typeof data.devOtp === "string") setDevOtp(data.devOtp);
-        setAuthMode("step-up");
+        setAuthMode("loginStepUp");
         return;
       }
 
@@ -1086,7 +1224,7 @@ scheduledTime:
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
         body: JSON.stringify({
-          phone: phoneCode + customerPhone.trim(),
+          phone: registrationProofPhone || phoneCode + customerPhone.trim(),
           otpCode: loginOtp,
           loginAttemptId,
           bookingId: bookingId || null,
@@ -1113,12 +1251,15 @@ scheduledTime:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
-        body: JSON.stringify({ phone: phoneCode + customerPhone.trim() }),
+        body: JSON.stringify({ phone: registrationProofPhone || phoneCode + customerPhone.trim() }),
       });
       const data = await safeJson(res);
       if (!res.ok) throw new Error(readError(data, "Could not send reset code."));
       if (isRecord(data)) {
         setResetAttemptId(String(data.resetAttemptId || ""));
+        setResetOtp("");
+        setPasswordResetProofToken("");
+        setPasswordResetProofExpiresAt("");
         if (typeof data.devOtp === "string") setDevOtp(data.devOtp);
       }
     } catch (err) {
@@ -1139,15 +1280,20 @@ scheduledTime:
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
         body: JSON.stringify({
-          phone: phoneCode + customerPhone.trim(),
+          phone: registrationProofPhone || phoneCode + customerPhone.trim(),
           otpCode: resetOtp,
           resetAttemptId,
         }),
       });
       const data = await safeJson(res);
       if (!res.ok) throw new Error(readError(data, "Could not verify reset code."));
-      if (isRecord(data) && typeof data.proofToken === "string") {
-        setResetProof(data.proofToken);
+      if (isRecord(data) && typeof data.passwordResetProofToken === "string") {
+        setPasswordResetProofToken(data.passwordResetProofToken);
+        setPasswordResetProofExpiresAt(typeof data.proofExpiresAt === "string" ? data.proofExpiresAt : "");
+        if (typeof data.normalizedPhone === "string") setRegistrationProofPhone(data.normalizedPhone);
+        setAuthMode("resetPassword");
+      } else {
+        throw new Error("Could not verify reset code.");
       }
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : "Could not verify reset code.");
@@ -1159,6 +1305,17 @@ scheduledTime:
   const handleResetComplete = async (e: React.FormEvent | React.MouseEvent) => {
     e.preventDefault();
     setAuthError("");
+    if (!passwordResetProofToken) {
+      setAuthError("Password reset expired. Please request a new code.");
+      setAuthMode("forgotPasswordOtp");
+      return;
+    }
+    if (passwordResetProofExpiresAt && new Date(passwordResetProofExpiresAt).getTime() <= Date.now()) {
+      setAuthError("Password reset expired. Please request a new code.");
+      setPasswordResetProofToken("");
+      setAuthMode("forgotPasswordOtp");
+      return;
+    }
     if (resetPassword !== resetConfirmPassword) {
       setAuthError(t("passenger.passwordMismatch", "Passwords do not match."));
       return;
@@ -1171,8 +1328,8 @@ scheduledTime:
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
         body: JSON.stringify({
-          phone: phoneCode + customerPhone.trim(),
-          proofToken: resetProof,
+          phone: registrationProofPhone || phoneCode + customerPhone.trim(),
+          passwordResetProofToken,
           resetAttemptId,
           bookingId: bookingId || null,
           password: resetPassword,
@@ -1232,7 +1389,12 @@ scheduledTime:
       <OTPVerification
         onVerify={handleOTPVerify}
         bookingId={bookingId}
-        phone={phoneCode + customerPhone}
+        phone={registrationProofPhone || phoneCode + customerPhone}
+        purpose={
+          authMode === "legacyPasswordSetupOtp" || authMode === "legacyPasswordSetup"
+            ? "PASSENGER_LEGACY_PASSWORD_SETUP"
+            : "PASSENGER_REGISTRATION"
+        }
         devOtp={devOtp}
         initialError={error}
         onResendStart={resetOtpAttemptState}
@@ -1331,13 +1493,17 @@ scheduledTime:
               âœ“
             </div>
             <h2 className="text-[22px] font-bold text-drivo-text">
-              {t("passenger.createAccountTitle", "Create your Drivo account")}
+              {authMode === "legacyPasswordSetup"
+                ? t("passenger.createPasswordTitle", "Create a password to continue")
+                : t("passenger.createAccountTitle", "Create your Drivo account")}
             </h2>
             <p className="mt-2 text-[14px] text-drivo-text-secondary">
-              {t(
-                "passenger.createAccountDesc",
-                "Your phone number has been verified. Create a password so your future bookings are faster."
-              )}
+              {authMode === "legacyPasswordSetup"
+                ? t("passenger.legacyPasswordSetupDesc", "Your phone number has been verified. Create a password for your existing Drivo account.")
+                : t(
+                    "passenger.createAccountDesc",
+                    "Your phone number has been verified. Create a password so your future bookings are faster."
+                  )}
             </p>
           </div>
 
@@ -1408,7 +1574,9 @@ scheduledTime:
             <button type="submit" className="btn-primary w-full" disabled={authLoading || accountNeedsPhoneReverification}>
               {authLoading
                 ? t("passenger.saving")
-                : t("passenger.createAccountContinue", "Create Account & Continue Booking")}
+                : authMode === "legacyPasswordSetup"
+                  ? t("passenger.savePasswordContinue", "Save Password & Continue Booking")
+                  : t("passenger.createAccountContinue", "Create Account & Continue Booking")}
             </button>
           </div>
         </form>
@@ -2342,7 +2510,7 @@ onChange={(e) => {
                       await fetch("/api/passenger/logout", { method: "POST" }).catch(() => null);
                       setPassengerProfile(null);
                       setLoginPassword("");
-                      setAuthMode("first-time");
+                      setAuthMode("idle");
                     }}
                   >
                     {t("passenger.useAnotherAccount", "Use another account")}
@@ -2351,28 +2519,35 @@ onChange={(e) => {
               </div>
             ) : (
               <div className="rounded-2xl border border-drivo-border-light bg-drivo-bg-soft/60 p-4">
-                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="mb-4 flex flex-col gap-1">
                   <p className="text-[13px] font-semibold text-drivo-text">
-                    {authMode === "first-time"
-                      ? t("passenger.firstTimePrompt", "First time with Drivo? Verify phone and create account.")
-                      : t("passenger.returningPrompt", "Already have a Drivo account? Log in")}
+                    {authMode === "existingAccountLogin"
+                      ? t("passenger.loginToContinueTitle", "Log in to continue")
+                      : authMode === "forgotPasswordOtp" || authMode === "resetPassword"
+                        ? t("passenger.resetPasswordTitle", "Reset your password")
+                        : authMode === "legacyPasswordSetupOtp" || authMode === "legacyPasswordSetup"
+                          ? t("passenger.createPasswordTitle", "Create a password to continue")
+                          : t("passenger.firstTimePrompt", "First time with Drivo? Verify phone and create account.")}
                   </p>
-                  <button
-                    type="button"
-                    className="text-left text-[13px] font-bold text-drivo-green hover:underline"
-                    onClick={() => {
-                      setAuthError("");
-                      setAuthMode(authMode === "first-time" ? "login" : "first-time");
-                    }}
-                  >
-                    {authMode === "first-time"
-                      ? t("passenger.loginLink", "Already have a Drivo account? Log in")
-                      : t("passenger.firstTimeLink", "First time with Drivo? Verify phone and create account")}
-                  </button>
+                  {(authMode === "existingAccountLogin" || authMode === "forgotPasswordOtp" || authMode === "resetPassword") && (
+                    <p className="text-[12px] text-drivo-text-secondary">
+                      {t("passenger.existingAccountMessage", "This phone already has a Drivo account.")}
+                    </p>
+                  )}
                 </div>
 
-                {authMode === "login" && (
+                {authMode === "checkingPhone" && (
+                  <p className="text-[13px] font-semibold text-drivo-text-secondary">
+                    {t("passenger.checkingPhone", "Checking phone number...")}
+                  </p>
+                )}
+
+                {authMode === "existingAccountLogin" && (
                   <div className="space-y-3">
+                    <div>
+                      <FieldLabel>{t("booking.phone")}</FieldLabel>
+                      <input className="input bg-drivo-bg-soft" value={registrationProofPhone || phoneCode + customerPhone} readOnly />
+                    </div>
                     <PasswordInput
                       label={t("passenger.password")}
                       value={loginPassword}
@@ -2393,20 +2568,37 @@ onChange={(e) => {
                     >
                       {authLoading ? t("passenger.loading") : t("passenger.loginContinue", "Login & Continue")}
                     </button>
-                    <button
-                      type="button"
-                      className="text-[13px] font-bold text-drivo-green hover:underline"
-                      onClick={() => {
-                        setAuthError("");
-                        setAuthMode("forgot");
-                      }}
-                    >
-                      {t("passenger.forgotPassword", "Forgot password?")}
-                    </button>
+                    <div className="flex flex-wrap gap-4">
+                      <button
+                        type="button"
+                        className="text-[13px] font-bold text-drivo-green hover:underline"
+                        onClick={() => {
+                          setAuthError("");
+                          clearPasswordResetState();
+                          setAuthMode("forgotPasswordOtp");
+                        }}
+                      >
+                        {t("passenger.forgotPassword", "Forgot password?")}
+                      </button>
+                      <button
+                        type="button"
+                        className="text-[13px] font-bold text-drivo-green hover:underline"
+                        onClick={() => {
+                          setAuthError("");
+                          setLoginPassword("");
+                          clearRegistrationProof();
+                          clearPasswordResetState();
+                          setBookingId("");
+                          setAuthMode("idle");
+                        }}
+                      >
+                        {t("passenger.useAnotherPhone", "Use another phone")}
+                      </button>
+                    </div>
                   </div>
                 )}
 
-                {authMode === "step-up" && (
+                {authMode === "loginStepUp" && (
                   <div className="space-y-3">
                     <input
                       className="input"
@@ -2441,21 +2633,19 @@ onChange={(e) => {
                   </div>
                 )}
 
-                {authMode === "forgot" && (
+                {authMode === "forgotPasswordOtp" && (
                   <div className="space-y-3">
                     {!resetAttemptId && (
-                      <div className="space-y-3">
-                        <button
-                          type="button"
-                          onClick={(e) => handleForgotSend(e)}
-                          className="btn-primary w-full"
-                          disabled={authLoading}
-                        >
-                          {authLoading ? t("passenger.loading") : t("passenger.sendResetCode", "Send reset code")}
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => handleForgotSend(e)}
+                        className="btn-primary w-full"
+                        disabled={authLoading}
+                      >
+                        {authLoading ? t("passenger.loading") : t("passenger.sendResetCode", "Send reset code")}
+                      </button>
                     )}
-                    {resetAttemptId && !resetProof && (
+                    {resetAttemptId && !passwordResetProofToken && (
                       <div className="space-y-3">
                         <input
                           className="input"
@@ -2476,32 +2666,6 @@ onChange={(e) => {
                         </button>
                       </div>
                     )}
-                    {resetProof && (
-                      <div className="space-y-3">
-                        <PasswordInput
-                          label={t("passenger.newPassword")}
-                          value={resetPassword}
-                          onChange={setResetPassword}
-                          visible={showResetPassword}
-                          onToggle={() => setShowResetPassword((current) => !current)}
-                        />
-                        <PasswordInput
-                          label={t("passenger.confirmPassword", "Confirm password")}
-                          value={resetConfirmPassword}
-                          onChange={setResetConfirmPassword}
-                          visible={showResetPassword}
-                          onToggle={() => setShowResetPassword((current) => !current)}
-                        />
-                        <button
-                          type="button"
-                          onClick={(e) => handleResetComplete(e)}
-                          className="btn-primary w-full"
-                          disabled={authLoading}
-                        >
-                          {authLoading ? t("passenger.saving") : t("passenger.resetContinue", "Reset Password & Continue")}
-                        </button>
-                      </div>
-                    )}
                     {authError && (
                       <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] font-semibold text-red-700">
                         {authError}
@@ -2512,10 +2676,43 @@ onChange={(e) => {
                       className="text-[13px] font-bold text-drivo-green hover:underline"
                       onClick={() => {
                         setAuthError("");
-                        setAuthMode("login");
+                        clearPasswordResetState();
+                        setAuthMode("existingAccountLogin");
                       }}
                     >
                       {t("passenger.backToLogin", "Back to login")}
+                    </button>
+                  </div>
+                )}
+
+                {authMode === "resetPassword" && passwordResetProofToken && (
+                  <div className="space-y-3">
+                    <PasswordInput
+                      label={t("passenger.newPassword")}
+                      value={resetPassword}
+                      onChange={setResetPassword}
+                      visible={showResetPassword}
+                      onToggle={() => setShowResetPassword((current) => !current)}
+                    />
+                    <PasswordInput
+                      label={t("passenger.confirmPassword", "Confirm password")}
+                      value={resetConfirmPassword}
+                      onChange={setResetConfirmPassword}
+                      visible={showResetPassword}
+                      onToggle={() => setShowResetPassword((current) => !current)}
+                    />
+                    {authError && (
+                      <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] font-semibold text-red-700">
+                        {authError}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => handleResetComplete(e)}
+                      className="btn-primary w-full"
+                      disabled={authLoading}
+                    >
+                      {authLoading ? t("passenger.saving") : t("passenger.resetContinue", "Reset Password & Continue")}
                     </button>
                   </div>
                 )}
@@ -2616,9 +2813,17 @@ onChange={(e) => {
           <button
             type="submit"
             className="btn-primary w-full text-[16px] py-4 disabled:opacity-50"
-            disabled={loading || (paymentMethod === "cash" && !cashAgreed)}
+            disabled={
+              loading ||
+              (paymentMethod === "cash" && !cashAgreed) ||
+              (!["idle", "authenticated"].includes(authMode) && Boolean(bookingId))
+            }
           >
-            {loading ? t("booking.creating") : t("booking.continue")}
+            {loading
+              ? t("booking.creating")
+              : !["idle", "authenticated"].includes(authMode) && bookingId
+                ? t("passenger.completeAuthAbove", "Complete authentication above")
+                : t("booking.continue")}
           </button>
 
           <p className="text-center text-[11px] text-drivo-text-muted mt-3">

@@ -168,7 +168,7 @@
   // OTP
   "otp.title": "Verify your number",
   "otp.subtitle": "6-digit code sent to your WhatsApp.",
-  "otp.devNote": "(MVP: check server console for OTP)",
+  "otp.devNote": "Development OTP is shown only outside production.",
   "otp.verify": "Verify & Confirm",
   "otp.resend": "Resend Code",
   "otp.invalid": "Invalid code",

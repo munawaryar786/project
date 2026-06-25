@@ -2,16 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import {
-  createOpaqueToken,
   createPassengerSession,
   normalizePassengerPhone,
   publicPassenger,
   setPassengerCookie,
-  verifyTrustedDevice,
 } from "@/lib/passenger-auth";
 import { prisma } from "@/lib/prisma";
 import { rateLimits, withRateLimit } from "@/lib/rate-limit";
-import { sendOTPWithFallback } from "@/lib/twilio";
 
 const PasswordLoginSchema = z.object({
   phone: z.string().trim().min(6),
@@ -44,54 +41,9 @@ async function handler(request: NextRequest) {
       return NextResponse.json(genericError, { status: 401 });
     }
 
-    const trusted = await verifyTrustedDevice(request, passenger.id);
-    if (!trusted) {
-      const loginAttemptId = createOpaqueToken(16);
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      await prisma.passengerOtp.deleteMany({
-        where: {
-          passengerId: passenger.id,
-          purpose: "PASSENGER_LOGIN_STEP_UP",
-          used: false,
-        },
-      });
-      await prisma.passengerOtp.create({
-        data: {
-          passengerId: passenger.id,
-          phone: normalizedPhone,
-          code: otp,
-          purpose: "PASSENGER_LOGIN_STEP_UP",
-          loginAttemptId,
-          expiresAt: new Date(Date.now() + 5 * 60 * 1000),
-        },
-      });
-
-      if (process.env.TWILIO_ACCOUNT_SID && process.env.NODE_ENV === "production") {
-        const deliveryResult = await sendOTPWithFallback(normalizedPhone, otp);
-        if (!deliveryResult.success) {
-          console.error("Passenger login step-up OTP delivery failed:", deliveryResult.error);
-        }
-      }
-
-      return NextResponse.json({
-        success: true,
-        stepUpRequired: true,
-        loginAttemptId,
-        message: "We need to verify this login. A code has been sent to your phone.",
-      });
-    }
-
-    const token = await createPassengerSession(passenger);
-    const response = NextResponse.json({
-      success: true,
-      stepUpRequired: false,
-      passenger: publicPassenger(passenger),
-    });
-    setPassengerCookie(response, token);
-
-    await prisma.passenger.update({
+    const updated = await prisma.passenger.update({
       where: { id: passenger.id },
-      data: { lastLoginAt: new Date(), normalizedPhone },
+      data: { lastLoginAt: new Date(), normalizedPhone, phone: normalizedPhone },
     });
 
     if (parsed.data.bookingId) {
@@ -105,6 +57,14 @@ async function handler(request: NextRequest) {
         },
       });
     }
+
+    const token = await createPassengerSession(updated);
+    const response = NextResponse.json({
+      success: true,
+      stepUpRequired: false,
+      passenger: publicPassenger(updated),
+    });
+    setPassengerCookie(response, token);
 
     console.log(`Passenger login success: ${passenger.id}`);
     return response;

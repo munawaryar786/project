@@ -29,6 +29,25 @@ async function handler(request: NextRequest) {
     const resetAttemptId = createOpaqueToken(16);
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
+    await prisma.passengerOtp.updateMany({
+      where: {
+        passengerId: passenger.id,
+        purpose: "PASSENGER_PASSWORD_RESET",
+        used: false,
+      },
+      data: { used: true },
+    });
+
+    await prisma.passengerVerificationProof.updateMany({
+      where: {
+        passengerId: passenger.id,
+        normalizedPhone,
+        purpose: "PASSENGER_PASSWORD_RESET",
+        consumedAt: null,
+      },
+      data: { consumedAt: new Date() },
+    });
+
     await prisma.passengerOtp.create({
       data: {
         passengerId: passenger.id,
@@ -57,4 +76,4 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.passengerPasswordReset);
+export const POST = withRateLimit(handler, rateLimits.passengerPasswordResetOtpSend);

@@ -98,4 +98,4 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.passengerLoginStepUpOtp);
+export const POST = withRateLimit(handler, rateLimits.passengerLoginStepUpOtpVerify);

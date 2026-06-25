@@ -6,10 +6,20 @@ import type { OTPDeliveryResult } from "@/lib/twilio";
 import { normalizePassengerPhone } from "@/lib/passenger-auth";
 import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 
+const PassengerOtpPurposeSchema = z.enum([
+  "PASSENGER_REGISTRATION",
+  "PASSENGER_LEGACY_PASSWORD_SETUP",
+]);
+
 const OTPSchema = z.object({
   bookingId: z.string().min(1),
   phone: z.string().min(6),
+  purpose: PassengerOtpPurposeSchema.optional().default("PASSENGER_REGISTRATION"),
 });
+
+function otpError(code: string, message: string, status = 400) {
+  return NextResponse.json({ success: false, code, message, error: message }, { status });
+}
 
 async function handler(request: NextRequest) {
   try {
@@ -21,7 +31,7 @@ async function handler(request: NextRequest) {
       );
     }
 
-    const { bookingId } = parsed.data;
+    const { bookingId, purpose } = parsed.data;
     const normalizedPhone = normalizePassengerPhone(parsed.data.phone);
 
     const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
@@ -33,11 +43,46 @@ async function handler(request: NextRequest) {
       return NextResponse.json({ error: "Phone number does not match booking" }, { status: 400 });
     }
 
+    const passenger = await prisma.passenger.findFirst({
+      where: { OR: [{ phone: normalizedPhone }, { normalizedPhone }] },
+      select: { id: true, passwordHash: true },
+    });
+
+    if (purpose === "PASSENGER_REGISTRATION") {
+      if (passenger?.passwordHash) {
+        return otpError(
+          "ACCOUNT_EXISTS_LOGIN_REQUIRED",
+          "This phone already has a Drivo account. Please log in or reset your password.",
+          409
+        );
+      }
+      if (passenger) {
+        return otpError(
+          "LEGACY_SETUP_REQUIRED",
+          "Please verify your phone and create a password to continue.",
+          409
+        );
+      }
+    }
+
+    if (purpose === "PASSENGER_LEGACY_PASSWORD_SETUP") {
+      if (!passenger) {
+        return otpError("REGISTRATION_REQUIRED", "Please verify your phone and create an account.", 404);
+      }
+      if (passenger.passwordHash) {
+        return otpError(
+          "ACCOUNT_EXISTS_LOGIN_REQUIRED",
+          "This phone already has a Drivo account. Please log in or reset your password.",
+          409
+        );
+      }
+    }
+
     await prisma.oTP.updateMany({
       where: {
         bookingId,
         phone: normalizedPhone,
-        purpose: "PASSENGER_REGISTRATION",
+        purpose,
         used: false,
       },
       data: { used: true },
@@ -48,7 +93,7 @@ async function handler(request: NextRequest) {
       data: {
         code: otp,
         phone: normalizedPhone,
-        purpose: "PASSENGER_REGISTRATION",
+        purpose,
         bookingId,
         expiresAt: new Date(Date.now() + 5 * 60 * 1000),
       },
@@ -58,7 +103,7 @@ async function handler(request: NextRequest) {
     if (process.env.TWILIO_ACCOUNT_SID && process.env.NODE_ENV === "production") {
       deliveryResult = await sendOTPWithFallback(normalizedPhone, otp);
       if (!deliveryResult.success) {
-        console.error("Passenger registration OTP delivery failed:", deliveryResult.error);
+        console.error("Passenger auth OTP delivery failed:", deliveryResult.error);
       }
     }
 
@@ -74,6 +119,7 @@ async function handler(request: NextRequest) {
       success: true,
       message: "A new verification code has been sent.",
       method: deliveryResult.method,
+      purpose,
     });
   } catch (error) {
     console.error("OTP send error:", error);

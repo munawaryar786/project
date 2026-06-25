@@ -76,43 +76,71 @@ export function withRateLimit(
  * Pre-configured rate limits for different scenarios
  */
 export const rateLimits = {
+  passengerRegistrationPhoneCheck: {
+    scope: "registration_phone_check",
+    max: 10,
+    windowMs: 5 * 60 * 1000,
+    message: "Too many phone checks. Please wait and try again."
+  },
+
   passengerRegistrationOtpSend: {
-    scope: "passenger_registration_otp_send",
+    scope: "registration_otp_send",
     max: 3,
     windowMs: 5 * 60 * 1000,
     message: "Too many OTP requests. Please wait before requesting another OTP."
   },
 
   passengerRegistrationOtpVerify: {
-    scope: "passenger_registration_otp_verify",
+    scope: "registration_otp_verify",
     max: 5,
     windowMs: 5 * 60 * 1000,
     message: "Too many verification attempts. Please request a new code."
   },
 
   passengerAccountCreate: {
-    scope: "passenger_account_create",
+    scope: "account_create",
     max: 5,
     windowMs: 15 * 60 * 1000,
     message: "Too many account creation attempts. Please wait and try again."
   },
 
   passengerLoginPassword: {
-    scope: "passenger_login_password",
+    scope: "login_password",
     max: 5,
     windowMs: 15 * 60 * 1000,
     message: "Too many login attempts. Please try again later."
   },
 
-  passengerLoginStepUpOtp: {
-    scope: "passenger_login_step_up_otp",
+  passengerLoginStepUpOtpSend: {
+    scope: "login_step_up_otp_send",
     max: 5,
     windowMs: 5 * 60 * 1000,
     message: "Too many verification attempts. Please request a new code."
   },
 
-  passengerPasswordReset: {
-    scope: "passenger_password_reset",
+  passengerLoginStepUpOtpVerify: {
+    scope: "login_step_up_otp_verify",
+    max: 5,
+    windowMs: 5 * 60 * 1000,
+    message: "Too many verification attempts. Please request a new code."
+  },
+
+  passengerPasswordResetOtpSend: {
+    scope: "password_reset_otp_send",
+    max: 5,
+    windowMs: 15 * 60 * 1000,
+    message: "Too many password reset attempts. Please wait and try again."
+  },
+
+  passengerPasswordResetOtpVerify: {
+    scope: "password_reset_otp_verify",
+    max: 5,
+    windowMs: 15 * 60 * 1000,
+    message: "Too many password reset attempts. Please wait and try again."
+  },
+
+  passengerPasswordResetComplete: {
+    scope: "password_reset_complete",
     max: 5,
     windowMs: 15 * 60 * 1000,
     message: "Too many password reset attempts. Please wait and try again."
@@ -120,14 +148,14 @@ export const rateLimits = {
 
   // Backward-compatible defaults for older routes.
   auth: {
-    scope: "passenger_login_password",
+    scope: "login_password",
     max: 5,
     windowMs: 15 * 60 * 1000,
     message: "Too many login attempts. Please try again later."
   },
   
   otp: {
-    scope: "passenger_registration_otp_send",
+    scope: "registration_otp_send",
     max: 3,
     windowMs: 5 * 60 * 1000,
     message: "Too many OTP requests. Please wait before requesting another OTP."
