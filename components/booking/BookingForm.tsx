@@ -67,6 +67,21 @@ function readCode(data: unknown) {
   return isRecord(data) && typeof data.code === "string" ? data.code : "";
 }
 
+function isAuthenticationRequiredMessage(message: string) {
+  const normalized = message.trim().toLowerCase();
+  return (
+    normalized === "authentication required" ||
+    normalized === "please log in or verify your phone to continue." ||
+    normalized === "please log in or verify your phone to continue"
+  );
+}
+
+function authRequiredMessage(data: unknown) {
+  return readCode(data) === "AUTHENTICATION_REQUIRED"
+    ? "Please log in or verify your phone to continue."
+    : readError(data, "Please log in or verify your phone to continue.");
+}
+
 function otpVerifyMessage(data: unknown, fallback: string) {
   const code = readCode(data);
   if (code === "OTP_INVALID") return "Invalid verification code.";
@@ -296,6 +311,18 @@ export default function BookingForm({
   const [passengerProfile, setPassengerProfile] = useState<Record<string, unknown> | null>(null);
   const accountCreateInFlight = useRef(false);
 
+  const clearPassengerAuthErrors = () => {
+    setAuthError("");
+    setError((current) => (isAuthenticationRequiredMessage(current) ? "" : current));
+  };
+
+  const markPassengerAuthenticated = (passenger: Record<string, unknown>) => {
+    setPassengerProfile(passenger);
+    setAuthMode("authenticated");
+    setAuthError("");
+    setError((current) => (isAuthenticationRequiredMessage(current) ? "" : current));
+  };
+
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [step]);
@@ -515,16 +542,19 @@ useEffect(() => {
 }, []);
 
   useEffect(() => {
-    fetch("/api/passenger/me", { cache: "no-store" })
+    fetch("/api/passenger/me", { cache: "no-store", credentials: "include" })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!data?.passenger) return;
-        setPassengerProfile(data.passenger);
+        markPassengerAuthenticated(data.passenger);
         if (!customerName && data.passenger.fullName) {
           setCustomerName(data.passenger.fullName);
         }
         if (!customerEmail && data.passenger.email) {
           setCustomerEmail(data.passenger.email);
+        }
+        if (data.passenger.normalizedPhone || data.passenger.phone) {
+          setRegistrationProofPhone(String(data.passenger.normalizedPhone || data.passenger.phone));
         }
       })
       .catch(() => {});
@@ -844,6 +874,7 @@ useEffect(() => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
+        credentials: "include",
         body: JSON.stringify({
           serviceType: serviceMap[serviceType],
           pickupAddress: pickupAddress.trim(),
@@ -991,7 +1022,13 @@ scheduledTime:
       setAuthMode("registrationOtp");
       setStep(2);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      const message = err instanceof Error ? err.message : "Something went wrong";
+      if (isAuthenticationRequiredMessage(message)) {
+        setAuthError("Please log in or verify your phone to continue.");
+        setError("");
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -1081,8 +1118,12 @@ scheduledTime:
     passenger?: Record<string, unknown> | null,
     activeBookingId = bookingId
   ) => {
-    if (passenger) setPassengerProfile(passenger);
-    setAuthMode("authenticated");
+    if (passenger) {
+      markPassengerAuthenticated(passenger);
+    } else {
+      clearPassengerAuthErrors();
+      setAuthMode("authenticated");
+    }
 
     if (!activeBookingId) {
       return;
@@ -1092,12 +1133,21 @@ scheduledTime:
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
+      credentials: "include",
       body: JSON.stringify({ bookingId: activeBookingId }),
     });
     const data = await safeJson(res);
     if (!res.ok) {
-      throw new Error(readError(data, "Could not continue booking"));
+      const message = readCode(data) === "AUTHENTICATION_REQUIRED"
+        ? authRequiredMessage(data)
+        : readError(data, "Could not continue booking");
+      if (isAuthenticationRequiredMessage(message)) {
+        setAuthError(message);
+        setError((current) => (isAuthenticationRequiredMessage(current) ? "" : current));
+      }
+      throw new Error(message);
     }
+    clearPassengerAuthErrors();
     setStep(3);
   };
 
@@ -1131,6 +1181,7 @@ scheduledTime:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
+        credentials: "include",
         body: JSON.stringify({
           bookingId,
           registrationProofToken: isLegacySetup ? "" : registrationProofToken,
@@ -1168,6 +1219,7 @@ scheduledTime:
         setAuthError(readError(data, "Could not create account"));
         return;
       }
+      clearPassengerAuthErrors();
       await continueAuthenticatedBooking(isRecord(data) && isRecord(data.passenger) ? data.passenger : null);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not create account";
@@ -1189,6 +1241,7 @@ scheduledTime:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
+        credentials: "include",
         body: JSON.stringify({
           phone: registrationProofPhone || phoneCode + customerPhone.trim(),
           password: loginPassword,
@@ -1205,6 +1258,7 @@ scheduledTime:
         return;
       }
 
+      clearPassengerAuthErrors();
       await continueAuthenticatedBooking(isRecord(data) && isRecord(data.passenger) ? data.passenger : null, activeBookingId);
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : "Phone number or password is incorrect.");
@@ -1223,6 +1277,7 @@ scheduledTime:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
+        credentials: "include",
         body: JSON.stringify({
           phone: registrationProofPhone || phoneCode + customerPhone.trim(),
           otpCode: loginOtp,
@@ -1233,6 +1288,7 @@ scheduledTime:
       });
       const data = await safeJson(res);
       if (!res.ok) throw new Error(readError(data, "Could not verify login."));
+      clearPassengerAuthErrors();
       await continueAuthenticatedBooking(isRecord(data) && isRecord(data.passenger) ? data.passenger : null);
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : "Could not verify login.");
@@ -1327,6 +1383,7 @@ scheduledTime:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
+        credentials: "include",
         body: JSON.stringify({
           phone: registrationProofPhone || phoneCode + customerPhone.trim(),
           passwordResetProofToken,
@@ -1339,6 +1396,7 @@ scheduledTime:
       });
       const data = await safeJson(res);
       if (!res.ok) throw new Error(readError(data, "Password reset could not be completed."));
+      clearPassengerAuthErrors();
       await continueAuthenticatedBooking(isRecord(data) && isRecord(data.passenger) ? data.passenger : null);
     } catch (err) {
       setAuthError(err instanceof Error ? err.message : "Password reset could not be completed.");
@@ -2507,9 +2565,11 @@ onChange={(e) => {
                     type="button"
                     className="text-left text-[13px] font-bold text-drivo-green hover:underline"
                     onClick={async () => {
-                      await fetch("/api/passenger/logout", { method: "POST" }).catch(() => null);
+                      await fetch("/api/passenger/logout", { method: "POST", credentials: "include" }).catch(() => null);
                       setPassengerProfile(null);
                       setLoginPassword("");
+                      setAuthError("");
+                      setError((current) => (isAuthenticationRequiredMessage(current) ? "" : current));
                       setAuthMode("idle");
                     }}
                   >
@@ -2585,6 +2645,7 @@ onChange={(e) => {
                         className="text-[13px] font-bold text-drivo-green hover:underline"
                         onClick={() => {
                           setAuthError("");
+                          setError((current) => (isAuthenticationRequiredMessage(current) ? "" : current));
                           setLoginPassword("");
                           clearRegistrationProof();
                           clearPasswordResetState();
