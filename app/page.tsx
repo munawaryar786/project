@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import Image from "next/image";
@@ -6,6 +6,7 @@ import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import WhatsAppFloat from "@/components/layout/WhatsAppFloat";
 import CookieBanner from "@/components/layout/CookieBanner";
+import PopularRoutes from "@/components/home/PopularRoutes";
 import { SERVICES, WHATSAPP_URL } from "@/lib/constants";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
@@ -185,7 +186,7 @@ function WAVBanner() {
         <div className="grid items-center md:grid-cols-[1fr,240px]">
           <div className="p-8 md:p-10">
             <span className="pill-amber text-[11px] mb-4 inline-flex items-center gap-2">
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-drivo-amber/20 text-[12px] text-drivo-amber">✓</span>
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-drivo-amber/20 text-[12px] text-drivo-amber">âœ“</span>
               {t("fleet.comingSoon")}
             </span>
             <h3 className="text-[22px] font-bold text-white mb-2">{t("fleet.wavTitle")}</h3>
