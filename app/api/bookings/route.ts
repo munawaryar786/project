@@ -5,6 +5,11 @@ import { prisma } from "@/lib/prisma";
 import { generateBookingRef, getSourceDomain } from "@/lib/utils";
 import { estimateBookingPrice } from "@/lib/pricing";
 import { getPassengerFromRequest, normalizePassengerPhone } from "@/lib/passenger-auth";
+import {
+  bookingToEmailData,
+  isSeniorAssistedService,
+  sendSeniorAssistedBookingEmails,
+} from "@/lib/email";
 
 const BookingSchema = z.object({
   serviceType: z.enum([
@@ -339,6 +344,21 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    let seniorAssistedAdminEmailSent = false;
+    let seniorAssistedDriverSafeEmailSent = false;
+
+    if (isSeniorAssistedService(booking.serviceType)) {
+      try {
+        const emailResult = await sendSeniorAssistedBookingEmails(bookingToEmailData(booking));
+        seniorAssistedAdminEmailSent = emailResult.adminFull.success;
+        seniorAssistedDriverSafeEmailSent = emailResult.driverSafe.success;
+      } catch (emailError) {
+        console.warn("[email] Senior/assisted booking emails failed after booking creation", {
+          bookingRef: booking.bookingRef,
+          error: emailError instanceof Error ? emailError.message : "Unknown email error",
+        });
+      }
+    }
     console.log("═══════════════════════════════════════");
     console.log("🆕 NEW BOOKING — SAVED TO DATABASE ✅");
     console.log("═══════════════════════════════════════");
@@ -458,11 +478,18 @@ export async function POST(request: NextRequest) {
         fareTotalFare: booking.fareTotalFare,
         fareBreakdown: booking.fareBreakdown,
 
-        emailSent: {
-          admin: false,
-          customer: false,
-          pendingCompletion: true,
-        },
+        emailSent: isSeniorAssistedService(booking.serviceType)
+          ? {
+              admin: seniorAssistedAdminEmailSent,
+              driverSafeDispatchCopy: seniorAssistedDriverSafeEmailSent,
+              customer: false,
+              pendingCompletion: false,
+            }
+          : {
+              admin: false,
+              customer: false,
+              pendingCompletion: true,
+            },
       },
       { status: 201 }
     );

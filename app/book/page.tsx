@@ -1,7 +1,8 @@
 "use client";
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { useSearchParams } from 'next/navigation';
 import Header from '@/components/layout/Header';
 import Footer from '@/components/layout/Footer';
 import WhatsAppFloat from '@/components/layout/WhatsAppFloat';
@@ -10,11 +11,23 @@ import RouteMap from '@/components/booking/RouteMap';
 import { WHATSAPP_URL, PHONE_RAW } from '@/lib/constants';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
+function normalizeBookingService(value: string | null) {
+  if (value === "senior" || value === "accessible") return "accessible";
+  if (value === "airport" || value === "children" || value === "standard") return value;
+  return "standard";
+}
+
 export default function BookPage() {
   const { t } = useLanguage();
+  const searchParams = useSearchParams();
+  const initialServiceType = normalizeBookingService(searchParams.get("service"));
   const [pickupAddress, setPickupAddress] = useState("");
   const [dropoffAddress, setDropoffAddress] = useState("");
-  const [serviceType, setServiceType] = useState("standard");
+  const [serviceType, setServiceType] = useState(initialServiceType);
+
+  useEffect(() => {
+    setServiceType(initialServiceType);
+  }, [initialServiceType]);
 
   return (
     <>
@@ -73,13 +86,14 @@ export default function BookPage() {
                     <span className="w-8 h-8 bg-drivo-green-light rounded-lg flex items-center justify-center text-[13px] font-bold text-drivo-green-dark">🗺️</span>
                     {t('booking.routePreview', 'Route preview')}
                   </h3>
-                  <RouteMap pickupAddress={pickupAddress} dropoffAddress={dropoffAddress} hideEstimate={serviceType === "children"} />
+                  <RouteMap pickupAddress={pickupAddress} dropoffAddress={dropoffAddress} hideEstimate={["children", "accessible", "senior"].includes(serviceType)} />
                 </div>
               )}
 
               <BookingForm 
                 onPickupChange={setPickupAddress}
                 onDropoffChange={setDropoffAddress}
+                initialServiceType={initialServiceType}
                 onServiceTypeChange={setServiceType}
               />
             </div>

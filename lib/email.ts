@@ -6,6 +6,10 @@ import type { Booking } from "@prisma/client";
 import { Resend } from "resend";
 import { EMAIL, PHONE_NUMBER, WHATSAPP_URL } from "./constants";
 import { maskEmail, maskPhone } from "./utils";
+import {
+  buildSeniorAssistedAdminEmail,
+  buildSeniorAssistedDriverSafeEmail,
+} from "./email-templates/booking-emails";
 
 export interface BookingEmailData {
   bookingRef: string;
@@ -31,6 +35,31 @@ export interface BookingEmailData {
   flightNumber?: string | null;
   airline?: string | null;
   waitAndGreet?: boolean | null;
+  status?: string | null;
+  createdAt?: Date | string | null;
+  smallBags?: number | null;
+  largeBags?: number | null;
+  seniorPassenger?: boolean | null;
+  ztpCardHolder?: boolean | null;
+  wheelchairUser?: boolean | null;
+  companionRequired?: boolean | null;
+  medicalAppointment?: boolean | null;
+  waitingTimeRequired?: boolean | null;
+  assistanceLevel?: string | null;
+  wheelchairType?: string | null;
+  canTransferToSeat?: boolean | null;
+  wavRequired?: boolean | null;
+  passengerRemainsInWheelchair?: boolean | null;
+  companionCount?: number | null;
+  hospitalName?: string | null;
+  department?: string | null;
+  appointmentDate?: string | null;
+  appointmentTime?: string | null;
+  tripType?: string | null;
+  returnDate?: string | null;
+  returnTime?: string | null;
+  waitingDuration?: string | null;
+  customWaitingDuration?: string | null;
 }
 
 type EmailProvider = "smtp" | "resend" | "console" | "none";
@@ -68,7 +97,12 @@ const resend = process.env.RESEND_API_KEY
   : null;
 
 function getAdminEmail() {
-  return process.env.ADMIN_EMAIL || EMAIL;
+  return (
+    process.env.ADMIN_BOOKING_EMAIL ||
+    process.env.BOOKING_NOTIFICATION_EMAIL ||
+    process.env.ADMIN_EMAIL ||
+    EMAIL
+  );
 }
 
 function getFromAddress() {
@@ -127,6 +161,32 @@ function formatValue(value: string | number | null | undefined) {
 function formatPrice(value: number | null | undefined) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
   return `EUR ${value.toFixed(2)}`;
+}
+
+function getPublicSiteUrl(sourceDomain?: string | null) {
+  const configured =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.PUBLIC_SITE_URL ||
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_BASE_URL;
+
+  if (configured) return configured.replace(/\/$/, "");
+
+  if (sourceDomain && /(^|\.)drivo\.sk$/i.test(sourceDomain)) {
+    return `https://${sourceDomain}`;
+  }
+
+  return null;
+}
+
+function getAdminDashboardUrl(data: BookingEmailData) {
+  const siteUrl = getPublicSiteUrl(data.sourceDomain);
+  return siteUrl ? `${siteUrl}/admin/bookings` : null;
+}
+
+export function isSeniorAssistedService(serviceType: string | null | undefined) {
+  const normalized = String(serviceType || "").trim().toUpperCase();
+  return normalized === "SENIOR" || normalized === "ACCESSIBLE";
 }
 
 function serviceLabel(value: string) {
@@ -632,6 +692,31 @@ export function bookingToEmailData(booking: Booking): BookingEmailData {
     flightNumber: booking.flightNumber,
     airline: booking.airline,
     waitAndGreet: booking.waitAndGreet,
+    status: booking.status,
+    createdAt: booking.createdAt,
+    smallBags: booking.smallBags,
+    largeBags: booking.largeBags,
+    seniorPassenger: booking.seniorPassenger,
+    ztpCardHolder: booking.ztpCardHolder,
+    wheelchairUser: booking.wheelchairUser,
+    companionRequired: booking.companionRequired,
+    medicalAppointment: booking.medicalAppointment,
+    waitingTimeRequired: booking.waitingTimeRequired,
+    assistanceLevel: booking.assistanceLevel,
+    wheelchairType: booking.wheelchairType,
+    canTransferToSeat: booking.canTransferToSeat,
+    wavRequired: booking.wavRequired,
+    passengerRemainsInWheelchair: booking.passengerRemainsInWheelchair,
+    companionCount: booking.companionCount,
+    hospitalName: booking.hospitalName,
+    department: booking.department,
+    appointmentDate: booking.appointmentDate,
+    appointmentTime: booking.appointmentTime,
+    tripType: booking.tripType,
+    returnDate: booking.returnDate,
+    returnTime: booking.returnTime,
+    waitingDuration: booking.waitingDuration,
+    customWaitingDuration: booking.customWaitingDuration,
   };
 }
 
@@ -660,6 +745,49 @@ export async function notifyAdminNewBooking(
   return result;
 }
 
+export async function sendSeniorAssistedBookingEmails(data: BookingEmailData) {
+  const adminEmail = getAdminEmail();
+  const siteUrl = getPublicSiteUrl(data.sourceDomain);
+  const adminTemplate = buildSeniorAssistedAdminEmail(data, {
+    siteUrl,
+    adminDashboardUrl: getAdminDashboardUrl(data),
+  });
+  const driverSafeTemplate = buildSeniorAssistedDriverSafeEmail(data, { siteUrl });
+
+  console.log("[email] Senior/assisted admin-only notification requested", {
+    bookingRef: data.bookingRef,
+    to: adminEmail,
+    customer: data.customerName,
+    customerPhone: maskPhone(data.customerPhone),
+    customerEmail: maskEmail(data.customerEmail),
+  });
+
+  const [adminFull, driverSafe] = await Promise.all([
+    deliverEmail({
+      to: adminEmail,
+      subject: adminTemplate.subject,
+      html: adminTemplate.html,
+      text: adminTemplate.text,
+    }),
+    deliverEmail({
+      to: adminEmail,
+      subject: `Driver-safe dispatch copy - safe to forward - ${driverSafeTemplate.subject}`,
+      html: driverSafeTemplate.html,
+      text: driverSafeTemplate.text,
+    }),
+  ]);
+
+  logEmailResult("Senior/assisted admin full booking email", adminEmail, adminFull);
+  logEmailResult("Senior/assisted driver-safe dispatch copy", adminEmail, driverSafe);
+
+  if (!adminFull.success || !driverSafe.success) {
+    console.warn(
+      `[email] Senior/assisted booking ${data.bookingRef} saved, but one or more admin-only emails failed.`
+    );
+  }
+
+  return { adminFull, driverSafe };
+}
 export async function sendCustomerConfirmation(
   data: BookingEmailData
 ): Promise<EmailSendResult> {
@@ -691,6 +819,17 @@ export async function sendCustomerConfirmation(
 
 export async function sendBookingCompletionEmails(data: BookingEmailData) {
   console.log(`[email] Booking completion email flow started for ${data.bookingRef}`);
+
+  if (isSeniorAssistedService(data.serviceType)) {
+    console.log(
+      `[email] Standard completion emails skipped for senior/assisted booking ${data.bookingRef}; admin-only emails are sent at booking creation.`
+    );
+    return {
+      admin: { success: true, provider: "none" as const, warning: "Skipped for senior/assisted booking." },
+      customer: { success: true, provider: "none" as const, warning: "Skipped for senior/assisted booking." },
+      skipped: true,
+    };
+  }
 
   const [admin, customer] = await Promise.all([
     notifyAdminNewBooking(data),

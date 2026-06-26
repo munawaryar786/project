@@ -85,12 +85,21 @@ export default function PriceEstimate({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const customQuoteService = ["accessible", "senior"].includes(serviceType.toLowerCase());
+
   const optionalServices = useMemo(
     () => Object.entries(estimate?.breakdown.optionalServiceCharges || {}),
     [estimate]
   );
 
   useEffect(() => {
+    if (customQuoteService) {
+      setEstimate(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
     if (!pickupAddress || !dropoffAddress || pickupAddress.length < 5 || dropoffAddress.length < 5) {
       setEstimate(null);
       return;
@@ -148,6 +157,7 @@ export default function PriceEstimate({
     const timer = setTimeout(fetchEstimate, 500);
     return () => clearTimeout(timer);
   }, [
+    customQuoteService,
     pickupAddress,
     dropoffAddress,
     serviceType,
@@ -164,6 +174,23 @@ export default function PriceEstimate({
     onFareChange,
   ]);
 
+  if (customQuoteService) {
+    return (
+      <div className="rounded-2xl border border-drivo-green/20 bg-drivo-green-light/30 p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-[18px] font-bold text-drivo-green-dark">
+            i
+          </div>
+          <div>
+            <h4 className="text-[14px] font-bold text-drivo-text">Custom quote</h4>
+            <p className="mt-1 text-[13px] leading-relaxed text-drivo-text-secondary">
+              Price will be confirmed by Drivo after reviewing your assistance requirements.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (loading) {
     return (
       <div className="bg-drivo-bg-soft rounded-2xl p-4 border border-drivo-border-light">

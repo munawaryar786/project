@@ -199,17 +199,19 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 }
 
 export default function BookingForm({
+  initialServiceType = "standard",
   onPickupChange,
   onDropoffChange,
   onServiceTypeChange,
 }: {
+  initialServiceType?: ServiceType;
   onPickupChange?: (v: string) => void;
   onDropoffChange?: (v: string) => void;
   onServiceTypeChange?: (v: ServiceType) => void;
 }) {
   const { t } = useLanguage();
   const [step, setStep] = useState<BookingStep>(1);
-  const [serviceType, setServiceType] = useState<ServiceType>("standard");
+  const [serviceType, setServiceType] = useState<ServiceType>(initialServiceType);
   const [passengers, setPassengers] = useState(2);
   const [luggage, setLuggage] = useState<LuggageType>("none");
   const [smallBags, setSmallBags] = useState(0);
@@ -318,6 +320,10 @@ export default function BookingForm({
   };
 
   useEffect(() => {
+    setServiceType(initialServiceType);
+  }, [initialServiceType]);
+
+  useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }, [step]);
 
@@ -336,6 +342,7 @@ export default function BookingForm({
 
   const today = useMemo(() => new Date().toISOString().split("T")[0], []);
   const assistedTransport = serviceType === "accessible";
+  const quoteOnlyTransport = serviceType === "accessible" || serviceType === "senior";
   const activeCompanionCount = assistedTransport && companionRequired ? companionCount : 0;
   const capacityPassengerCount = passengers + activeCompanionCount;
   const luggageCount = smallBags + largeBags;
@@ -409,6 +416,12 @@ export default function BookingForm({
     setEstimatedPrice(price);
     setFareBreakdown(breakdown);
   }, []);
+
+  useEffect(() => {
+    if (!quoteOnlyTransport) return;
+    setEstimatedPrice(undefined);
+    setFareBreakdown(null);
+  }, [quoteOnlyTransport]);
 
   useEffect(() => {
     if (!assistedTransport) {
