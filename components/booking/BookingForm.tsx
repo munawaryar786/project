@@ -999,6 +999,13 @@ scheduledTime:
 
       if (passengerProfile) {
         setAuthMode("authenticated");
+        clearPassengerAuthErrors();
+
+        if (bookingData.passengerAuthenticated === true || bookingData.passengerAuthStatus === "AUTHENTICATED") {
+          setStep(3);
+          return;
+        }
+
         await continueAuthenticatedBooking(passengerProfile, newBookingId);
         return;
       }

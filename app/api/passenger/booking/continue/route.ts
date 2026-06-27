@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     const bookingPhone =
       booking.normalizedPhone ||
       normalizePassengerPhone(`${booking.customerPhoneCode}${booking.customerPhone}`);
-    const passengerPhone = passenger.normalizedPhone || passenger.phone;
+    const passengerPhone = normalizePassengerPhone(passenger.normalizedPhone || passenger.phone);
 
     if (bookingPhone !== passengerPhone) {
       return NextResponse.json({ error: "Booking does not belong to this passenger" }, { status: 403 });

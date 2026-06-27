@@ -465,6 +465,8 @@ export async function POST(request: NextRequest) {
         languagePref: booking.languagePref,
         paymentMethod: booking.paymentMethod,
         specialNotes: booking.specialNotes,
+        passengerAuthenticated: booking.passengerAuthStatus === "AUTHENTICATED",
+        passengerAuthStatus: booking.passengerAuthStatus,
 
         estimatedPrice: booking.estimatedPrice,
         distanceKm: booking.distanceKm,
