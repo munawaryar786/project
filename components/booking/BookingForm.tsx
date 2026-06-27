@@ -107,6 +107,18 @@ function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+function splitPhoneForForm(phone: string) {
+  const compact = phone.replace(/[\s().-]/g, "");
+  const normalized = compact.startsWith("+") ? compact : `+${compact.replace(/^00/, "")}`;
+  const knownCodes = ["+421", "+420", "+43", "+49", "+44", "+92"];
+  const code = knownCodes.find((item) => normalized.startsWith(item)) || "+421";
+  return {
+    code,
+    number: normalized.startsWith(code) ? normalized.slice(code.length) : normalized.replace(/^\+/, ""),
+    normalized,
+  };
+}
+
 function waitingMinutesFromDuration(value: WaitingDuration, customValue: string) {
   if (value === "30_MINUTES") return 30;
   if (value === "1_HOUR") return 60;
@@ -315,6 +327,11 @@ export default function BookingForm({
   const markPassengerAuthenticated = (passenger: Record<string, unknown>) => {
     setPassengerProfile(passenger);
     setAuthMode("authenticated");
+    setRegistrationProofToken("");
+    setLegacyPasswordSetupProofToken("");
+    setProofExpiresAt("");
+    setAccountNeedsPhoneReverification(false);
+    setDevOtp(undefined);
     setAuthError("");
     setError((current) => (isAuthenticationRequiredMessage(current) ? "" : current));
   };
@@ -343,6 +360,12 @@ export default function BookingForm({
   const today = useMemo(() => new Date().toISOString().split("T")[0], []);
   const assistedTransport = serviceType === "accessible";
   const quoteOnlyTransport = serviceType === "accessible" || serviceType === "senior";
+  const passengerAuthenticated = Boolean(passengerProfile) || authMode === "authenticated";
+  const submitButtonLabel = passengerAuthenticated
+    ? quoteOnlyTransport
+      ? t("booking.submitBookingRequest", "Submit Booking Request")
+      : t("booking.confirmBooking", "Confirm Booking")
+    : t("booking.continue", "Continue to Verification");
   const activeCompanionCount = assistedTransport && companionRequired ? companionCount : 0;
   const capacityPassengerCount = passengers + activeCompanionCount;
   const luggageCount = smallBags + largeBags;
@@ -537,7 +560,10 @@ useEffect(() => {
           setCustomerEmail(data.passenger.email);
         }
         if (data.passenger.normalizedPhone || data.passenger.phone) {
-          setRegistrationProofPhone(String(data.passenger.normalizedPhone || data.passenger.phone));
+          const phone = splitPhoneForForm(String(data.passenger.normalizedPhone || data.passenger.phone));
+          setRegistrationProofPhone(phone.normalized);
+          setPhoneCode(phone.code);
+          setCustomerPhone(phone.number);
         }
       })
       .catch(() => {});
@@ -1008,7 +1034,7 @@ scheduledTime:
       const message = err instanceof Error ? err.message : "Something went wrong";
       if (isAuthenticationRequiredMessage(message)) {
         setAuthError("Please log in or verify your phone to continue.");
-        setError("");
+        setError("Please log in or verify your phone to continue.");
       } else {
         setError(message);
       }
@@ -1109,7 +1135,7 @@ scheduledTime:
     }
 
     if (!activeBookingId) {
-      return;
+      throw new Error("Booking could not continue because booking details are missing.");
     }
 
     const res = await fetch("/api/passenger/booking/continue", {
@@ -1126,7 +1152,7 @@ scheduledTime:
         : readError(data, "Could not continue booking");
       if (isAuthenticationRequiredMessage(message)) {
         setAuthError(message);
-        setError((current) => (isAuthenticationRequiredMessage(current) ? "" : current));
+        setError(message);
       }
       throw new Error(message);
     }
@@ -2862,7 +2888,7 @@ onChange={(e) => {
               ? t("booking.creating")
               : !["idle", "authenticated"].includes(authMode) && bookingId
                 ? t("passenger.completeAuthAbove", "Complete authentication above")
-                : t("booking.continue")}
+                : submitButtonLabel}
           </button>
 
           <p className="text-center text-[11px] text-drivo-text-muted mt-3">
