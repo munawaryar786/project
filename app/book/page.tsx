@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useSearchParams } from 'next/navigation';
@@ -17,7 +17,7 @@ function normalizeBookingService(value: string | null) {
   return "standard";
 }
 
-export default function BookPage() {
+function BookPageContent() {
   const { t } = useLanguage();
   const searchParams = useSearchParams();
   const initialServiceType = normalizeBookingService(searchParams.get("service"));
@@ -183,5 +183,13 @@ export default function BookPage() {
       <Footer />
       <WhatsAppFloat />
     </>
+  );
+}
+
+export default function BookPage() {
+  return (
+    <Suspense fallback={<div>Loading booking form...</div>}>
+      <BookPageContent />
+    </Suspense>
   );
 }
