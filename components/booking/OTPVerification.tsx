@@ -23,6 +23,96 @@ interface Props {
 
 const emptyOtp = ["", "", "", "", "", ""];
 
+type Translate = (key: string, fallback?: string) => string;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function readStringField(data: unknown, field: "code" | "message" | "error") {
+  return isRecord(data) && typeof data[field] === "string" ? data[field] : "";
+}
+
+function bookingAuthErrorKeyFromCode(code: string) {
+  switch (code) {
+    case "ACCOUNT_EXISTS":
+    case "ACCOUNT_EXISTS_LOGIN_REQUIRED":
+      return "bookingAuth.errors.accountExists";
+    case "PHONE_VERIFICATION_REQUIRED":
+    case "LEGACY_SETUP_REQUIRED":
+    case "REGISTRATION_REQUIRED":
+      return "bookingAuth.errors.phoneVerificationRequired";
+    case "OTP_EXPIRED":
+    case "PROOF_EXPIRED":
+      return "bookingAuth.errors.verificationExpired";
+    case "RATE_LIMITED":
+    case "TOO_MANY_ATTEMPTS":
+      return "bookingAuth.errors.rateLimited";
+    case "OTP_INVALID":
+      return "bookingAuth.errors.invalidOtp";
+    default:
+      return "";
+  }
+}
+
+function bookingAuthErrorKeyFromMessage(message: string) {
+  const normalized = message.trim().toLowerCase();
+  if (!normalized) return "";
+  if (normalized.includes("log in or verify your phone")) return "bookingAuth.errors.authContinue";
+  if (normalized.includes("incorrect password") || normalized.includes("password is incorrect")) return "bookingAuth.errors.invalidPassword";
+  if (normalized === "authentication required") return "bookingAuth.errors.authenticationRequired";
+  if (normalized.includes("phone verification") && normalized.includes("required")) return "bookingAuth.errors.phoneVerificationRequired";
+  if (normalized.includes("verification expired") || normalized.includes("expired")) return "bookingAuth.errors.verificationExpired";
+  if (normalized.includes("too many attempts") || normalized.includes("rate limit")) return "bookingAuth.errors.rateLimited";
+  if (normalized.includes("password is required")) return "bookingAuth.errors.passwordRequired";
+  if (normalized.includes("already has an account") || normalized.includes("already has a drivo account") || normalized.includes("account exists")) return "bookingAuth.errors.accountExists";
+  if (normalized.includes("invalid verification code") || normalized.includes("invalid code")) return "bookingAuth.errors.invalidOtp";
+  if (normalized.includes("verification failed")) return "bookingAuth.errors.verificationFailed";
+  if (normalized.includes("something went wrong") || normalized.startsWith("api error")) return "bookingAuth.errors.unknown";
+  return "";
+}
+
+const bookingAuthErrorFallbacks: Record<string, string> = {
+  "bookingAuth.errors.authContinue": "Please log in or verify your phone to continue.",
+  "bookingAuth.errors.invalidPassword": "Incorrect password.",
+  "bookingAuth.errors.authenticationRequired": "Authentication required.",
+  "bookingAuth.errors.phoneVerificationRequired": "Phone verification required.",
+  "bookingAuth.errors.verificationExpired": "Verification expired. Please request a new code.",
+  "bookingAuth.errors.rateLimited": "Too many attempts. Please try again later.",
+  "bookingAuth.errors.passwordRequired": "Password is required.",
+  "bookingAuth.errors.accountExists": "This phone already has an account.",
+  "bookingAuth.errors.unknown": "Something went wrong. Please try again.",
+  "bookingAuth.errors.invalidOtp": "Invalid verification code.",
+  "bookingAuth.errors.verificationFailed": "Verification failed. Please try again.",
+};
+
+function translatedBookingAuthError(t: Translate, key: string) {
+  return t(key, bookingAuthErrorFallbacks[key] || bookingAuthErrorFallbacks["bookingAuth.errors.unknown"]);
+}
+
+function localizedOtpError(data: unknown, fallbackKey: string, t: Translate) {
+  const codeKey = bookingAuthErrorKeyFromCode(readStringField(data, "code"));
+  if (codeKey) return translatedBookingAuthError(t, codeKey);
+
+  const messageKey = bookingAuthErrorKeyFromMessage(readStringField(data, "message") || readStringField(data, "error"));
+  if (messageKey) return translatedBookingAuthError(t, messageKey);
+
+  return translatedBookingAuthError(t, fallbackKey);
+}
+
+function localizeThrownOtpError(error: unknown, fallbackKey: string, t: Translate) {
+  const message = error instanceof Error ? error.message : "";
+  const messageKey = bookingAuthErrorKeyFromMessage(message);
+  if (messageKey) return translatedBookingAuthError(t, messageKey);
+
+  const alreadyLocalized = Object.keys(bookingAuthErrorFallbacks).some(
+    (key) => message === translatedBookingAuthError(t, key)
+  );
+  if (alreadyLocalized) return message;
+
+  return translatedBookingAuthError(t, fallbackKey);
+}
+
 export default function OTPVerification({
   onVerify,
   bookingId,
@@ -80,9 +170,7 @@ export default function OTPVerification({
     try {
       await onVerify(code);
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : t("otp.failed", "Verification failed");
-      setError(message);
+      setError(localizeThrownOtpError(err, "bookingAuth.errors.verificationFailed", t));
     } finally {
       setLoading(false);
     }
@@ -105,13 +193,7 @@ export default function OTPVerification({
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(
-          typeof data?.message === "string"
-            ? data.message
-            : typeof data?.error === "string"
-              ? data.error
-              : `API error: ${res.status}`
-        );
+        throw new Error(localizedOtpError(data, "bookingAuth.errors.unknown", t));
       }
 
       if (typeof data.devOtp === "string") setCurrentDevOtp(data.devOtp);
@@ -119,9 +201,7 @@ export default function OTPVerification({
       setSuccessMessage("A new verification code has been sent.");
       refs.current[0]?.focus();
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : t("otp.resendFailed", "Resend failed");
-      setError(message);
+      setError(localizeThrownOtpError(err, "bookingAuth.errors.unknown", t));
     } finally {
       setResending(false);
     }

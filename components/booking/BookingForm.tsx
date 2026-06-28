@@ -65,6 +65,85 @@ function readCode(data: unknown) {
   return isRecord(data) && typeof data.code === "string" ? data.code : "";
 }
 
+type Translate = (key: string, fallback?: string) => string;
+
+const BOOKING_AUTH_ERROR_FALLBACKS: Record<string, string> = {
+  "bookingAuth.errors.authContinue": "Please log in or verify your phone to continue.",
+  "bookingAuth.errors.invalidPassword": "Incorrect password.",
+  "bookingAuth.errors.authenticationRequired": "Authentication required.",
+  "bookingAuth.errors.phoneVerificationRequired": "Phone verification required.",
+  "bookingAuth.errors.verificationExpired": "Verification expired. Please request a new code.",
+  "bookingAuth.errors.rateLimited": "Too many attempts. Please try again later.",
+  "bookingAuth.errors.passwordRequired": "Password is required.",
+  "bookingAuth.errors.accountExists": "This phone already has an account.",
+  "bookingAuth.errors.unknown": "Something went wrong. Please try again.",
+  "bookingAuth.errors.invalidOtp": "Invalid verification code.",
+  "bookingAuth.errors.verificationFailed": "Verification failed. Please try again.",
+};
+
+function bookingAuthErrorKeyFromCode(code: string) {
+  const normalized = code.trim().toUpperCase();
+  const map: Record<string, string> = {
+    AUTHENTICATION_REQUIRED: "bookingAuth.errors.authContinue",
+    INVALID_PASSWORD: "bookingAuth.errors.invalidPassword",
+    PHONE_VERIFICATION_REQUIRED: "bookingAuth.errors.phoneVerificationRequired",
+    OTP_EXPIRED: "bookingAuth.errors.verificationExpired",
+    PROOF_EXPIRED: "bookingAuth.errors.verificationExpired",
+    RATE_LIMITED: "bookingAuth.errors.rateLimited",
+    TOO_MANY_ATTEMPTS: "bookingAuth.errors.rateLimited",
+    ACCOUNT_EXISTS: "bookingAuth.errors.accountExists",
+    ACCOUNT_EXISTS_LOGIN_REQUIRED: "bookingAuth.errors.accountExists",
+    PASSWORD_REQUIRED: "bookingAuth.errors.passwordRequired",
+    OTP_INVALID: "bookingAuth.errors.invalidOtp",
+    UNKNOWN_ERROR: "bookingAuth.errors.unknown",
+  };
+  return map[normalized] || (normalized.startsWith("PROOF_") ? "bookingAuth.errors.phoneVerificationRequired" : "");
+}
+
+function bookingAuthErrorKeyFromMessage(message: string) {
+  const normalized = message.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!normalized) return "";
+  if (normalized === "authentication required") return "bookingAuth.errors.authenticationRequired";
+  if (normalized.includes("log in or verify your phone")) return "bookingAuth.errors.authContinue";
+  if (normalized.includes("incorrect password") || normalized.includes("password is incorrect")) return "bookingAuth.errors.invalidPassword";
+  if (normalized.includes("phone verification") && normalized.includes("required")) return "bookingAuth.errors.phoneVerificationRequired";
+  if (normalized.includes("verification expired") || normalized.includes("otp_expired") || normalized.includes("expired")) return "bookingAuth.errors.verificationExpired";
+  if (normalized.includes("too many attempts") || normalized.includes("rate limit")) return "bookingAuth.errors.rateLimited";
+  if (normalized.includes("password is required")) return "bookingAuth.errors.passwordRequired";
+  if (normalized.includes("already has an account") || normalized.includes("already has a drivo account") || normalized.includes("account exists")) return "bookingAuth.errors.accountExists";
+  if (normalized.includes("something went wrong")) return "bookingAuth.errors.unknown";
+  if (normalized.includes("invalid verification code") || normalized.includes("invalid code")) return "bookingAuth.errors.invalidOtp";
+  return "";
+}
+
+function translatedBookingAuthError(t: Translate, key: string) {
+  return t(key, BOOKING_AUTH_ERROR_FALLBACKS[key] || BOOKING_AUTH_ERROR_FALLBACKS["bookingAuth.errors.unknown"]);
+}
+
+function localizedError(data: unknown, fallbackKey: string, t: Translate) {
+  const codeKey = bookingAuthErrorKeyFromCode(readCode(data));
+  if (codeKey) return translatedBookingAuthError(t, codeKey);
+
+  const rawMessage = readError(data, "");
+  const messageKey = bookingAuthErrorKeyFromMessage(rawMessage);
+  if (messageKey) return translatedBookingAuthError(t, messageKey);
+
+  return translatedBookingAuthError(t, fallbackKey);
+}
+
+function localizeThrownError(error: unknown, fallbackKey: string, t: Translate) {
+  const message = error instanceof Error ? error.message : "";
+  const key = bookingAuthErrorKeyFromMessage(message);
+  if (key) return translatedBookingAuthError(t, key);
+
+  const alreadyLocalized = Object.keys(BOOKING_AUTH_ERROR_FALLBACKS).some(
+    (translationKey) => message === translatedBookingAuthError(t, translationKey)
+  );
+  if (alreadyLocalized) return message;
+
+  return translatedBookingAuthError(t, fallbackKey);
+}
+
 function isAuthenticationRequiredMessage(message: string) {
   const normalized = message.trim().toLowerCase();
   return (
@@ -74,29 +153,17 @@ function isAuthenticationRequiredMessage(message: string) {
   );
 }
 
-function authRequiredMessage(data: unknown) {
-  return readCode(data) === "AUTHENTICATION_REQUIRED"
-    ? "Please log in or verify your phone to continue."
-    : readError(data, "Please log in or verify your phone to continue.");
+function authRequiredMessage(data: unknown, t: Translate) {
+  return localizedError(data, "bookingAuth.errors.authContinue", t);
 }
 
-function otpVerifyMessage(data: unknown, fallback: string) {
-  const code = readCode(data);
-  if (code === "OTP_INVALID") return "Invalid verification code.";
-  if (code === "OTP_EXPIRED") return "Verification code expired. Please request a new code.";
-  if (code === "PROOF_CREATE_FAILED") {
-    return "Verification could not be completed. Please request a new code.";
-  }
-  return readError(data, fallback);
+function otpVerifyMessage(data: unknown, fallbackKey: string, t: Translate) {
+  return localizedError(data, fallbackKey, t);
 }
 
-function proofFailureMessage(code: string, fallback: string) {
-  if (code === "PROOF_EXPIRED") return "Phone verification expired. Please verify again.";
-  if (code === "PROOF_MISSING") return "Phone verification is missing. Please verify your number again.";
-  if (code === "PROOF_INVALID") return "Phone verification could not be confirmed. Please verify again.";
-  if (code === "PROOF_PHONE_MISMATCH") return "Phone verification could not be confirmed. Please verify again.";
-  if (code === "PROOF_BOOKING_MISMATCH") return "Phone verification could not be confirmed. Please verify again.";
-  return fallback;
+function proofFailureMessage(code: string, fallbackKey: string, t: Translate) {
+  const codeKey = bookingAuthErrorKeyFromCode(code);
+  return translatedBookingAuthError(t, codeKey || fallbackKey);
 }
 
 function createEmptyChild(): ChildDetail {
@@ -348,7 +415,7 @@ export default function BookingForm({
     const hasRequiredProof =
       authMode === "legacyPasswordSetup" ? legacyPasswordSetupProofToken : registrationProofToken;
     if (step === 4 && !hasRequiredProof && !accountNeedsPhoneReverification) {
-      setAuthError("Phone verification is missing. Please verify your number again.");
+      setAuthError(translatedBookingAuthError(t, "bookingAuth.errors.phoneVerificationRequired"));
       setAccountNeedsPhoneReverification(true);
     }
   }, [accountNeedsPhoneReverification, authMode, legacyPasswordSetupProofToken, registrationProofToken, step]);
@@ -626,7 +693,7 @@ useEffect(() => {
 
     const otpData = await safeJson(otpRes);
     if (!otpRes.ok) {
-      throw new Error(readError(otpData, "OTP send failed"));
+      throw new Error(localizedError(otpData, "bookingAuth.errors.unknown", t));
     }
 
     if (isRecord(otpData) && typeof otpData.devOtp === "string") {
@@ -643,10 +710,10 @@ useEffect(() => {
     });
     const data = await safeJson(res);
     if (!res.ok) {
-      throw new Error(readError(data, "Could not check phone number. Please try again."));
+      throw new Error(localizedError(data, "bookingAuth.errors.unknown", t));
     }
     if (!isRecord(data) || data.success !== true || typeof data.mode !== "string") {
-      throw new Error("Could not check phone number. Please try again.");
+      throw new Error(translatedBookingAuthError(t, "bookingAuth.errors.unknown"));
     }
     return data;
   };
@@ -972,7 +1039,7 @@ scheduledTime:
       const bookingData = await safeJson(bookingRes);
 
       if (!bookingRes.ok) {
-        throw new Error(readError(bookingData, "Booking creation failed"));
+        throw new Error(localizedError(bookingData, "bookingAuth.errors.unknown", t));
       }
 
       if (!isRecord(bookingData)) {
@@ -999,14 +1066,9 @@ scheduledTime:
 
       if (passengerProfile) {
         setAuthMode("authenticated");
-        clearPassengerAuthErrors();
-
-        if (bookingData.passengerAuthenticated === true || bookingData.passengerAuthStatus === "AUTHENTICATED") {
-          setStep(3);
-          return;
-        }
-
-        await continueAuthenticatedBooking(passengerProfile, newBookingId);
+        setAuthError("");
+        setError("");
+        setStep(3);
         return;
       }
 
@@ -1022,7 +1084,7 @@ scheduledTime:
         setRegistrationProofPhone(normalizedPhone);
         clearPasswordResetState();
         setLoginPassword("");
-        setAuthError("This phone already has a Drivo account. Please log in to continue.");
+        setAuthError(translatedBookingAuthError(t, "bookingAuth.errors.accountExists"));
         setAuthMode("existingAccountLogin");
         return;
       }
@@ -1038,10 +1100,10 @@ scheduledTime:
       setAuthMode("registrationOtp");
       setStep(2);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Something went wrong";
+      const message = localizeThrownError(err, "bookingAuth.errors.unknown", t);
       if (isAuthenticationRequiredMessage(message)) {
-        setAuthError("Please log in or verify your phone to continue.");
-        setError("Please log in or verify your phone to continue.");
+        setAuthError(translatedBookingAuthError(t, "bookingAuth.errors.authContinue"));
+        setError(translatedBookingAuthError(t, "bookingAuth.errors.authContinue"));
       } else {
         setError(message);
       }
@@ -1073,17 +1135,17 @@ scheduledTime:
         clearRegistrationProof();
         setAuthMode("existingAccountLogin");
         setStep(1);
-        setAuthError("This phone already has a Drivo account. Please log in or reset your password.");
+        setAuthError(translatedBookingAuthError(t, "bookingAuth.errors.accountExists"));
         return;
       }
       if (code === "LEGACY_SETUP_REQUIRED") {
         clearRegistrationProof();
         setAuthMode("legacyPasswordSetupOtp");
         setStep(1);
-        setAuthError("Please verify your phone and create a password to continue.");
+        setAuthError(translatedBookingAuthError(t, "bookingAuth.errors.phoneVerificationRequired"));
         return;
       }
-      throw new Error(otpVerifyMessage(data, "OTP verification failed"));
+      throw new Error(otpVerifyMessage(data, "bookingAuth.errors.verificationFailed", t));
     }
 
     if (!isRecord(data)) {
@@ -1155,8 +1217,8 @@ scheduledTime:
     const data = await safeJson(res);
     if (!res.ok) {
       const message = readCode(data) === "AUTHENTICATION_REQUIRED"
-        ? authRequiredMessage(data)
-        : readError(data, "Could not continue booking");
+        ? authRequiredMessage(data, t)
+        : localizedError(data, "bookingAuth.errors.unknown", t);
       if (isAuthenticationRequiredMessage(message)) {
         setAuthError(message);
         setError(message);
@@ -1181,12 +1243,12 @@ scheduledTime:
     const activeProofToken = isLegacySetup ? legacyPasswordSetupProofToken : registrationProofToken;
 
     if (!activeProofToken) {
-      requirePhoneReverification("Phone verification is missing. Please verify your number again.");
+      requirePhoneReverification(translatedBookingAuthError(t, "bookingAuth.errors.phoneVerificationRequired"));
       return;
     }
 
     if (proofExpiresAt && new Date(proofExpiresAt).getTime() <= Date.now()) {
-      requirePhoneReverification("Phone verification expired. Please verify again.");
+      requirePhoneReverification(translatedBookingAuthError(t, "bookingAuth.errors.verificationExpired"));
       return;
     }
 
@@ -1218,27 +1280,27 @@ scheduledTime:
           clearRegistrationProof();
           setAuthMode("existingAccountLogin");
           setStep(1);
-          setAuthError("This phone already has a Drivo account. Please log in or reset your password.");
+          setAuthError(translatedBookingAuthError(t, "bookingAuth.errors.accountExists"));
           return;
         }
         if (code === "LEGACY_SETUP_REQUIRED") {
           clearRegistrationProof();
           setAuthMode("legacyPasswordSetupOtp");
           setStep(1);
-          setAuthError("Please verify your phone and create a password to continue.");
+          setAuthError(translatedBookingAuthError(t, "bookingAuth.errors.phoneVerificationRequired"));
           return;
         }
         if (code.startsWith("PROOF_")) {
-          requirePhoneReverification(proofFailureMessage(code, readError(data, "Phone verification could not be confirmed. Please verify again.")));
+          requirePhoneReverification(proofFailureMessage(code, "bookingAuth.errors.phoneVerificationRequired", t));
           return;
         }
-        setAuthError(readError(data, "Could not create account"));
+        setAuthError(localizedError(data, "bookingAuth.errors.unknown", t));
         return;
       }
       clearPassengerAuthErrors();
       await continueAuthenticatedBooking(isRecord(data) && isRecord(data.passenger) ? data.passenger : null);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not create account";
+      const message = localizeThrownError(err, "bookingAuth.errors.unknown", t);
       setAuthError(message);
     } finally {
       accountCreateInFlight.current = false;
@@ -1265,7 +1327,7 @@ scheduledTime:
         }),
       });
       const data = await safeJson(res);
-      if (!res.ok) throw new Error(readError(data, "Phone number or password is incorrect."));
+      if (!res.ok) throw new Error(localizedError(data, "bookingAuth.errors.invalidPassword", t));
 
       if (isRecord(data) && data.stepUpRequired) {
         setLoginAttemptId(String(data.loginAttemptId || ""));
@@ -1277,7 +1339,7 @@ scheduledTime:
       clearPassengerAuthErrors();
       await continueAuthenticatedBooking(isRecord(data) && isRecord(data.passenger) ? data.passenger : null, activeBookingId);
     } catch (err) {
-      setAuthError(err instanceof Error ? err.message : "Phone number or password is incorrect.");
+      setAuthError(localizeThrownError(err, "bookingAuth.errors.invalidPassword", t));
     } finally {
       setAuthLoading(false);
     }
@@ -1303,11 +1365,11 @@ scheduledTime:
         }),
       });
       const data = await safeJson(res);
-      if (!res.ok) throw new Error(readError(data, "Could not verify login."));
+      if (!res.ok) throw new Error(localizedError(data, "bookingAuth.errors.verificationFailed", t));
       clearPassengerAuthErrors();
       await continueAuthenticatedBooking(isRecord(data) && isRecord(data.passenger) ? data.passenger : null);
     } catch (err) {
-      setAuthError(err instanceof Error ? err.message : "Could not verify login.");
+      setAuthError(localizeThrownError(err, "bookingAuth.errors.verificationFailed", t));
     } finally {
       setAuthLoading(false);
     }
@@ -1326,7 +1388,7 @@ scheduledTime:
         body: JSON.stringify({ phone: registrationProofPhone || phoneCode + customerPhone.trim() }),
       });
       const data = await safeJson(res);
-      if (!res.ok) throw new Error(readError(data, "Could not send reset code."));
+      if (!res.ok) throw new Error(localizedError(data, "bookingAuth.errors.unknown", t));
       if (isRecord(data)) {
         setResetAttemptId(String(data.resetAttemptId || ""));
         setResetOtp("");
@@ -1335,7 +1397,7 @@ scheduledTime:
         if (typeof data.devOtp === "string") setDevOtp(data.devOtp);
       }
     } catch (err) {
-      setAuthError(err instanceof Error ? err.message : "Could not send reset code.");
+      setAuthError(localizeThrownError(err, "bookingAuth.errors.unknown", t));
     } finally {
       setAuthLoading(false);
     }
@@ -1358,17 +1420,17 @@ scheduledTime:
         }),
       });
       const data = await safeJson(res);
-      if (!res.ok) throw new Error(readError(data, "Could not verify reset code."));
+      if (!res.ok) throw new Error(localizedError(data, "bookingAuth.errors.verificationFailed", t));
       if (isRecord(data) && typeof data.passwordResetProofToken === "string") {
         setPasswordResetProofToken(data.passwordResetProofToken);
         setPasswordResetProofExpiresAt(typeof data.proofExpiresAt === "string" ? data.proofExpiresAt : "");
         if (typeof data.normalizedPhone === "string") setRegistrationProofPhone(data.normalizedPhone);
         setAuthMode("resetPassword");
       } else {
-        throw new Error("Could not verify reset code.");
+        throw new Error(translatedBookingAuthError(t, "bookingAuth.errors.verificationFailed"));
       }
     } catch (err) {
-      setAuthError(err instanceof Error ? err.message : "Could not verify reset code.");
+      setAuthError(localizeThrownError(err, "bookingAuth.errors.verificationFailed", t));
     } finally {
       setAuthLoading(false);
     }
@@ -1378,12 +1440,12 @@ scheduledTime:
     e.preventDefault();
     setAuthError("");
     if (!passwordResetProofToken) {
-      setAuthError("Password reset expired. Please request a new code.");
+      setAuthError(translatedBookingAuthError(t, "bookingAuth.errors.verificationExpired"));
       setAuthMode("forgotPasswordOtp");
       return;
     }
     if (passwordResetProofExpiresAt && new Date(passwordResetProofExpiresAt).getTime() <= Date.now()) {
-      setAuthError("Password reset expired. Please request a new code.");
+      setAuthError(translatedBookingAuthError(t, "bookingAuth.errors.verificationExpired"));
       setPasswordResetProofToken("");
       setAuthMode("forgotPasswordOtp");
       return;
@@ -1411,11 +1473,11 @@ scheduledTime:
         }),
       });
       const data = await safeJson(res);
-      if (!res.ok) throw new Error(readError(data, "Password reset could not be completed."));
+      if (!res.ok) throw new Error(localizedError(data, "bookingAuth.errors.unknown", t));
       clearPassengerAuthErrors();
       await continueAuthenticatedBooking(isRecord(data) && isRecord(data.passenger) ? data.passenger : null);
     } catch (err) {
-      setAuthError(err instanceof Error ? err.message : "Password reset could not be completed.");
+      setAuthError(localizeThrownError(err, "bookingAuth.errors.unknown", t));
     } finally {
       setAuthLoading(false);
     }
