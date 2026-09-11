@@ -9,6 +9,7 @@ import BrandLogo from "@/components/shared/BrandLogo";
 import ContactForm from "@/components/shared/ContactForm";
 import { PHONE_NUMBER, WHATSAPP_URL } from "@/lib/constants";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 
 type ServicePageProps = {
   badge: string;
@@ -46,7 +47,7 @@ export function LocalizedServicePage({
   const ctaBookingLabel = bookingLabelKey ? t(bookingLabelKey, bookingLabelFallback) : t("cta.bookNow");
   const benefits = [
     ["✅", t("trust.item1.title"), t("trust.item1.desc")],
-    ["♿", t("trust.item4.title"), t("trust.item4.desc")],
+    ["♿", t("trust.item4.title"), t(FEATURE_FLAGS.childrenTransport ? "trust.item4.desc" : "trust.item4.descWithoutChildren")],
     ["💳", t("booking.payment"), `${t("booking.paymentCard")} / ${t("booking.paymentCash")} / ${t("booking.paymentInvoice")}`],
     ["💬", t("how.step3.title"), t("otp.subtitle")],
     ["🛡️", t("booking.secureBooking"), t("booking.gdprSecure")],

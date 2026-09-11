@@ -4,6 +4,7 @@ import Link from "next/link";
 import BrandLogo from "@/components/shared/BrandLogo";
 import { PHONE_NUMBER, PHONE_RAW, WHATSAPP_URL } from "@/lib/constants";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { isCustomerServiceEnabled } from "@/lib/feature-flags";
 
 function FooterIcon({ kind }: { kind: "taxi" | "airport" | "accessible" | "senior" | "children" | "rental" | "location" | "phone" | "mail" | "message" }) {
   const className = "h-4 w-4";
@@ -90,12 +91,12 @@ function FooterIcon({ kind }: { kind: "taxi" | "airport" | "accessible" | "senio
 }
 
 const services = [
-  { nameKey: "services.taxi.title", href: "/taxi", code: "taxi" as const },
-  { nameKey: "services.airport.title", href: "/airport", code: "airport" as const },
-  { nameKey: "services.accessible.title", href: "/accessible-transport", code: "accessible" as const },
-  { nameKey: "services.children.title", href: "/children", code: "children" as const },
-  { nameKey: "services.rental.title", href: "/car-rental", code: "rental" as const },
-];
+  { serviceType: "standard", nameKey: "services.taxi.title", href: "/taxi", code: "taxi" as const },
+  { serviceType: "airport", nameKey: "services.airport.title", href: "/airport", code: "airport" as const },
+  { serviceType: "accessible", nameKey: "services.accessible.title", href: "/accessible-transport", code: "accessible" as const },
+  { serviceType: "children", nameKey: "services.children.title", href: "/children", code: "children" as const },
+  { serviceType: "rental", nameKey: "services.rental.title", href: "/car-rental", code: "rental" as const },
+].filter((service) => isCustomerServiceEnabled(service.serviceType));
 
 const company = [
   { nameKey: "nav.about", href: "/about" },

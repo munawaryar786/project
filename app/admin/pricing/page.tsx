@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 
 type PricingForm = {
   baseFare: string;
@@ -413,6 +414,18 @@ export default function AdminPricingPage() {
         <p className="mt-1 text-sm text-gray-500">
           Configure fare rules, service profiles, and commissions for Pricing Engine V1.
         </p>
+      <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-bold text-gray-900">Children Transport</p>
+          <p className="text-xs text-gray-500">
+            Pricing and historical data remain available. New customer bookings follow the deployment flag.
+          </p>
+        </div>
+        <span className={`w-fit rounded-full px-3 py-1 text-xs font-black uppercase ${FEATURE_FLAGS.childrenTransport ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-700"}`}>
+          {FEATURE_FLAGS.childrenTransport ? "Enabled" : "Disabled"}
+        </span>
+      </div>
+
       </div>
 
       {error && (

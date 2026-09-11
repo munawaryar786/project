@@ -23,6 +23,7 @@ import BookingConfirmation from "./BookingConfirmation";
 import AddressAutocomplete from "./AddressAutocomplete";
 import PriceEstimate from "./PriceEstimate";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { isCustomerServiceEnabled } from "@/lib/feature-flags";
 
 type Coords = {
   lat: number;
@@ -290,7 +291,7 @@ export default function BookingForm({
 }) {
   const { t } = useLanguage();
   const [step, setStep] = useState<BookingStep>(1);
-  const [serviceType, setServiceType] = useState<ServiceType>(initialServiceType);
+  const [serviceType, setServiceType] = useState<ServiceType>(isCustomerServiceEnabled(initialServiceType) ? initialServiceType : "standard");
   const [passengers, setPassengers] = useState(2);
   const [luggage, setLuggage] = useState<LuggageType>("none");
   const [smallBags, setSmallBags] = useState(0);
@@ -404,7 +405,7 @@ export default function BookingForm({
   };
 
   useEffect(() => {
-    setServiceType(initialServiceType);
+    setServiceType(isCustomerServiceEnabled(initialServiceType) ? initialServiceType : "standard");
   }, [initialServiceType]);
 
   useEffect(() => {
@@ -1483,7 +1484,7 @@ scheduledTime:
     }
   };
 
-  const serviceOptions: {
+  const allServiceOptions: {
     value: ServiceType;
     label: string;
     icon: string;
@@ -1519,6 +1520,7 @@ scheduledTime:
       img: "/drivo-children-dropoff.jpeg",
     },
   ];
+  const serviceOptions = allServiceOptions.filter((service) => isCustomerServiceEnabled(service.value));
 
   if (step === 2) {
     return (

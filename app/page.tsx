@@ -8,6 +8,7 @@ import WhatsAppFloat from "@/components/layout/WhatsAppFloat";
 import CookieBanner from "@/components/layout/CookieBanner";
 import { SERVICES, WHATSAPP_URL } from "@/lib/constants";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { FEATURE_FLAGS, isCustomerServiceEnabled } from "@/lib/feature-flags";
 
 const HOME_IMAGES = {
   taxi: "/drivo-taxi-service.jpeg",
@@ -31,7 +32,7 @@ function Hero() {
     ["2,400+", t("home.stats.riders")],
     ["50+", t("home.stats.drivers")],
     ["15+", t("home.stats.vehicles")],
-    ["5", t("home.stats.services")],
+    [FEATURE_FLAGS.childrenTransport ? "5" : "4", t("home.stats.services")],
   ] as const;
 
   return (
@@ -142,11 +143,11 @@ function Hero() {
 function ServicesSection() {
   const { t } = useLanguage();
   const services = [
-    { ...SERVICES[0], nameKey: "services.taxi.title", descKey: "services.taxi.desc", img: HOME_IMAGES.taxi },
-    { ...SERVICES[1], nameKey: "services.airport.title", descKey: "services.airport.desc", img: HOME_IMAGES.airport },
-    { ...SERVICES[2], nameKey: "services.accessible.title", descKey: "services.accessible.desc", img: HOME_IMAGES.accessible },
-    { ...SERVICES[3], nameKey: "services.children.title", descKey: "services.children.desc", img: HOME_IMAGES.children },
-  ];
+    { ...SERVICES[0], serviceType: "standard", nameKey: "services.taxi.title", descKey: "services.taxi.desc", img: HOME_IMAGES.taxi },
+    { ...SERVICES[1], serviceType: "airport", nameKey: "services.airport.title", descKey: "services.airport.desc", img: HOME_IMAGES.airport },
+    { ...SERVICES[2], serviceType: "accessible", nameKey: "services.accessible.title", descKey: "services.accessible.desc", img: HOME_IMAGES.accessible },
+    { ...SERVICES[3], serviceType: "children", nameKey: "services.children.title", descKey: "services.children.desc", img: HOME_IMAGES.children },
+  ].filter((service) => isCustomerServiceEnabled(service.serviceType));
 
   return (
     <section className="section bg-white" id="services">

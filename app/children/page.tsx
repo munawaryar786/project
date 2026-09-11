@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { LocalizedServicePage } from "@/components/shared/LocalizedPublicPages";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 
 export const metadata: Metadata = {
   title: "Special Needs Children Transport Bratislava",
@@ -20,6 +22,8 @@ export const metadata: Metadata = {
 };
 
 export default function ChildrenPage() {
+  if (!FEATURE_FLAGS.childrenTransport) notFound();
+
   return (
     <LocalizedServicePage
       badge="Children"

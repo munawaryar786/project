@@ -86,6 +86,7 @@ const de = {
   "trust.item3.desc": "Keine versteckten Gebühren, faire Preise",
   "trust.item4.title": "Barrierefreiheit zuerst",
   "trust.item4.desc": "Spezielle Dienste für Behinderte, Senioren und Kinder",
+  "trust.item4.descWithoutChildren": "Spezielle Dienste für Menschen mit Behinderungen und Senioren",
 
   "faq.title": "Häufig gestellte Fragen",
   "faq.q1": "Wie buche ich eine Fahrt?",

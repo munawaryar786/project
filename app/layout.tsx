@@ -1,14 +1,18 @@
 import type { Metadata, Viewport } from 'next';
-// @ts-ignore: Global CSS import type declarations are not available in this environment.
 import "./globals.css";
 import { LanguageProvider } from "@/lib/i18n/LanguageContext";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
+
+const siteDescription = FEATURE_FLAGS.childrenTransport
+  ? "Bratislava's #1 accessibility-first mobility platform. Wheelchair taxis (ZTP/PRM), senior transport, special-needs children, airport transfers & car rental for drivers."
+  : "Bratislava's #1 accessibility-first mobility platform. Wheelchair taxis (ZTP/PRM), senior transport, airport transfers & car rental for drivers.";
+
 export const metadata: Metadata = {
   title: {
     default: 'Drivo — Accessible Mobility Platform | Bratislava',
     template: '%s | Drivo Bratislava',
   },
-  description:
-    "Bratislava's #1 accessibility-first mobility platform. Wheelchair taxis (ZTP/PRM), senior transport, special-needs children, airport transfers & car rental for drivers.",
+  description: siteDescription,
   keywords: [
     'taxi Bratislava', 'ZTP taxi', 'PRM transport', 'wheelchair taxi Slovakia',
     'senior taxi Bratislava', 'airport transfer BTS', 'accessible transport',

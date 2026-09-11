@@ -90,6 +90,7 @@ const en = {
   "trust.item3.desc": "No hidden fees, fair prices",
   "trust.item4.title": "Accessibility first",
   "trust.item4.desc": "Special services for disabled, seniors and children",
+  "trust.item4.descWithoutChildren": "Special services for disabled passengers and seniors",
 
   // FAQ
   "faq.title": "Frequently Asked Questions",

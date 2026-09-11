@@ -6,6 +6,7 @@ import BrandLogo from "@/components/shared/BrandLogo";
 import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
 import { WHATSAPP_URL } from "@/lib/constants";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { isCustomerServiceEnabled } from "@/lib/feature-flags";
 
 type IconProps = {
   className?: string;
@@ -67,11 +68,11 @@ function ServiceIcon({ kind, className = "h-5 w-5" }: { kind: "taxi" | "airport"
 }
 
 const SERVICES = [
-  { href: "/taxi", kind: "taxi" as const, title: "header.services.standard", desc: "services.taxi.desc" },
-  { href: "/airport", kind: "airport" as const, title: "header.services.airport", desc: "services.airport.desc" },
-  { href: "/accessible-transport", kind: "accessible" as const, title: "header.services.assistedAccessible", desc: "services.accessible.desc" },
-  { href: "/children", kind: "children" as const, title: "header.services.children", desc: "services.children.desc" },
-];
+  { serviceType: "standard", href: "/taxi", kind: "taxi" as const, title: "header.services.standard", desc: "services.taxi.desc" },
+  { serviceType: "airport", href: "/airport", kind: "airport" as const, title: "header.services.airport", desc: "services.airport.desc" },
+  { serviceType: "accessible", href: "/accessible-transport", kind: "accessible" as const, title: "header.services.assistedAccessible", desc: "services.accessible.desc" },
+  { serviceType: "children", href: "/children", kind: "children" as const, title: "header.services.children", desc: "services.children.desc" },
+].filter((service) => isCustomerServiceEnabled(service.serviceType));
 
 const NAV_LINKS = [
   { href: "/about", key: "nav.about" },

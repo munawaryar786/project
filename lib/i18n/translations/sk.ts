@@ -90,6 +90,7 @@ const sk = {
   "trust.item3.desc": "Žiadne skryté poplatky, férové ceny",
   "trust.item4.title": "Prístupnosť na prvom mieste",
   "trust.item4.desc": "Špeciálne služby pre ZŤP, seniorov a deti",
+  "trust.item4.descWithoutChildren": "Špeciálne služby pre ZŤP a seniorov",
 
   // FAQ
   "faq.title": "Časté otázky",

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { generateBookingRef, getSourceDomain } from "@/lib/utils";
 import { estimateBookingPrice } from "@/lib/pricing";
 import { getPassengerFromRequest, normalizePassengerPhone } from "@/lib/passenger-auth";
+import { isCustomerServiceEnabled } from "@/lib/feature-flags";
 import {
   bookingToEmailData,
   isSeniorAssistedService,
@@ -130,6 +131,13 @@ export async function POST(request: NextRequest) {
     }
 
     const data = parsed.data;
+    if (!isCustomerServiceEnabled(data.serviceType)) {
+      return NextResponse.json(
+        { error: "Children Transport is temporarily unavailable for new bookings." },
+        { status: 409 }
+      );
+    }
+
     const normalizedPhone = normalizePassengerPhone(`${data.customerPhoneCode}${data.customerPhone}`);
     const currentPassenger = await getPassengerFromRequest(request);
     const capacityPassengerCount = data.passengerCount + data.companionCount;

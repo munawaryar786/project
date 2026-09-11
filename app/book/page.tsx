@@ -10,8 +10,10 @@ import BookingForm from '@/components/booking/BookingForm';
 import RouteMap from '@/components/booking/RouteMap';
 import { WHATSAPP_URL, PHONE_RAW } from '@/lib/constants';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { isCustomerServiceEnabled } from '@/lib/feature-flags';
 
 function normalizeBookingService(value: string | null) {
+  if (!isCustomerServiceEnabled(value)) return "standard";
   if (value === "senior" || value === "accessible") return "accessible";
   if (value === "airport" || value === "children" || value === "standard") return value;
   return "standard";
