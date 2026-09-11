@@ -676,6 +676,7 @@ const de = {
   "passenger.sendResetCode": "Reset-Code senden",
   "passenger.resetContinue": "Passwort zuruecksetzen und fortsetzen",
   "passenger.backToLogin": "Zurueck zur Anmeldung",
+  "booking.driverAssistanceRequired": "Fahrerassistenz erforderlich",
 };
 
 export default de;

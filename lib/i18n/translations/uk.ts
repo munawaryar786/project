@@ -676,6 +676,7 @@ const uk = {
   "passenger.sendResetCode": "Send reset code",
   "passenger.resetContinue": "Reset Password & Continue",
   "passenger.backToLogin": "Back to login",
+  "booking.driverAssistanceRequired": "Driver assistance required",
 };
 
 export default uk;

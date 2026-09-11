@@ -694,6 +694,7 @@ const sk = {
   "passenger.sendResetCode": "Odoslat reset kod",
   "passenger.resetContinue": "Resetovat heslo a pokracovat",
   "passenger.backToLogin": "Spat na prihlasenie",
+  "booking.driverAssistanceRequired": "Vyziada sa asistencia vodica",
 };
 
 export default sk;

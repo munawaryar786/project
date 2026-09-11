@@ -216,6 +216,7 @@ const en = {
   "common.close": "Close",
   "common.save": "Save",
   "common.cancel": "Cancel",
+  "booking.driverAssistanceRequired": "Driver Assistance Required",
   "common.loading": "Loading...",
   "footer.brandText":
     "Bratislava's accessibility-first mobility platform. Dignified transport for everyone.",

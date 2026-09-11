@@ -43,6 +43,8 @@ export interface DistancePricingTier {
 export interface FareCalculationInput {
   distanceKm: number;
   waitingMinutes?: number;
+  tripDurationMinutes?: number;
+  driverAssistanceRequired?: boolean;
   pickupDateTime?: Date | string | null;
   serviceType?: ServicePricingCode;
   optionalCharges?: Partial<Record<OptionalServiceCharge, boolean>>;
@@ -74,10 +76,10 @@ export interface FareBreakdown {
 }
 
 export const DEFAULT_PRICING_ENGINE_CONFIG: PricingEngineConfig = {
-  baseFare: 1.49,
-  distanceRate: 1.09,
-  waitingRatePerMinute: 0.19,
-  minimumFare: 5.0,
+  baseFare: 0,
+  distanceRate: 1,
+  waitingRatePerMinute: 0.25,
+  minimumFare: 12.5,
   bookingFee: 0,
   surgeEnabled: false,
   airportPickupFee: 3.0,
@@ -92,10 +94,17 @@ export const DEFAULT_PRICING_ENGINE_CONFIG: PricingEngineConfig = {
 };
 
 export const DEFAULT_DISTANCE_TIERS: DistancePricingTier[] = [
-  { minKm: 0, maxKm: 20, ratePerKm: 1.09, label: "0-20 km" },
-  { minKm: 20, maxKm: 50, ratePerKm: 1.0, label: "20-50 km" },
-  { minKm: 50, maxKm: null, ratePerKm: 0.95, label: "50+ km" },
+  { minKm: 0, maxKm: 50, ratePerKm: 1, label: "0-50 km" },
+  { minKm: 50, maxKm: 100, ratePerKm: 0.9, label: "50-100 km" },
+  { minKm: 100, maxKm: null, ratePerKm: 0.85, label: "100+ km" },
 ];
+
+export const WAITING_RULES = {
+  standard: { freeMinutes: 5, ratePerMinute: 0.25 },
+  accessible: { freeMinutes: 15, ratePerMinute: 10 / 60 },
+  senior: { freeMinutes: 15, ratePerMinute: 10 / 60 },
+  airport: { freeMinutes: 30, ratePerMinute: 0.25 },
+} as const;
 
 export const DEFAULT_SERVICE_PRICING_PROFILES: Array<{
   code: ServicePricingCode;
@@ -194,13 +203,28 @@ export function calculateFare(input: FareCalculationInput) {
   const distance = toNonNegativeNumber(input.distanceKm);
   const waitingMinutes = toNonNegativeNumber(input.waitingMinutes);
   const { distanceCharge, distanceTiers } = calculateDistanceCharge(distance, tiers);
-  const waitingCharge = roundMoney(waitingMinutes * config.waitingRatePerMinute);
+  const serviceValue = String(input.serviceType || "standard").toLowerCase();
+  const serviceKey = (serviceValue.includes("airport")
+    ? "airport"
+    : serviceValue.includes("accessible") || serviceValue.includes("senior")
+      ? "accessible"
+      : "standard") as keyof typeof WAITING_RULES;
+  const waitingRule = WAITING_RULES[serviceKey] || WAITING_RULES.standard;
+  const waitingCharge = roundMoney(
+    Math.max(0, waitingMinutes - waitingRule.freeMinutes) *
+      (serviceKey === "standard" || serviceKey === "airport"
+        ? config.waitingRatePerMinute
+        : waitingRule.ratePerMinute)
+  );
 
   const optionalServiceCharges: Record<string, number> = {};
   const optionalCharges = input.optionalCharges || {};
   if (optionalCharges.airportPickup) optionalServiceCharges.airportPickup = config.airportPickupFee;
   if (optionalCharges.airportMeetGreet) optionalServiceCharges.airportMeetGreet = config.airportMeetGreetFee;
-  if (optionalCharges.assistedTransport) optionalServiceCharges.assistedTransport = config.assistedTransportFee;
+  if (optionalCharges.assistedTransport && input.driverAssistanceRequired) {
+    const durationMinutes = toNonNegativeNumber(input.tripDurationMinutes);
+    optionalServiceCharges.assistedTransport = roundMoney((durationMinutes / 60) * 10);
+  }
   if (optionalCharges.childTransport) optionalServiceCharges.childTransport = config.childTransportFee;
   if (optionalCharges.priorityBooking) optionalServiceCharges.priorityBooking = config.priorityBookingFee;
 

@@ -14,7 +14,7 @@ import { isCustomerServiceEnabled } from '@/lib/feature-flags';
 
 function normalizeBookingService(value: string | null) {
   if (!isCustomerServiceEnabled(value)) return "standard";
-  if (value === "senior" || value === "accessible") return "accessible";
+  if (value === "senior" || value === "accessible" || value === "ztp") return "accessible";
   if (value === "airport" || value === "children" || value === "standard") return value;
   return "standard";
 }

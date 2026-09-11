@@ -67,8 +67,6 @@ export default function BookingConfirmation({
     }
   };
 
-  const serviceType = String(bookingData?.serviceType || "").toLowerCase();
-  const customQuoteService = serviceType === "accessible" || serviceType === "senior";
   const showProfilePrompt = Boolean(passengerProfile) && !profileDone && !profileHidden;
 
   const handleCompleteProfile = async (e: React.FormEvent) => {
@@ -226,15 +224,9 @@ export default function BookingConfirmation({
             />
             <Detail
               label={t("confirmation.status")}
-              value={customQuoteService ? "Admin review required" : t("confirmation.verified")}
+              value={t("confirmation.verified")}
               highlight
             />
-
-            {customQuoteService && (
-              <div className="rounded-xl border border-drivo-green/20 bg-white/80 p-3 text-[13px] font-semibold text-drivo-green-dark">
-                Price will be confirmed by Drivo after reviewing your assistance requirements.
-              </div>
-            )}
 
             {Boolean(bookingData?.specialNotes) && (
               <div className="pt-3 border-t border-drivo-border">
@@ -335,7 +327,7 @@ export default function BookingConfirmation({
         )}
 
         <div className="space-y-3 no-print">
-          {paymentMethod === "card" && !customQuoteService && (
+          {paymentMethod === "card" && (
             <button
               onClick={handleStripePayment}
               disabled={paying}

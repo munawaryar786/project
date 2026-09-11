@@ -9,6 +9,7 @@ import { authorizePassenger, getPassengerFromRequest, normalizePassengerPhone } 
 import { isCustomerServiceEnabled } from "@/lib/feature-flags";
 import { authorizeAdmin } from "@/lib/security/authorization";
 import { signBookingPrice } from "@/lib/security/booking-price";
+import { requiresWav } from "@/lib/assisted-transport";
 import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 import {
   bookingToEmailData,
@@ -140,9 +141,16 @@ async function createBooking(request: NextRequest) {
       if (!auth.ok) return auth.response;
     }
     const capacityPassengerCount = data.passengerCount + data.companionCount;
-    const wavRequired =
-      data.wavRequired ||
-      (data.wheelchairUser && data.canTransferToSeat === false);
+    const wavRequired = requiresWav({ ...data, passengerRemainsInWheelchair: data.passengerRemainsInWheelchair });
+    if (wavRequired) {
+      return NextResponse.json(
+        {
+          error: "WAV vehicles are currently fully booked. Passengers who can transfer to a regular seat may still be transported.",
+          code: "WAV_FULLY_BOOKED",
+        },
+        { status: 409 }
+      );
+    }
     const passengerRemainsInWheelchair =
       data.passengerRemainsInWheelchair ||
       (data.wheelchairUser && data.canTransferToSeat === false);
@@ -167,6 +175,16 @@ async function createBooking(request: NextRequest) {
       serviceType: data.serviceType,
       scheduledDate: data.scheduledDate,
       scheduledTime: data.scheduledTime,
+      waitingDuration: data.waitingDuration,
+      customWaitingDuration: data.customWaitingDuration,
+      assistanceLevel: data.assistanceLevel,
+      waitingMinutes:
+        data.waitingDuration === "30_MINUTES" ? 30 :
+        data.waitingDuration === "1_HOUR" ? 60 :
+        data.waitingDuration === "2_HOURS" ? 120 :
+        data.waitingDuration === "3_HOURS" ? 180 :
+        data.waitingDuration === "4_HOURS" ? 240 :
+        data.waitingDuration === "CUSTOM" ? Number(data.customWaitingDuration?.match(/\d+/)?.[0] || 0) : 0,
       waitAndGreet: data.waitAndGreet,
       recurrenceType: data.recurrenceType || data.recurrence,
       recurrenceCustom: data.recurrenceCustom,

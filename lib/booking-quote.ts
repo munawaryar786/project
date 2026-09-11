@@ -7,6 +7,9 @@ type QuoteInput = {
   dropoffAddress: string;
   serviceType: string;
   waitingMinutes?: number;
+  waitingDuration?: string | null;
+  customWaitingDuration?: string | null;
+  assistanceLevel?: string | null;
   scheduledDate?: string | null;
   scheduledTime?: string | null;
   waitAndGreet?: boolean;
@@ -15,6 +18,18 @@ type QuoteInput = {
   returnDate?: string | null;
   returnTime?: string | null;
 };
+
+function waitingMinutesFromInput(input: QuoteInput) {
+  if (typeof input.waitingMinutes === "number") return Math.max(0, input.waitingMinutes);
+  const value = input.waitingDuration || "";
+  if (value === "30_MINUTES") return 30;
+  if (value === "1_HOUR") return 60;
+  if (value === "2_HOURS") return 120;
+  if (value === "3_HOURS") return 180;
+  if (value === "4_HOURS") return 240;
+  const match = input.customWaitingDuration?.match(/\d+/);
+  return match ? Math.max(0, Number(match[0])) : 0;
+}
 
 function customDays(value?: string | null) {
   const valueMatch = value?.match(/\d+/);
@@ -74,7 +89,9 @@ export async function calculateAuthoritativeBookingQuote(input: QuoteInput) {
     : null;
   const fare = calculateFare({
     distanceKm: distance.distanceKm,
-    waitingMinutes: Math.max(0, input.waitingMinutes || 0),
+    waitingMinutes: waitingMinutesFromInput(input),
+    tripDurationMinutes: distance.durationMinutes,
+    driverAssistanceRequired: Boolean(input.assistanceLevel),
     pickupDateTime,
     optionalCharges: optionalCharges(input.serviceType, Boolean(input.waitAndGreet)),
     config,

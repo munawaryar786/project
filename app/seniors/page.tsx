@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { LocalizedServicePage } from "@/components/shared/LocalizedPublicPages";
+import { redirect } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "Taxi for Seniors Bratislava",
@@ -20,15 +20,5 @@ export const metadata: Metadata = {
 };
 
 export default function SeniorsPage() {
-  return (
-    <LocalizedServicePage
-      badge="Senior"
-      titleKey="services.senior.title"
-      taglineKey="services.senior.tagline"
-      descKey="services.senior.desc"
-      image="/drivo-senior-care.jpeg"
-      accent="amber"
-      bookingHref="/book?service=senior"
-    />
-  );
+  redirect("/accessible-transport");
 }

@@ -386,6 +386,7 @@ export default function BookingForm({
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [estimatedPrice, setEstimatedPrice] = useState<number | undefined>();
   const [fareBreakdown, setFareBreakdown] = useState<FareBreakdown | null>(null);
+  const [showWavModal, setShowWavModal] = useState(false);
   const [passengerProfile, setPassengerProfile] = useState<Record<string, unknown> | null>(null);
   const accountCreateInFlight = useRef(false);
 
@@ -429,7 +430,7 @@ export default function BookingForm({
 
   const today = useMemo(() => new Date().toISOString().split("T")[0], []);
   const assistedTransport = serviceType === "accessible";
-  const quoteOnlyTransport = serviceType === "accessible" || serviceType === "senior";
+  const quoteOnlyTransport = false;
   const passengerAuthenticated = Boolean(passengerProfile) || authMode === "authenticated";
   const submitButtonLabel = passengerAuthenticated
     ? quoteOnlyTransport
@@ -642,7 +643,7 @@ useEffect(() => {
   const serviceMap: Record<string, string> = {
     standard: "STANDARD",
     accessible: "ACCESSIBLE",
-    senior: "SENIOR",
+    senior: "ACCESSIBLE",
     children: "CHILDREN",
     airport: "AIRPORT",
   };
@@ -1726,6 +1727,36 @@ scheduledTime:
 
   return (
     <div className="space-y-6">
+      {showWavModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-drivo-navy/70 p-4"
+          role="presentation"
+          onMouseDown={() => setShowWavModal(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="wav-dialog-title"
+            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <h2 id="wav-dialog-title" className="text-lg font-extrabold text-drivo-navy">
+              {t("booking.wavRequired", "Wheelchair accessible vehicle required")}
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-drivo-text-secondary">
+              {t("booking.passengerRemainsWheelchair", "This passenger remains in their wheelchair. We will only dispatch a vehicle with a safe wheelchair ramp or lift.")}
+            </p>
+            <button
+              type="button"
+              autoFocus
+              className="btn-primary mt-5 w-full"
+              onClick={() => setShowWavModal(false)}
+            >
+              {t("common understood", "Understood")}
+            </button>
+          </div>
+        </div>
+      )}
       {error && (
         <div className="p-4 bg-drivo-red-light border-2 border-red-300 rounded-2xl animate-fade-in">
           <p className="text-[14px] text-red-700 font-medium">⚠️ {error}</p>
@@ -1947,6 +1978,7 @@ scheduledTime:
                 scheduledTime={estimateScheduledTime}
                 waitAndGreet={waitAndGreet}
                 waitingMinutes={estimateWaitingMinutes}
+                assistanceLevel={assistanceLevel}
                 onPriceChange={setEstimatedPrice}
                 onFareChange={handleFareChange}
               />
@@ -2462,7 +2494,8 @@ onChange={(e) => {
                   scheduledDate={estimateScheduledDate}
                   scheduledTime={estimateScheduledTime}
                   waitAndGreet={waitAndGreet}
-                  waitingMinutes={estimateWaitingMinutes}
+                waitingMinutes={estimateWaitingMinutes}
+                assistanceLevel={assistanceLevel}
                   onPriceChange={setEstimatedPrice}
                   onFareChange={handleFareChange}
                 />
