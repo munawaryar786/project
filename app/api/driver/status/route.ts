@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createOrUpdateDriverEarningForBooking } from "@/lib/commission-engine";
+import { z } from "zod";
+import { authorizeDriver } from "@/lib/security/authorization";
+
+const StatusSchema = z.object({
+  bookingId: z.string().regex(/^[a-f0-9]{24}$/i),
+  newStatus: z.enum(["DRIVER_ENROUTE", "IN_PROGRESS", "COMPLETED"]),
+  cashConfirmed: z.boolean().optional(),
+  driverId: z.string().optional(),
+}).strict();
 
 const VALID_DRIVER_STATUSES = [
   "DRIVER_ENROUTE",
@@ -16,17 +25,15 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
 };
 
 export async function PATCH(request: NextRequest) {
+  const auth = await authorizeDriver(request);
+  if (!auth.ok) return auth.response;
   try {
-    const body = await request.json();
-    const { bookingId, driverId, newStatus, cashConfirmed } = body;
-
-    if (!bookingId || !driverId || !newStatus) {
-      return NextResponse.json(
-        { error: "bookingId, driverId, and newStatus are required" },
-        { status: 400 }
-      );
+    const parsed = StatusSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid status request" }, { status: 400 });
     }
-
+    const { bookingId, newStatus, cashConfirmed } = parsed.data;
+    const driverId = auth.actor.id;
     if (!VALID_DRIVER_STATUSES.includes(newStatus)) {
       return NextResponse.json(
         { error: `Invalid driver status: ${newStatus}` },
@@ -36,7 +43,7 @@ export async function PATCH(request: NextRequest) {
 
     const booking = await prisma.booking.findUnique({
       where: { id: bookingId },
-      include: { driver: true },
+      include: { driver: { omit: { passwordHash: true, authVersion: true } } },
     });
 
     if (!booking) {
@@ -55,8 +62,8 @@ export async function PATCH(request: NextRequest) {
 
     if (booking.driverId !== driverId) {
       return NextResponse.json(
-        { error: "You are not assigned to this booking" },
-        { status: 403 }
+        { error: "Booking not found" },
+        { status: 404 }
       );
     }
 
@@ -116,7 +123,7 @@ export async function PATCH(request: NextRequest) {
     const updated = await prisma.booking.update({
       where: { id: bookingId },
       data: updateData,
-      include: { driver: true },
+      include: { driver: { omit: { passwordHash: true, authVersion: true } } },
     });
 
     if (newStatus === "DRIVER_ENROUTE" || newStatus === "IN_PROGRESS") {

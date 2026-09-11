@@ -1,87 +1,54 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { prisma } from "@/lib/prisma";
+import { authorizePassenger, clearPassengerCookies } from "@/lib/passenger-auth";
 
-/**
- * GDPR Data Deletion Endpoint
- * Allows users to request deletion of all their personal data
- * POST /api/gdpr/delete
- * Body: { email: string, phone: string, confirmation: boolean }
- */
+const DeleteSchema = z.object({ confirmation: z.literal(true) }).strict();
+
 export async function POST(request: NextRequest) {
+  const auth = await authorizePassenger(request);
+  if (!auth.ok) return auth.response;
+
+  const parsed = DeleteSchema.safeParse(await request.json());
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Deletion confirmation is required" }, { status: 400 });
+  }
+
   try {
-    const body = await request.json();
-    const { email, phone, confirmation } = body;
-
-    if (!email && !phone) {
-      return NextResponse.json(
-        { error: 'Please provide either email or phone number to identify your account.' },
-        { status: 400 }
-      );
-    }
-
-    if (!confirmation) {
-      return NextResponse.json(
-        { error: 'You must confirm that you want to delete all your personal data.' },
-        { status: 400 }
-      );
-    }
-
-    // Build query filter
-    const filter: any = {};
-    if (email) filter.customerEmail = email;
-    if (phone) filter.customerPhone = phone;
-
-    // Find all bookings
+    const passenger = auth.actor;
     const bookings = await prisma.booking.findMany({
-      where: filter,
-      include: {
-        otps: true,
-      },
+      where: { passengerId: passenger.id },
+      select: { id: true },
+    });
+    const bookingIds = bookings.map((booking) => booking.id);
+    const phones = [passenger.phone, passenger.normalizedPhone].filter(Boolean) as string[];
+
+    const [deletedOtps, deletedBookings, deletedContacts, deletedInquiries] =
+      await prisma.$transaction([
+        prisma.oTP.deleteMany({ where: { bookingId: { in: bookingIds } } }),
+        prisma.booking.deleteMany({ where: { passengerId: passenger.id } }),
+        // Never delete someone else's contacts using an unverified profile email.
+        prisma.contactMessage.deleteMany({ where: { id: { in: [] } } }),
+        prisma.rentalInquiry.deleteMany({ where: { phone: { in: phones } } }),
+      ]);
+
+    await prisma.passengerSession.updateMany({
+      where: { passengerId: passenger.id, revokedAt: null },
+      data: { revokedAt: new Date() },
     });
 
-    // Delete OTPs first (foreign key constraint)
-    for (const booking of bookings) {
-      await prisma.oTP.deleteMany({
-        where: { bookingId: booking.id },
-      });
-    }
-
-    // Delete bookings
-    const deleteBookingsResult = await prisma.booking.deleteMany({
-      where: filter,
-    });
-
-    // Delete contact messages
-    const deleteContactResult = await prisma.contactMessage.deleteMany({
-      where: { email: email || undefined },
-    });
-
-    // Delete rental inquiries
-    const deleteInquiriesResult = await prisma.rentalInquiry.deleteMany({
-      where: { phone: phone || undefined },
-    });
-
-    // Log deletion for compliance
-    console.log(`[GDPR Deletion] ${new Date().toISOString()} - Email: ${email}, Phone: ${phone}`, {
-      bookingsDeleted: deleteBookingsResult.count,
-      contactMessagesDeleted: deleteContactResult.count,
-      inquiriesDeleted: deleteInquiriesResult.count,
-    });
-
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
-      message: 'All your personal data has been permanently deleted.',
       deleted: {
-        bookings: deleteBookingsResult.count,
-        contactMessages: deleteContactResult.count,
-        rentalInquiries: deleteInquiriesResult.count,
+        bookings: deletedBookings.count,
+        bookingOtps: deletedOtps.count,
+        contactMessages: deletedContacts.count,
+        rentalInquiries: deletedInquiries.count,
       },
     });
-  } catch (error) {
-    console.error('Data deletion error:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete your data. Please contact info@drivo.sk for assistance.' },
-      { status: 500 }
-    );
+    clearPassengerCookies(response);
+    return response;
+  } catch {
+    return NextResponse.json({ error: "Failed to delete your data" }, { status: 500 });
   }
 }

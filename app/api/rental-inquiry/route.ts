@@ -1,21 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 
 const RentalSchema = z.object({
-  name: z.string().min(2, "Name required"),
-  phone: z.string().min(6, "Phone required"),
-  email: z.string().email("Valid email required").optional().nullable(),
-  licenseNumber: z.string().min(3, "License number required").optional().nullable(),
-  workPlatform: z.string().min(1, "Work platform required").optional().nullable(),
-  vehicleType: z.string().min(1, "Vehicle type required"),
-  vehicleSelected: z.string().optional().nullable(),
-  rentalStartDate: z.string().optional().nullable(),
-  rentalDuration: z.string().optional().nullable(),
-  weeklyRentalPlan: z.string().optional().nullable(),
-  notes: z.string().optional().nullable(),
-  message: z.string().optional().nullable(),
-});
+  name: z.string().trim().min(2, "Name required").max(120),
+  phone: z.string().trim().min(6, "Phone required").max(40),
+  email: z.string().trim().toLowerCase().email("Valid email required").max(254).optional().nullable(),
+  licenseNumber: z.string().trim().min(3, "License number required").max(80).optional().nullable(),
+  workPlatform: z.string().trim().min(1, "Work platform required").max(80).optional().nullable(),
+  vehicleType: z.string().trim().min(1, "Vehicle type required").max(80),
+  vehicleSelected: z.string().trim().max(120).optional().nullable(),
+  rentalStartDate: z.string().max(40).optional().nullable(),
+  rentalDuration: z.string().max(80).optional().nullable(),
+  weeklyRentalPlan: z.string().max(80).optional().nullable(),
+  notes: z.string().trim().max(2000).optional().nullable(),
+  message: z.string().trim().max(4000).optional().nullable(),
+}).strict();
 
 export async function GET() {
   try {
@@ -49,7 +50,7 @@ export async function GET() {
 /**
  * POST /api/rental-inquiry — Submit driver rental inquiry
  */
-export async function POST(request: NextRequest) {
+async function submitRentalInquiry(request: NextRequest) {
   try {
     const body = await request.json();
 
@@ -89,7 +90,6 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    console.log("🔑 New rental inquiry from:", parsed.data.name);
 
     return NextResponse.json(
       { success: true, id: inquiry.id },
@@ -100,3 +100,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to submit inquiry" }, { status: 500 });
   }
 }
+
+export const POST = withRateLimit(submitRentalInquiry, {
+  ...rateLimits.public,
+  scope: "rental_inquiry_submit",
+  max: 10,
+});

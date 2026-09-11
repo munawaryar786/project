@@ -1,5 +1,7 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { useEffect, useState } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
@@ -48,7 +50,7 @@ export default function AdminFinancialPage() {
   const fetchFinancial = async () => {
     setError("");
     try {
-      const res = await fetch("/api/admin/financial", { cache: "no-store" });
+      const res = await csrfFetch("admin", "/api/admin/financial", { cache: "no-store" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || t("adminFinancial.errors.fetch"));
       setRows(data.drivers || []);

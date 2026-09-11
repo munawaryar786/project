@@ -1,5 +1,7 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
@@ -63,7 +65,7 @@ export default function AdminDashboard() {
 
   const fetchStats = async () => {
     try {
-      const res = await fetch("/api/admin/stats", { cache: "no-store" });
+      const res = await csrfFetch("admin", "/api/admin/stats", { cache: "no-store" });
       const data = (await safeJson(res)) as DashboardStats;
       setStats(data);
       setLastUpdated(new Date().toLocaleTimeString(locale));

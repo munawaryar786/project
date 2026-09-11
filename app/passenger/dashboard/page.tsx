@@ -1,5 +1,7 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -26,7 +28,7 @@ export default function PassengerDashboardPage() {
 
   useEffect(() => {
     async function load() {
-      const meRes = await fetch("/api/passenger/me", { cache: "no-store" });
+      const meRes = await csrfFetch("passenger", "/api/passenger/me", { cache: "no-store" });
       if (!meRes.ok) {
         router.push("/passenger/login");
         return;
@@ -34,7 +36,7 @@ export default function PassengerDashboardPage() {
       const me = await meRes.json();
       setPassenger(me.passenger);
 
-      const bookingRes = await fetch("/api/passenger/bookings", { cache: "no-store" });
+      const bookingRes = await csrfFetch("passenger", "/api/passenger/bookings", { cache: "no-store" });
       if (bookingRes.ok) {
         const data = await bookingRes.json();
         setBookings(Array.isArray(data.bookings) ? data.bookings : []);

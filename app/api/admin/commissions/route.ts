@@ -1,3 +1,4 @@
+import { authorizeAdmin } from "@/lib/security/authorization";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -71,7 +72,9 @@ async function getOrCreateCommissions() {
   return prisma.commissionConfig.findMany({ orderBy: { scope: "asc" } });
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await authorizeAdmin(request);
+  if (!auth.ok) return auth.response;
   try {
     const commissions = await getOrCreateCommissions();
     return NextResponse.json({ success: true, commissions });
@@ -85,6 +88,8 @@ export async function GET() {
 }
 
 export async function PUT(request: NextRequest) {
+  const auth = await authorizeAdmin(request);
+  if (!auth.ok) return auth.response;
   try {
     const body = await request.json();
     const parsed = PayloadSchema.safeParse(body);

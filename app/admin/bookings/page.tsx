@@ -1,5 +1,7 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { useEffect, useMemo, useState } from "react";
 
 interface Booking {
@@ -248,7 +250,7 @@ export default function AdminBookingsPage() {
     try {
       if (showLoader) setLoading(true);
 
-      const res = await fetch(
+      const res = await csrfFetch("admin",
         "/api/admin/bookings",
         {
           cache: "no-store",
@@ -284,7 +286,7 @@ export default function AdminBookingsPage() {
 
   const fetchDrivers = async () => {
     try {
-      const res = await fetch(
+      const res = await csrfFetch("admin",
         "/api/admin/drivers",
         {
           cache: "no-store",
@@ -306,7 +308,7 @@ export default function AdminBookingsPage() {
     try {
       setUpdating(true);
 
-      const res = await fetch(
+      const res = await csrfFetch("admin",
         "/api/admin/bookings",
         {
           method: "PATCH",
@@ -345,7 +347,7 @@ export default function AdminBookingsPage() {
     try {
       setUpdating(true);
 
-      const res = await fetch(
+      const res = await csrfFetch("admin",
         "/api/admin/bookings",
         {
           method: "PATCH",
@@ -384,7 +386,7 @@ export default function AdminBookingsPage() {
     try {
       setDispatchingId(bookingId);
 
-      const res = await fetch(
+      const res = await csrfFetch("admin",
         "/api/dispatch/start",
         {
           method: "POST",

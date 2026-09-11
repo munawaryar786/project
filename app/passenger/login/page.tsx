@@ -1,5 +1,7 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Header from "@/components/layout/Header";
@@ -8,10 +10,9 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 export default function PassengerLoginPage() {
   const { t } = useLanguage();
   const router = useRouter();
-  const [mode, setMode] = useState<"otp" | "password">("otp");
+  const [mode, setMode] = useState<"otp" | "password">("password");
   const [phone, setPhone] = useState("");
   const [otpCode, setOtpCode] = useState("");
-  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [devOtp, setDevOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
@@ -24,7 +25,7 @@ export default function PassengerLoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/passenger/login/otp/send", {
+      const res = await csrfFetch("passenger", "/api/passenger/login/otp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone }),
@@ -46,7 +47,7 @@ export default function PassengerLoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/passenger/login/otp/verify", {
+      const res = await csrfFetch("passenger", "/api/passenger/login/otp/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone, otpCode }),
@@ -67,10 +68,10 @@ export default function PassengerLoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/passenger/login/password", {
+      const res = await csrfFetch("passenger", "/api/passenger/login/password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ phone, password }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || t("passenger.loginError"));
@@ -88,10 +89,11 @@ export default function PassengerLoginPage() {
       <main className="min-h-screen bg-drivo-bg-soft px-4 pb-16 pt-32">
         <div className="mx-auto max-w-md rounded-[28px] border border-drivo-border-light bg-white p-6 shadow-soft">
           <h1 className="text-2xl font-black text-drivo-navy">{t("passenger.loginTitle")}</h1>
-          <p className="mt-2 text-sm text-drivo-text-secondary">{t("passenger.loginSubtitle")}</p>
+          <p className="mt-2 text-sm text-drivo-text-secondary">{t("passenger.phone")} / {t("passenger.password")}</p>
 
           <div className="mt-6 flex rounded-2xl bg-drivo-bg-soft p-1">
             <button
+              hidden // Standalone OTP issuance is disabled by the existing API.
               type="button"
               onClick={() => setMode("otp")}
               className={`flex-1 rounded-xl px-3 py-2 text-sm font-bold ${mode === "otp" ? "bg-white text-drivo-green shadow-sm" : "text-drivo-text-secondary"}`}
@@ -103,7 +105,7 @@ export default function PassengerLoginPage() {
               onClick={() => setMode("password")}
               className={`flex-1 rounded-xl px-3 py-2 text-sm font-bold ${mode === "password" ? "bg-white text-drivo-green shadow-sm" : "text-drivo-text-secondary"}`}
             >
-              {t("passenger.emailPasswordLogin")}
+              {t("passenger.phone")} / {t("passenger.password")}
             </button>
           </div>
 
@@ -130,7 +132,7 @@ export default function PassengerLoginPage() {
             </form>
           ) : (
             <form onSubmit={loginPassword} className="mt-6 space-y-4">
-              <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t("passenger.email")} required />
+              <input className="input" type="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={t("passenger.phone")} required />
               <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t("passenger.password")} required />
               <button className="btn-primary w-full justify-center" disabled={loading}>
                 {loading ? t("passenger.loading") : t("passenger.signIn")}

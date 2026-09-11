@@ -167,6 +167,7 @@ async function handler(request: NextRequest) {
             profileCompleted: true,
             status: "ACTIVE",
             lastLoginAt: new Date(),
+            authVersion: { increment: 1 },
           },
         })
       : await prisma.passenger.create({

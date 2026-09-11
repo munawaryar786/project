@@ -1,7 +1,10 @@
-import { NextResponse } from "next/server";
+import { authorizeAdmin } from "@/lib/security/authorization";
+import { NextRequest, NextResponse } from "next/server";
 import { getAllDriverFinancialSummaries } from "@/lib/financial";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await authorizeAdmin(request);
+  if (!auth.ok) return auth.response;
   try {
     const drivers = await getAllDriverFinancialSummaries();
     return NextResponse.json({ success: true, drivers });

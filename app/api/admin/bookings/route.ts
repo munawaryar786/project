@@ -1,5 +1,7 @@
+import { authorizeAdmin } from "@/lib/security/authorization";
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import {
   calculateBookingFinancialBreakdown,
@@ -19,10 +21,17 @@ const VALID_STATUSES = [
 
 const TERMINAL_STATUSES = ["COMPLETED", "CANCELLED", "NO_SHOW"];
 
+const AdminBookingPatchSchema = z.object({
+  bookingId: z.string().regex(/^[a-f0-9]{24}$/i),
+  status: z.enum(["PENDING", "CONFIRMED", "ASSIGNED", "DRIVER_ENROUTE", "IN_PROGRESS", "COMPLETED", "CANCELLED", "NO_SHOW"]).optional(),
+  driverId: z.string().regex(/^[a-f0-9]{24}$/i).optional(),
+}).strict();
+
 const adminBookingInclude = {
-  driver: true,
+  driver: { omit: { passwordHash: true, authVersion: true } },
   earning: true,
   passenger: {
+    omit: { passwordHash: true, authVersion: true },
     include: {
       bookings: {
         select: { id: true },
@@ -32,7 +41,7 @@ const adminBookingInclude = {
 } satisfies Prisma.BookingInclude;
 
 const bookingFinancialInclude = {
-  driver: true,
+  driver: { omit: { passwordHash: true, authVersion: true } },
   earning: true,
 } satisfies Prisma.BookingInclude;
 
@@ -85,7 +94,9 @@ async function withFinancialBreakdown(
   };
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await authorizeAdmin(request);
+  if (!auth.ok) return auth.response;
   try {
     const bookings = await prisma.booking.findMany({
       orderBy: { createdAt: "desc" },
@@ -111,9 +122,12 @@ export async function GET() {
 }
 
 export async function PATCH(request: NextRequest) {
+  const auth = await authorizeAdmin(request);
+  if (!auth.ok) return auth.response;
   try {
-    const body = await request.json();
-    const { bookingId, status, driverId } = body;
+    const parsed = AdminBookingPatchSchema.safeParse(await request.json());
+    if (!parsed.success) return NextResponse.json({ error: "Invalid booking update" }, { status: 400 });
+    const { bookingId, status, driverId } = parsed.data;
 
     if (!bookingId) {
       return NextResponse.json(
@@ -131,7 +145,7 @@ export async function PATCH(request: NextRequest) {
 
     const currentBooking = await prisma.booking.findUnique({
       where: { id: bookingId },
-      include: { driver: true },
+      include: { driver: { omit: { passwordHash: true, authVersion: true } } },
     });
 
     if (!currentBooking) {
@@ -203,7 +217,7 @@ export async function PATCH(request: NextRequest) {
     const updatedBooking = await prisma.booking.update({
       where: { id: bookingId },
       data: updateData,
-      include: { driver: true, earning: true },
+      include: { driver: { omit: { passwordHash: true, authVersion: true } }, earning: true },
     });
 
     if (

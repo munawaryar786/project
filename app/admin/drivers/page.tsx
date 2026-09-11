@@ -1,5 +1,7 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { useEffect, useState } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
@@ -61,7 +63,7 @@ export default function AdminDriversPage() {
   const fetchDrivers = async () => {
     setError("");
     try {
-      const res = await fetch("/api/admin/drivers", { cache: "no-store" });
+      const res = await csrfFetch("admin", "/api/admin/drivers", { cache: "no-store" });
       const data = await safeJson(res);
       if (!res.ok) throw new Error(data.error || t("adminDrivers.errors.fetch"));
       setDrivers(data.drivers || []);
@@ -72,7 +74,7 @@ export default function AdminDriversPage() {
 
   const fetchVehicles = async () => {
     try {
-      const res = await fetch("/api/admin/vehicles", { cache: "no-store" });
+      const res = await csrfFetch("admin", "/api/admin/vehicles", { cache: "no-store" });
       const data = await safeJson(res);
       if (!res.ok) throw new Error(data.error || t("adminDrivers.errors.vehicles"));
       setVehicles(data.vehicles || []);
@@ -127,7 +129,7 @@ export default function AdminDriversPage() {
         if (!payload.password) delete payload.password;
       }
 
-      const res = await fetch("/api/admin/drivers", {
+      const res = await csrfFetch("admin", "/api/admin/drivers", {
         method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -154,7 +156,7 @@ export default function AdminDriversPage() {
     setError("");
 
     try {
-      const res = await fetch("/api/admin/drivers", {
+      const res = await csrfFetch("admin", "/api/admin/drivers", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ driverId, ...payload }),

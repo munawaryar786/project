@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { authorizeAdmin } from "@/lib/security/authorization";
 
 const VehicleUpdateSchema = z.object({
   plateNumber: z.string().trim().min(2).optional(),
@@ -49,14 +50,17 @@ function updateData(body: z.infer<typeof VehicleUpdateSchema>) {
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await authorizeAdmin(request);
+  if (!auth.ok) return auth.response;
   try {
     const { id } = await params;
+    if (!/^[a-f0-9]{24}$/i.test(id)) return NextResponse.json({ success: false, error: "Vehicle not found" }, { status: 404 });
     const vehicle = await prisma.vehicle.findUnique({
       where: { id },
-      include: { drivers: true },
+      include: { drivers: { omit: { passwordHash: true, authVersion: true } } },
     });
 
     if (!vehicle) {
@@ -80,8 +84,11 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await authorizeAdmin(request);
+  if (!auth.ok) return auth.response;
   try {
     const { id } = await params;
+    if (!/^[a-f0-9]{24}$/i.test(id)) return NextResponse.json({ success: false, error: "Vehicle not found" }, { status: 404 });
     const body = await request.json();
     const parsed = VehicleUpdateSchema.safeParse(body);
 

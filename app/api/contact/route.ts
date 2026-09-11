@@ -1,18 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 
 const ContactSchema = z.object({
-  name: z.string().min(2, "Name required"),
-  email: z.string().email("Valid email required"),
-  subject: z.string().min(2, "Subject required"),
-  message: z.string().min(10, "Message too short"),
-});
+  name: z.string().trim().min(2, "Name required").max(120),
+  email: z.string().trim().toLowerCase().email("Valid email required").max(254),
+  subject: z.string().trim().min(2, "Subject required").max(160),
+  message: z.string().trim().min(10, "Message too short").max(4000),
+}).strict();
 
 /**
  * POST /api/contact — Submit contact form
  */
-export async function POST(request: NextRequest) {
+async function submitContact(request: NextRequest) {
   try {
     const body = await request.json();
 
@@ -28,7 +29,6 @@ export async function POST(request: NextRequest) {
       data: parsed.data,
     });
 
-    console.log("📧 New contact message from:", parsed.data.name);
 
     return NextResponse.json(
       { success: true, id: contact.id },
@@ -39,3 +39,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Failed to send message" }, { status: 500 });
   }
 }
+
+export const POST = withRateLimit(submitContact, {
+  ...rateLimits.public,
+  scope: "contact_submit",
+  max: 10,
+});

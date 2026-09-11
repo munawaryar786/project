@@ -1,5 +1,7 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { useEffect, useMemo, useState } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 
@@ -77,7 +79,7 @@ export default function AdminVehiclesPage() {
   const fetchVehicles = async () => {
     setError("");
     try {
-      const res = await fetch("/api/admin/vehicles", { cache: "no-store" });
+      const res = await csrfFetch("admin","/api/admin/vehicles", { cache: "no-store" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || t("adminVehicles.errors.fetch"));
       setVehicles(data.vehicles || []);
@@ -170,7 +172,7 @@ export default function AdminVehiclesPage() {
         baseRidePrice: form.baseRidePrice ? Number(form.baseRidePrice) : null,
       };
 
-      const res = await fetch(
+      const res = await csrfFetch("admin",
         editing ? `/api/admin/vehicles/${editing.id}` : "/api/admin/vehicles",
         {
           method: editing ? "PATCH" : "POST",

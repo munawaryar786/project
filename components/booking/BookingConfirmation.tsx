@@ -1,5 +1,7 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { useState } from "react";
 import Link from "next/link";
 import type { PaymentMethod } from "@/types/booking";
@@ -41,12 +43,11 @@ export default function BookingConfirmation({
     setPaying(true);
 
     try {
-      const res = await fetch("/api/payments/checkout", {
+      const res = await csrfFetch("passenger", "/api/payments/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           bookingId,
-          amount: estimatedPrice || 0,
           currency: "EUR",
         }),
       });
@@ -76,7 +77,7 @@ export default function BookingConfirmation({
     setProfileLoading(true);
 
     try {
-      const res = await fetch("/api/passenger/profile/complete", {
+      const res = await csrfFetch("passenger", "/api/passenger/profile/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...profileForm, bookingId }),

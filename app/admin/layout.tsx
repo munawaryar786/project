@@ -1,5 +1,7 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -17,15 +19,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem("drivo-admin-access-token");
-
-    if (!token && pathname !== "/admin/login") {
-      router.push("/admin/login");
-    } else {
-      setIsAuthenticated(true);
-    }
-
-    setLoading(false);
+    let cancelled = false;
+    const restoreSession = async () => {
+      const response = await csrfFetch("admin", "/api/admin/me", { cache: "no-store", credentials: "include" });
+      if (!response.ok) {
+        router.push("/admin/login");
+        if (!cancelled) setLoading(false);
+        return;
+      }
+      if (!cancelled) {
+        setIsAuthenticated(true);
+        setLoading(false);
+      }
+    };
+    void restoreSession();
+    return () => { cancelled = true; };
   }, [pathname, router]);
 
   if (pathname === "/admin/login") {
@@ -92,13 +100,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     },
   ];
 
-  const handleLogout = () => {
-    localStorage.removeItem("drivo-admin-access-token");
-    localStorage.removeItem("drivo-admin-refresh-token");
-    localStorage.removeItem("drivo-admin-user");
+  const handleLogout = async () => {
+    await csrfFetch("admin", "/api/admin/logout", { method: "POST" }).catch(() => null);
     router.push("/admin/login");
   };
-
   return (
     <div className="min-h-screen bg-gray-100">
       <header className="fixed top-0 left-0 right-0 z-50 bg-green-900 text-white shadow-lg">

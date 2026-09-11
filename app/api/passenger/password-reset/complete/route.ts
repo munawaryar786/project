@@ -63,6 +63,9 @@ async function handler(request: NextRequest) {
       return NextResponse.json({ error: "Password reset expired. Please request a new code." }, { status: 400 });
     }
 
+    if (!(await consumeVerificationProofById(proof.id))) {
+      return NextResponse.json({ error: "Password reset expired. Please request a new code." }, { status: 400 });
+    }
     await revokePassengerSessions(passenger.id);
     await prisma.passengerTrustedDevice.updateMany({
       where: { passengerId: passenger.id, revokedAt: null },
@@ -79,10 +82,9 @@ async function handler(request: NextRequest) {
         lastLoginAt: new Date(),
         normalizedPhone,
         phone: normalizedPhone,
+        authVersion: { increment: 1 },
       },
     });
-
-    await consumeVerificationProofById(proof.id);
 
     if (data.bookingId) {
       await prisma.booking.updateMany({

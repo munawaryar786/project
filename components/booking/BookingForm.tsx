@@ -1,5 +1,7 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -616,7 +618,7 @@ useEffect(() => {
 }, []);
 
   useEffect(() => {
-    fetch("/api/passenger/me", { cache: "no-store", credentials: "include" })
+    csrfFetch("passenger","/api/passenger/me", { cache: "no-store", credentials: "include" })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!data?.passenger) return;
@@ -681,7 +683,7 @@ useEffect(() => {
     phone: string,
     purpose: "PASSENGER_REGISTRATION" | "PASSENGER_LEGACY_PASSWORD_SETUP"
   ) => {
-    const otpRes = await fetch("/api/otp/send", {
+    const otpRes = await csrfFetch("passenger","/api/otp/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
@@ -703,7 +705,7 @@ useEffect(() => {
   };
 
   const resolvePassengerPhone = async (activeBookingId: string, phone: string) => {
-    const res = await fetch("/api/passenger/auth/resolve-phone", {
+    const res = await csrfFetch("passenger","/api/passenger/auth/resolve-phone", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
@@ -759,7 +761,7 @@ useEffect(() => {
     if (!address || address.trim().length < 3) return null;
 
     try {
-      const res = await fetch(
+      const res = await csrfFetch("passenger",
         `/api/addresses/suggest?q=${encodeURIComponent(address)}`,
         { cache: "no-store" }
       );
@@ -805,7 +807,7 @@ useEffect(() => {
         });
 
         try {
-          const res = await fetch(
+          const res = await csrfFetch("passenger",
             `/api/addresses/reverse?lat=${latitude}&lng=${longitude}`,
             { cache: "no-store" }
           );
@@ -947,7 +949,7 @@ useEffect(() => {
       }));
       const firstChild = childrenPayload[0];
 
-      const bookingRes = await fetch("/api/bookings", {
+      const bookingRes = await csrfFetch("passenger","/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
@@ -1121,7 +1123,7 @@ scheduledTime:
         ? "PASSENGER_LEGACY_PASSWORD_SETUP"
         : "PASSENGER_REGISTRATION";
 
-    const res = await fetch("/api/otp/verify", {
+    const res = await csrfFetch("passenger","/api/otp/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
@@ -1208,7 +1210,7 @@ scheduledTime:
       throw new Error("Booking could not continue because booking details are missing.");
     }
 
-    const res = await fetch("/api/passenger/booking/continue", {
+    const res = await csrfFetch("passenger","/api/passenger/booking/continue", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
@@ -1256,7 +1258,7 @@ scheduledTime:
     accountCreateInFlight.current = true;
     setAuthLoading(true);
     try {
-      const res = await fetch("/api/passenger/account/create", {
+      const res = await csrfFetch("passenger","/api/passenger/account/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
@@ -1316,7 +1318,7 @@ scheduledTime:
 
     try {
       const activeBookingId = bookingId;
-      const res = await fetch("/api/passenger/login/password", {
+      const res = await csrfFetch("passenger","/api/passenger/login/password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
@@ -1352,7 +1354,7 @@ scheduledTime:
     setAuthLoading(true);
 
     try {
-      const res = await fetch("/api/passenger/login/otp/verify", {
+      const res = await csrfFetch("passenger","/api/passenger/login/otp/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
@@ -1382,7 +1384,7 @@ scheduledTime:
     setAuthLoading(true);
 
     try {
-      const res = await fetch("/api/passenger/password-reset/send", {
+      const res = await csrfFetch("passenger","/api/passenger/password-reset/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
@@ -1410,7 +1412,7 @@ scheduledTime:
     setAuthLoading(true);
 
     try {
-      const res = await fetch("/api/passenger/password-reset/verify", {
+      const res = await csrfFetch("passenger","/api/passenger/password-reset/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
@@ -1458,7 +1460,7 @@ scheduledTime:
     setAuthLoading(true);
 
     try {
-      const res = await fetch("/api/passenger/password-reset/complete", {
+      const res = await csrfFetch("passenger","/api/passenger/password-reset/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
@@ -2640,7 +2642,7 @@ onChange={(e) => {
                     type="button"
                     className="text-left text-[13px] font-bold text-drivo-green hover:underline"
                     onClick={async () => {
-                      await fetch("/api/passenger/logout", { method: "POST", credentials: "include" }).catch(() => null);
+                      await csrfFetch("passenger","/api/passenger/logout", { method: "POST", credentials: "include" }).catch(() => null);
                       setPassengerProfile(null);
                       setLoginPassword("");
                       setAuthError("");

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { authorizeDriver } from "@/lib/security/authorization";
 
 const ACTIVE_BOOKING_STATUSES = [
   "PENDING",
@@ -8,15 +9,10 @@ const ACTIVE_BOOKING_STATUSES = [
 ];
 
 export async function GET(request: NextRequest) {
+  const auth = await authorizeDriver(request);
+  if (!auth.ok) return auth.response;
   try {
-    const driverId = request.nextUrl.searchParams.get("driverId");
-
-    if (!driverId) {
-      return NextResponse.json(
-        { error: "Driver ID required" },
-        { status: 400 }
-      );
-    }
+    const driverId = auth.actor.id;
 
     const driver = await prisma.driver.findUnique({
       where: { id: driverId },
@@ -95,7 +91,6 @@ export async function GET(request: NextRequest) {
         ztpCardHolder: true,
         wheelchairUser: true,
         companionRequired: true,
-        medicalAppointment: true,
         waitingTimeRequired: true,
         assistanceLevel: true,
         wheelchairType: true,
@@ -103,63 +98,25 @@ export async function GET(request: NextRequest) {
         wavRequired: true,
         passengerRemainsInWheelchair: true,
         companionCount: true,
-        hospitalName: true,
-        department: true,
-        appointmentDate: true,
-        appointmentTime: true,
         tripType: true,
         returnDate: true,
         returnTime: true,
         waitingDuration: true,
-        customWaitingDuration: true,
         scheduledRide: true,
         recurrence: true,
         recurrenceType: true,
-        recurrenceCustom: true,
-        childFullName: true,
-        childName: true,
-        childAge: true,
-        childSpecialRequirements: true,
-        childrenDetails: true,
-        parentFullName: true,
-        guardianName: true,
-        parentPrimaryPhone: true,
-        guardianPhone: true,
-        parentEmergencyPhone: true,
-        guardianEmergencyPhone: true,
-        parentEmail: true,
-        guardianEmail: true,
-        educationalInstitutionName: true,
-        institutionName: true,
-        institutionAddress: true,
-        educationalDestinationValidated: true,
         pickupDate: true,
         pickupTime: true,
 
-        flightNumber: true,
-        airline: true,
         waitAndGreet: true,
 
-        customerName: true,
-        customerPhone: true,
-        customerPhoneCode: true,
-        customerEmail: true,
         languagePref: true,
-        specialNotes: true,
-        phoneVerified: true,
-
         paymentMethod: true,
         cashAgreed: true,
 
         estimatedPrice: true,
         distanceKm: true,
         vehicleRequired: true,
-
-        driverId: true,
-        acceptedAt: true,
-
-        createdAt: true,
-        updatedAt: true,
       },
     });
 

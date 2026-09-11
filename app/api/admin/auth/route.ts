@@ -1,121 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { createToken } from "@/lib/auth";
+import { createCanonicalToken, setSessionCookies } from "@/lib/security/session";
+import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 
-export async function POST(request: NextRequest) {
+const LoginSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(254),
+  password: z.string().min(1).max(128),
+}).strict();
+
+async function login(request: NextRequest) {
   try {
-    const body = await request.json();
-
-    const email =
-      body.email?.trim().toLowerCase();
-
-    const password = body.password;
-
-    if (!email || !password) {
-      return NextResponse.json(
-        {
-          error: "Email and password required",
-        },
-        { status: 400 }
-      );
+    const parsed = LoginSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
+    }
+    const admin = await prisma.adminUser.findUnique({ where: { email: parsed.data.email } });
+    const validPassword = Boolean(admin && await bcrypt.compare(parsed.data.password, admin.passwordHash));
+    if (!admin || !validPassword || !admin.role) {
+      return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
 
-    // ===============================
-    // FIND ADMIN
-    // ===============================
-
-    const admin =
-      await prisma.adminUser.findUnique({
-        where: { email },
-      });
-
-    if (!admin) {
-      return NextResponse.json(
-        {
-          error: "Invalid credentials",
-        },
-        { status: 401 }
-      );
-    }
-
-    // ===============================
-    // VERIFY PASSWORD
-    // ===============================
-
-    const validPassword =
-      await bcrypt.compare(
-        password,
-        admin.passwordHash
-      );
-
-    if (!validPassword) {
-      return NextResponse.json(
-        {
-          error: "Invalid credentials",
-        },
-        { status: 401 }
-      );
-    }
-
-    // ===============================
-    // CREATE JWT TOKEN
-    // ===============================
-
-    const token = await createToken({
-      id: admin.id,
-      email: admin.email,
+    const session = await createCanonicalToken({
+      sub: admin.id,
+      actor: "ADMIN",
       role: admin.role,
-      type: "ADMIN",
+      ver: admin.authVersion ?? 0,
     });
-
-    console.log("═══════════════════════════════════════");
-    console.log("🔐 ADMIN LOGIN SUCCESS");
-    console.log(`👤 ${admin.fullName}`);
-    console.log(`📧 ${admin.email}`);
-    console.log(`🛡️ Role: ${admin.role}`);
-    console.log("═══════════════════════════════════════");
-
-    // ===============================
-    // RESPONSE
-    // ===============================
-
     const response = NextResponse.json({
       success: true,
-      admin: {
-        id: admin.id,
-        fullName: admin.fullName,
-        email: admin.email,
-        role: admin.role,
-      },
+      admin: { id: admin.id, fullName: admin.fullName, email: admin.email, role: admin.role },
     });
-
-    // ===============================
-    // SECURE COOKIE
-    // ===============================
-
-    response.cookies.set({
-      name: "drivo_admin_token",
-      value: token,
-      httpOnly: true,
-      secure: false, // true on VPS/production HTTPS
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 7,
-    });
-
+    setSessionCookies(response, "ADMIN", session);
     return response;
-  } catch (error) {
-    console.error(
-      "❌ Admin auth error:",
-      error
-    );
-
-    return NextResponse.json(
-      {
-        error: "Authentication failed",
-      },
-      { status: 500 }
-    );
+  } catch {
+    return NextResponse.json({ error: "Authentication failed" }, { status: 500 });
   }
 }
+
+export const POST = withRateLimit(login, {
+  ...rateLimits.auth,
+  scope: "admin_login",
+});

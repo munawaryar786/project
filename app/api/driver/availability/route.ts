@@ -1,49 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { authorizeDriver } from "@/lib/security/authorization";
 
-/**
- * PATCH /api/driver/availability
- * Driver online/offline toggle
- */
+const AvailabilitySchema = z.object({
+  isOnline: z.boolean(),
+  driverId: z.string().optional(),
+}).strict();
+
 export async function PATCH(request: NextRequest) {
+  const auth = await authorizeDriver(request);
+  if (!auth.ok) return auth.response;
   try {
-    const body = await request.json();
-    const { driverId, isOnline } = body;
-
-    if (!driverId || typeof isOnline !== "boolean") {
-      return NextResponse.json(
-        { error: "driverId and isOnline are required" },
-        { status: 400 }
-      );
-    }
-
+    const parsed = AvailabilitySchema.safeParse(await request.json());
+    if (!parsed.success) return NextResponse.json({ error: "Invalid availability request" }, { status: 400 });
     const driver = await prisma.driver.update({
-      where: { id: driverId },
-      data: {
-        isOnline,
-        lastLocationUpdate: new Date(),
-      },
+      where: { id: auth.actor.id },
+      data: { isOnline: parsed.data.isOnline, lastLocationUpdate: new Date() },
+      select: { id: true, fullName: true, isOnline: true },
     });
-
-    console.log(
-      `🚗 Driver availability updated: ${driver.fullName} → ${
-        isOnline ? "ONLINE" : "OFFLINE"
-      }`
-    );
-
-    return NextResponse.json({
-      success: true,
-      driver: {
-        id: driver.id,
-        fullName: driver.fullName,
-        isOnline: driver.isOnline,
-      },
-    });
-  } catch (error) {
-    console.error("❌ Driver availability update error:", error);
-    return NextResponse.json(
-      { error: "Failed to update availability" },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: true, driver });
+  } catch {
+    return NextResponse.json({ error: "Failed to update availability" }, { status: 500 });
   }
 }

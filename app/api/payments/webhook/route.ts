@@ -1,192 +1,66 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPaymentSession, verifyWebhookSignature } from "@/lib/stripe";
+import { verifyWebhookSignature } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
+import { hasAuthoritativeBookingPrice } from "@/lib/security/booking-price";
 import {
   bookingToEmailData,
   sendBookingCompletionEmails,
   sendPaymentReceipt,
 } from "@/lib/email";
 
-// Processed events store to prevent duplicate processing (use Redis in production)
-const processedEvents = new Set<string>();
-
-/**
- * POST /api/payments/webhook - Stripe Webhook Handler
- * Handles payment events from Stripe with signature verification
- */
 export async function POST(request: NextRequest) {
-  const stripeSignature = request.headers.get("stripe-signature");
-  
   try {
-    // Get raw body for signature verification
     const rawBody = await request.text();
-    
-    // Verify webhook signature (CRITICAL for security)
-    const { valid, event } = verifyWebhookSignature(rawBody, stripeSignature);
-    
-    if (!valid || !event) {
-      console.error("❌ Invalid webhook signature - request rejected");
-      return NextResponse.json(
-        { error: "Invalid signature" },
-        { status: 400 }
-      );
-    }
-
-    console.log(`📥 Stripe webhook received: ${event.type}`);
-
-    // Check for duplicate events (idempotency)
-    if (processedEvents.has(event.id)) {
-      console.log(`⚠️ Duplicate event detected: ${event.id} - skipping`);
-      return NextResponse.json({ received: true, duplicate: true }, { status: 200 });
-    }
-
-    // Mark event as processed
-    processedEvents.add(event.id);
-
-    // Handle the event
-    switch (event.type) {
-      case "checkout.session.completed":
-        await handleCheckoutCompleted(event.data.object);
-        break;
-
-      case "checkout.session.expired":
-        await handleCheckoutExpired(event.data.object);
-        break;
-
-      case "payment_intent.succeeded":
-        await handlePaymentSucceeded(event.data.object);
-        break;
-
-      case "payment_intent.payment_failed":
-        await handlePaymentFailed(event.data.object);
-        break;
-
-      default:
-        console.log(`ℹ️ Unhandled Stripe event: ${event.type}`);
-    }
-
-    return NextResponse.json({ received: true }, { status: 200 });
-  } catch (error: any) {
-    console.error("❌ Webhook handler error:", error.message);
-    return NextResponse.json(
-      { error: "Webhook handler failed" },
-      { status: 500 }
+    const { valid, event } = verifyWebhookSignature(
+      rawBody,
+      request.headers.get("stripe-signature")
     );
+    if (!valid || !event) {
+      return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
+    }
+    if (event.type === "checkout.session.completed") {
+      await handleCheckoutCompleted(event.data.object);
+    }
+    return NextResponse.json({ received: true });
+  } catch {
+    return NextResponse.json({ error: "Webhook handler failed" }, { status: 500 });
   }
 }
 
-/**
- * Handle successful checkout completion
- */
 async function handleCheckoutCompleted(session: any) {
   const bookingId = session.metadata?.bookingId;
-  
-  if (!bookingId) {
-    console.error("❌ No booking ID in session metadata");
-    return;
+  const bookingRef = session.metadata?.bookingRef;
+  if (!bookingId || !bookingRef || session.payment_status !== "paid") {
+    throw new Error("Invalid completed checkout metadata");
   }
 
-  console.log(`✅ Payment completed for booking: ${bookingId}`);
+  const booking = await prisma.booking.findUnique({ where: { id: String(bookingId) } });
+  if (!booking || booking.bookingRef !== bookingRef || booking.paymentMethod !== "CARD") {
+    throw new Error("Checkout booking binding failed");
+  }
+  const expectedAmount = booking.estimatedPrice ? Math.round(booking.estimatedPrice * 100) : null;
+  if (!hasAuthoritativeBookingPrice(booking) || expectedAmount === null ||
+    session.amount_total !== expectedAmount || session.currency !== "eur") {
+    throw new Error("Checkout amount or currency mismatch");
+  }
 
-  // Fetch booking details from database
-  try {
-    const booking = await prisma.booking.findUnique({
-      where: { id: String(bookingId) },
+  const updated = await prisma.booking.updateMany({
+    where: {
+      id: booking.id,
+      status: "PENDING",
+    },
+    data: { status: "CONFIRMED" },
+  });
+  if (updated.count === 0) return;
+
+  const confirmedBooking = await prisma.booking.findUnique({ where: { id: booking.id } });
+  if (!confirmedBooking) return;
+  if (confirmedBooking.customerEmail) {
+    await sendPaymentReceipt({
+      ...bookingToEmailData(confirmedBooking),
+      amount: expectedAmount / 100,
+      paymentId: session.payment_intent || session.id,
     });
-
-    if (!booking) {
-      console.error(`❌ Booking not found: ${bookingId}`);
-      return;
-    }
-
-    // Update booking status to CONFIRMED
-    const confirmedBooking = await prisma.booking.update({
-      where: { id: String(bookingId) },
-      data: { status: "CONFIRMED" },
-    });
-
-    console.log(`📋 Booking ${bookingId} status updated to CONFIRMED`);
-
-    // Send payment receipt
-    if (confirmedBooking.customerEmail) {
-      const amount = (session.amount_total || 0) / 100; // Stripe amounts are in cents
-      await sendPaymentReceipt({
-        ...bookingToEmailData(confirmedBooking),
-        amount,
-        paymentId: session.payment_intent || session.id,
-      });
-    }
-
-    await sendBookingCompletionEmails(bookingToEmailData(confirmedBooking));
-  } catch (error: any) {
-    console.error(`❌ Error processing payment completion for booking ${bookingId}:`, error.message);
   }
-}
-
-/**
- * Handle expired checkout
- */
-async function handleCheckoutExpired(session: any) {
-  const bookingId = session.metadata?.bookingId;
-  
-  if (!bookingId) return;
-
-  console.log(`⏰ Payment session expired for booking: ${bookingId}`);
-}
-
-/**
- * Handle successful payment intent
- */
-async function handlePaymentSucceeded(paymentIntent: any) {
-  const bookingId = paymentIntent.metadata?.bookingId;
-  
-  if (!bookingId) return;
-
-  console.log(`✅ Payment intent succeeded for booking: ${bookingId}`);
-}
-
-/**
- * Handle failed payment
- */
-async function handlePaymentFailed(paymentIntent: any) {
-  const bookingId = paymentIntent.metadata?.bookingId;
-  
-  if (!bookingId) return;
-
-  console.error(`❌ Payment failed for booking: ${bookingId}`);
-}
-
-// GET endpoint to verify payment status
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const sessionId = searchParams.get("session_id");
-
-  if (!sessionId) {
-    return NextResponse.json(
-      { error: "Missing session_id parameter" },
-      { status: 400 }
-    );
-  }
-
-  try {
-    const result = await getPaymentSession(sessionId);
-
-    if (!result.success) {
-      return NextResponse.json(
-        { error: result.error },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-      status: result.status,
-      amount: result.amount,
-    });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 }
-    );
-  }
+  await sendBookingCompletionEmails(bookingToEmailData(confirmedBooking));
 }

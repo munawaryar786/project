@@ -1,3 +1,4 @@
+import { authorizeAdmin } from "@/lib/security/authorization";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -120,7 +121,9 @@ function validateTiers(tiers: z.infer<typeof TierSchema>[]) {
   return "";
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await authorizeAdmin(request);
+  if (!auth.ok) return auth.response;
   try {
     const [pricing, tiers] = await Promise.all([getOrCreatePricing(), getOrCreateTiers()]);
     return NextResponse.json({ success: true, pricing, tiers });
@@ -134,6 +137,8 @@ export async function GET() {
 }
 
 export async function PUT(request: NextRequest) {
+  const auth = await authorizeAdmin(request);
+  if (!auth.ok) return auth.response;
   try {
     const body = await request.json();
     const parsed = PayloadSchema.safeParse(body);

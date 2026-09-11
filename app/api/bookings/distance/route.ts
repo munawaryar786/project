@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 import { calculateDistance } from "@/lib/google-maps";
 import { getPricingEngineConfig } from "@/lib/pricing-engine-config";
 import { calculateFare, type FareBreakdown, type OptionalServiceCharge } from "@/lib/pricing-engine";
@@ -101,7 +102,7 @@ function childrenBreakdown(
   };
 }
 
-export async function POST(request: NextRequest) {
+async function calculateBookingDistance(request: NextRequest) {
   try {
     const body = await request.json();
     const parsed = DistanceSchema.safeParse(body);
@@ -155,12 +156,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: "Failed to calculate distance. Please check addresses and try again.",
-        details: error.message,
       },
       { status: 500 }
     );
   }
 }
+
+export const POST = withRateLimit(calculateBookingDistance, {
+  ...rateLimits.public,
+  scope: "booking_distance",
+  max: 30,
+});
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);

@@ -32,9 +32,6 @@ export default function DriverLoginPage() {
         throw new Error(data.error || t("login.invalid"));
       }
 
-      localStorage.setItem("drivo-driver", JSON.stringify(data.driver));
-      localStorage.setItem("drivo-driver-user", JSON.stringify(data.driver));
-      localStorage.setItem("drivo-driver-token", data.token || "driver-session");
 
       window.location.assign("/driver/dashboard");
     } catch (err: unknown) {

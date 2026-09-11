@@ -1,5 +1,7 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Header from "@/components/layout/Header";
@@ -17,7 +19,7 @@ export default function PassengerProfilePage() {
 
   useEffect(() => {
     async function load() {
-      const res = await fetch("/api/passenger/me", { cache: "no-store" });
+      const res = await csrfFetch("passenger", "/api/passenger/me", { cache: "no-store" });
       if (!res.ok) {
         router.push("/passenger/login");
         return;
@@ -41,7 +43,7 @@ export default function PassengerProfilePage() {
     setSaving(true);
 
     try {
-      const res = await fetch("/api/passenger/profile/complete", {
+      const res = await csrfFetch("passenger", "/api/passenger/profile/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),

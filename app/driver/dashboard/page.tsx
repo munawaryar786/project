@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import BrandLogo from "@/components/shared/BrandLogo";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { csrfFetch } from "@/lib/client/csrf-fetch";
 
 interface Booking {
   id: string;
@@ -129,27 +130,36 @@ export default function DriverDashboard() {
   >("idle");
   const [lastGpsUpdate, setLastGpsUpdate] = useState<string>("");
 
+  async function logout() {
+    await csrfFetch("driver", "/api/driver/logout", { method: "POST" }).catch(() => null);
+    setDriver(null);
+    setIsOnline(false);
+    router.push("/driver/login");
+  }
+
   useEffect(() => {
-    const driverData =
-      localStorage.getItem("drivo-driver") ||
-      localStorage.getItem("drivo-driver-user");
+    let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | undefined;
 
-    if (!driverData) {
-      router.push("/driver/login");
-      return;
-    }
+    const restoreSession = async () => {
+      const response = await fetch("/api/driver/me", { cache: "no-store", credentials: "include" });
+      if (!response.ok) {
+        router.push("/driver/login");
+        return;
+      }
+      const data = await response.json();
+      if (cancelled) return;
+      setDriver(data.driver);
+      setIsOnline(Boolean(data.driver.isOnline));
+      await fetchDriverData(data.driver.id);
+      interval = setInterval(() => fetchDriverData(data.driver.id, true), 5000);
+    };
 
-    const parsed = JSON.parse(driverData);
-    setDriver(parsed);
-    setIsOnline(Boolean(parsed.isOnline));
-
-    fetchDriverData(parsed.id);
-
-    const interval = setInterval(() => {
-      fetchDriverData(parsed.id, true);
-    }, 5000);
-
-    return () => clearInterval(interval);
+    void restoreSession();
+    return () => {
+      cancelled = true;
+      if (interval) clearInterval(interval);
+    };
   }, [router]);
 
   useEffect(() => {
@@ -175,11 +185,10 @@ export default function DriverDashboard() {
         try {
           setLocationStatus("tracking");
 
-          const res = await fetch("/api/driver/location", {
+          const res = await csrfFetch("driver", "/api/driver/location", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              driverId: driver.id,
               lat: position.coords.latitude,
               lng: position.coords.longitude,
             }),
@@ -227,7 +236,7 @@ export default function DriverDashboard() {
 
   const fetchBookings = async (driverId: string) => {
     try {
-      const res = await fetch(`/api/driver/bookings?driverId=${driverId}`, {
+      const res = await fetch(`/api/driver/bookings`, {
         cache: "no-store",
       });
       const data: any = await safeJson(res);
@@ -244,7 +253,7 @@ export default function DriverDashboard() {
 
   const fetchRideRequests = async (driverId: string) => {
     try {
-      const res = await fetch(`/api/driver/ride-requests?driverId=${driverId}`, {
+      const res = await fetch(`/api/driver/ride-requests`, {
         cache: "no-store",
       });
       const data: any = await safeJson(res);
@@ -258,7 +267,7 @@ export default function DriverDashboard() {
   };
 
   const fetchFinancial = async (driverId: string) => {
-    const res = await fetch(`/api/driver/financial-overview?driverId=${driverId}`, {
+    const res = await fetch(`/api/driver/financial-overview`, {
       cache: "no-store",
     });
     const data: any = await safeJson(res);
@@ -298,11 +307,10 @@ export default function DriverDashboard() {
     setAvailabilityUpdating(true);
 
     try {
-      const res = await fetch("/api/driver/availability", {
+      const res = await csrfFetch("driver", "/api/driver/availability", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          driverId: driver.id,
           isOnline: nextStatus,
         }),
       });
@@ -318,9 +326,6 @@ export default function DriverDashboard() {
 
       setDriver(updatedDriver);
       setIsOnline(nextStatus);
-
-      localStorage.setItem("drivo-driver", JSON.stringify(updatedDriver));
-      localStorage.setItem("drivo-driver-user", JSON.stringify(updatedDriver));
     } catch (err) {
       console.error("Availability update failed:", err);
       alert("Nepodarilo sa zmeniť dostupnosť.");
@@ -338,12 +343,11 @@ export default function DriverDashboard() {
     setRequestUpdating(requestId);
 
     try {
-      const res = await fetch("/api/driver/ride-requests/respond", {
+      const res = await csrfFetch("driver", "/api/driver/ride-requests/respond", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           requestId,
-          driverId: driver.id,
           action,
         }),
       });
@@ -375,12 +379,11 @@ export default function DriverDashboard() {
     setUpdating(bookingId);
 
     try {
-      const res = await fetch("/api/driver/status", {
+      const res = await csrfFetch("driver", "/api/driver/status", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           bookingId,
-          driverId: driver.id,
           newStatus,
           cashConfirmed,
         }),
@@ -464,6 +467,12 @@ export default function DriverDashboard() {
               : isOnline
               ? "🟢 Online"
               : "⚫ Ísť online"}
+          </button>
+          <button
+            onClick={() => void logout()}
+            className="px-4 py-3 rounded-2xl border border-gray-300 font-black text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Odhl?si?
           </button>
         </div>
 

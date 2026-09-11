@@ -1,3 +1,4 @@
+import { getConfiguredOrigin } from "@/lib/env";
 import Stripe from 'stripe';
 
 // Initialize Stripe client
@@ -34,7 +35,7 @@ export async function createPaymentSession(params: PaymentSessionParams) {
     throw new Error("Stripe not configured");
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+  const baseUrl = getConfiguredOrigin();
 
   try {
     const session = await stripe.checkout.sessions.create({

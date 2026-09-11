@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { z } from "zod";
+import { authorizeAdmin } from "@/lib/security/authorization";
+import { authorizePassenger } from "@/lib/passenger-auth";
 
 const REQUEST_TIMEOUT_SECONDS = 30;
+const DispatchSchema = z.object({ bookingId: z.string().regex(/^[a-f0-9]{24}$/i) }).strict();
 const DRIVER_LOCATION_STALE_MINUTES = 30;
 
 function toNumber(value: unknown): number | null {
@@ -62,62 +66,53 @@ function isFreshLocation(lastLocationUpdate: Date | null) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { bookingId } = await request.json();
+    const adminAuth = await authorizeAdmin(request);
+    const passengerAuth = adminAuth.ok ? null : await authorizePassenger(request);
+    if (!adminAuth.ok && passengerAuth && !passengerAuth.ok) return passengerAuth.response;
 
-    if (!bookingId) {
-      return NextResponse.json({ error: "bookingId is required" }, { status: 400 });
-    }
+    const parsed = DispatchSchema.safeParse(await request.json());
+    if (!parsed.success) return NextResponse.json({ error: "Invalid dispatch request" }, { status: 400 });
+    const { bookingId } = parsed.data;
 
     const booking = await prisma.booking.findUnique({
       where: { id: bookingId },
-      include: { driver: true },
     });
 
     if (!booking) {
       return NextResponse.json({ error: "Booking not found" }, { status: 404 });
     }
 
-    if (["COMPLETED", "CANCELLED", "NO_SHOW"].includes(booking.status)) {
-      return NextResponse.json(
-        { error: "Cannot dispatch completed, cancelled, or no-show booking" },
-        { status: 400 }
-      );
+    if (passengerAuth?.ok) {
+      if (booking.passengerId !== passengerAuth.actor.id) {
+        return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      }
     }
 
-    if (["COMPLETED", "CANCELLED", "NO_SHOW"].includes(booking.status)) {
-  return NextResponse.json(
-    { error: "Cannot dispatch completed, cancelled, or no-show booking" },
-    { status: 400 }
-  );
-}
-
-if (
-  booking.status !== "PENDING" &&
-  booking.status !== "SEARCHING_DRIVER"
-) {
-  return NextResponse.json(
-    { error: "Booking cannot be dispatched" },
-    { status: 400 }
-  );
-}
-
-    if (
-      booking.dispatchStatus === "ACCEPTED" &&
-      booking.driverId &&
-      ["ASSIGNED", "DRIVER_ENROUTE", "IN_PROGRESS"].includes(booking.status)
-    ) {
+    if (booking.driverId || booking.dispatchStatus === "ACCEPTED" ||
+      !["PENDING", "CONFIRMED", "SEARCHING_DRIVER"].includes(booking.status)) {
       return NextResponse.json(
-        { error: `Booking already accepted by ${booking.driver?.fullName || "driver"}` },
-        { status: 400 }
+        { error: "Booking cannot be dispatched" },
+        { status: 409 }
       );
+    }
+    if (booking.paymentMethod === "CARD" && booking.status === "PENDING") {
+      return NextResponse.json({ error: "Booking is awaiting payment" }, { status: 409 });
     }
 
     const now = new Date();
+    const activeRequest = await prisma.rideRequest.findFirst({
+      where: { bookingId, status: "PENDING", expiresAt: { gt: now } },
+      select: { id: true },
+    });
+    if (activeRequest) {
+      return NextResponse.json({ success: true, alreadyDispatched: true });
+    }
 
     await prisma.rideRequest.updateMany({
       where: {
         bookingId,
         status: "PENDING",
+        expiresAt: { lte: now },
       },
       data: {
         status: "EXPIRED",
@@ -240,7 +235,7 @@ if (
     const updatedBooking = await prisma.booking.update({
       where: { id: bookingId },
       data: { dispatchStatus: "SEARCHING_DRIVER" },
-      include: { driver: true },
+      select: { id: true, bookingRef: true, status: true, dispatchStatus: true },
     });
 
     console.log("═══════════════════════════════════════");
@@ -262,7 +257,6 @@ if (
       driver: {
         id: selected.driver.id,
         fullName: selected.driver.fullName,
-        phone: selected.driver.phone,
         vehicleType: selected.driver.vehicleType,
         vehiclePlate: selected.driver.vehiclePlate,
         distanceKm:

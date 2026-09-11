@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import {
   createPassengerSession,
-  getPassengerFromRequest,
+  authorizePassenger,
   publicPassenger,
   setPassengerCookie,
   validatePassengerPassword,
@@ -18,12 +18,9 @@ const ProfileSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const passenger = await getPassengerFromRequest(request);
-
-  if (!passenger) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  }
-
+  const auth = await authorizePassenger(request);
+  if (!auth.ok) return auth.response;
+  const passenger = auth.actor;
   const body = await request.json();
   const parsed = ProfileSchema.safeParse(body);
 
@@ -58,12 +55,24 @@ export async function POST(request: NextRequest) {
       email,
       passwordHash,
       profileCompleted: true,
+      authVersion: { increment: 1 },
     },
+  });
+
+  await prisma.passengerSession.updateMany({
+    where: { passengerId: passenger.id, revokedAt: null },
+    data: { revokedAt: new Date() },
   });
 
   if (parsed.data.bookingId) {
     await prisma.booking.updateMany({
-      where: { id: parsed.data.bookingId, passengerId: null },
+      where: {
+        id: parsed.data.bookingId,
+        OR: [
+          { passengerId: passenger.id },
+          { passengerId: null, normalizedPhone: passenger.normalizedPhone || passenger.phone },
+        ],
+      },
       data: { passengerId: passenger.id },
     });
   }

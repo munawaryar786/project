@@ -153,6 +153,7 @@ model Passenger {
   status           String  @default("ACTIVE")
   lastLoginAt      DateTime?
   passwordResetAt  DateTime?
+  authVersion      Int     @default(0)
 
   bookings Booking[]
   otps     PassengerOtp[]
@@ -295,6 +296,7 @@ model Driver {
   isOnline           Boolean   @default(false)
 
   passwordHash String?
+  authVersion Int @default(0)
 
   bookings        Booking[]
   locationHistory DriverLocation[]
@@ -400,6 +402,7 @@ model AdminUser {
   passwordHash String
   fullName     String
   role         String @default("DISPATCHER")
+  authVersion  Int    @default(0)
 
   createdAt DateTime @default(now())
 }

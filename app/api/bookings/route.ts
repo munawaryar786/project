@@ -4,8 +4,12 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { generateBookingRef, getSourceDomain } from "@/lib/utils";
 import { estimateBookingPrice } from "@/lib/pricing";
-import { getPassengerFromRequest, normalizePassengerPhone } from "@/lib/passenger-auth";
+import { calculateAuthoritativeBookingQuote } from "@/lib/booking-quote";
+import { authorizePassenger, getPassengerFromRequest, normalizePassengerPhone } from "@/lib/passenger-auth";
 import { isCustomerServiceEnabled } from "@/lib/feature-flags";
+import { authorizeAdmin } from "@/lib/security/authorization";
+import { signBookingPrice } from "@/lib/security/booking-price";
+import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 import {
   bookingToEmailData,
   isSeniorAssistedService,
@@ -105,16 +109,7 @@ const BookingSchema = z.object({
   fareBreakdown: z.unknown().optional().nullable(),
 });
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function readNumber(value: unknown) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-export async function POST(request: NextRequest) {
+async function createBooking(request: NextRequest) {
   try {
     const body = await request.json();
 
@@ -140,6 +135,10 @@ export async function POST(request: NextRequest) {
 
     const normalizedPhone = normalizePassengerPhone(`${data.customerPhoneCode}${data.customerPhone}`);
     const currentPassenger = await getPassengerFromRequest(request);
+    if (currentPassenger) {
+      const auth = await authorizePassenger(request);
+      if (!auth.ok) return auth.response;
+    }
     const capacityPassengerCount = data.passengerCount + data.companionCount;
     const wavRequired =
       data.wavRequired ||
@@ -162,14 +161,21 @@ export async function POST(request: NextRequest) {
       wheelchairNeeded: data.wheelchairNeeded || data.wheelchairUser,
       wavRequired,
     });
-    const finalEstimatedPrice =
-      (isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.totalFare) : null) ??
-      readNumber(data.estimatedPrice) ??
-      estimate.estimatedPrice;
-    const optionalFees =
-      isRecord(data.fareBreakdown) && isRecord(data.fareBreakdown.optionalServiceCharges)
-        ? data.fareBreakdown.optionalServiceCharges
-        : undefined;
+    const authoritativeQuote = await calculateAuthoritativeBookingQuote({
+      pickupAddress: data.pickupAddress,
+      dropoffAddress: data.dropoffAddress,
+      serviceType: data.serviceType,
+      scheduledDate: data.scheduledDate,
+      scheduledTime: data.scheduledTime,
+      waitAndGreet: data.waitAndGreet,
+      recurrenceType: data.recurrenceType || data.recurrence,
+      recurrenceCustom: data.recurrenceCustom,
+      returnDate: data.returnDate,
+      returnTime: data.returnTime,
+    });
+    const authoritativeFare = authoritativeQuote.breakdown;
+    const finalEstimatedPrice = authoritativeFare.totalFare;
+    const optionalFees = authoritativeFare.optionalServiceCharges;
 
     if (capacityPassengerCount > 6) {
       return NextResponse.json(
@@ -339,16 +345,19 @@ export async function POST(request: NextRequest) {
         sourceDomain,
 
         estimatedPrice: finalEstimatedPrice,
-        distanceKm: estimate.distanceKm,
+        distanceKm: authoritativeQuote.distance.distanceKm,
         vehicleRequired: estimate.vehicleRequired,
-        fareBaseFare: isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.baseFare) : null,
-        fareDistanceCharge: isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.distanceCharge) : null,
-        fareWaitingCharge: isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.waitingCharge) : null,
-        fareOptionalFees: optionalFees as Prisma.InputJsonValue,
-        fareNightCharge: isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.nightServiceCharge) : null,
-        fareMinimumAdjustment: isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.minimumFareAdjustment) : null,
-        fareTotalFare: isRecord(data.fareBreakdown) ? readNumber(data.fareBreakdown.totalFare) : finalEstimatedPrice,
-        fareBreakdown: isRecord(data.fareBreakdown) ? (data.fareBreakdown as Prisma.InputJsonValue) : undefined,
+        fareBaseFare: authoritativeFare.baseFare,
+        fareDistanceCharge: authoritativeFare.distanceCharge,
+        fareWaitingCharge: authoritativeFare.waitingCharge,
+        fareOptionalFees: optionalFees as unknown as Prisma.InputJsonValue,
+        fareNightCharge: authoritativeFare.nightServiceCharge,
+        fareMinimumAdjustment: authoritativeFare.minimumFareAdjustment,
+        fareTotalFare: authoritativeFare.totalFare,
+        fareBreakdown: {
+          ...authoritativeFare,
+          serverPriceMac: signBookingPrice(bookingRef, finalEstimatedPrice),
+        } as unknown as Prisma.InputJsonValue,
       },
     });
 
@@ -513,7 +522,15 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET() {
+export const POST = withRateLimit(createBooking, {
+  ...rateLimits.public,
+  scope: "booking_create",
+  max: 20,
+});
+
+export async function GET(request: NextRequest) {
+  const auth = await authorizeAdmin(request);
+  if (!auth.ok) return auth.response;
   try {
     const bookings = await prisma.booking.findMany({
       orderBy: { createdAt: "desc" },

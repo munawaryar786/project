@@ -1,25 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { bookingToEmailData, sendBookingCompletionEmails } from "@/lib/email";
 import {
-  getPassengerFromRequest,
+  authorizePassenger,
   normalizePassengerPhone,
 } from "@/lib/passenger-auth";
 import { prisma } from "@/lib/prisma";
+import { csrfCookieName } from "@/lib/security/session";
+import { getConfiguredOrigin } from "@/lib/env";
 
 export async function POST(request: NextRequest) {
   try {
-    const passenger = await getPassengerFromRequest(request);
-    if (!passenger) {
-      return NextResponse.json(
-        {
-          success: false,
-          code: "AUTHENTICATION_REQUIRED",
-          message: "Please log in or verify your phone to continue.",
-          error: "Please log in or verify your phone to continue.",
-        },
-        { status: 401 }
-      );
-    }
+    const auth = await authorizePassenger(request);
+    if (!auth.ok) return auth.response;
+    const passenger = auth.actor;
 
     const body = await request.json();
     const bookingId = String(body.bookingId || "");
@@ -59,9 +52,14 @@ export async function POST(request: NextRequest) {
       await sendBookingCompletionEmails(bookingToEmailData(updated));
 
       try {
-        await fetch(`${request.nextUrl.origin}/api/dispatch/start`, {
+        await fetch(`${getConfiguredOrigin()}/api/dispatch/start`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Origin": getConfiguredOrigin(),
+            "Cookie": request.headers.get("cookie") || "",
+            "X-Drivo-CSRF": request.cookies.get(csrfCookieName("PASSENGER"))?.value || "",
+          },
           body: JSON.stringify({ bookingId }),
         });
       } catch (error) {

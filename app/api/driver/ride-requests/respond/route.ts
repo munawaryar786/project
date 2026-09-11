@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { z } from "zod";
+import { authorizeDriver } from "@/lib/security/authorization";
 
 const REQUEST_TIMEOUT_SECONDS = 30;
+const RespondSchema = z.object({
+  requestId: z.string().regex(/^[a-f0-9]{24}$/i),
+  action: z.enum(["ACCEPT", "REJECT"]),
+  driverId: z.string().optional(),
+}).strict();
 
 function toNumber(value: unknown): number | null {
   const n = Number(value);
@@ -30,22 +37,15 @@ function vehicleMatches(driverVehicle: string | null, serviceType: string) {
 }
 
 export async function PATCH(request: NextRequest) {
+  const auth = await authorizeDriver(request);
+  if (!auth.ok) return auth.response;
   try {
-    const { requestId, driverId, action } = await request.json();
-
-    if (!requestId || !driverId || !action) {
-      return NextResponse.json(
-        { error: "requestId, driverId, and action are required" },
-        { status: 400 }
-      );
+    const parsed = RespondSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid ride response" }, { status: 400 });
     }
-
-    if (!["ACCEPT", "REJECT"].includes(action)) {
-      return NextResponse.json(
-        { error: "Action must be ACCEPT or REJECT" },
-        { status: 400 }
-      );
-    }
+    const { requestId, action } = parsed.data;
+    const driverId = auth.actor.id;
 
     const rideRequest = await prisma.rideRequest.findUnique({
       where: { id: requestId },
@@ -57,14 +57,14 @@ export async function PATCH(request: NextRequest) {
 
     if (rideRequest.driverId !== driverId) {
       return NextResponse.json(
-        { error: "This ride request does not belong to this driver" },
-        { status: 403 }
+        { error: "Ride request not found" },
+        { status: 404 }
       );
     }
 
     const booking = await prisma.booking.findUnique({
       where: { id: rideRequest.bookingId },
-      include: { driver: true },
+      include: { driver: { omit: { passwordHash: true, authVersion: true } } },
     });
 
     if (!booking) {
@@ -132,7 +132,7 @@ export async function PATCH(request: NextRequest) {
           dispatchStatus: "ACCEPTED",
           acceptedAt: new Date(),
         },
-        include: { driver: true },
+        include: { driver: { omit: { passwordHash: true, authVersion: true } } },
       });
 
       await prisma.driver.update({
@@ -294,7 +294,6 @@ const previousRequests = await prisma.rideRequest.findMany({
       nextDriver: {
         id: selected.driver.id,
         fullName: selected.driver.fullName,
-        phone: selected.driver.phone,
         vehicleType: selected.driver.vehicleType,
         vehiclePlate: selected.driver.vehiclePlate,
         distanceKm:

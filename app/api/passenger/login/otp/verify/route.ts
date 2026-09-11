@@ -32,7 +32,7 @@ async function handler(request: NextRequest) {
     const passenger = await prisma.passenger.findFirst({
       where: { OR: [{ phone: normalizedPhone }, { normalizedPhone }] },
     });
-    if (!passenger?.passwordHash) {
+    if (!passenger?.passwordHash || passenger.status !== "ACTIVE") {
       return NextResponse.json({ error: "Invalid or expired verification code" }, { status: 400 });
     }
 
@@ -58,10 +58,13 @@ async function handler(request: NextRequest) {
       return NextResponse.json({ error: "Invalid or expired verification code" }, { status: 400 });
     }
 
-    await prisma.passengerOtp.update({
-      where: { id: otp.id },
+    const consumed = await prisma.passengerOtp.updateMany({
+      where: { id: otp.id, used: false, expiresAt: { gte: new Date() }, attempts: { lt: otp.maxAttempts } },
       data: { used: true },
     });
+    if (consumed.count !== 1) {
+      return NextResponse.json({ error: "Invalid or expired verification code" }, { status: 400 });
+    }
 
     const updated = await prisma.passenger.update({
       where: { id: passenger.id },

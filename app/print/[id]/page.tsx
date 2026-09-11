@@ -1,4 +1,6 @@
 "use client";
+
+import { csrfFetch } from "@/lib/client/csrf-fetch";
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { EMAIL, PHONE_NUMBER } from '@/lib/constants';
@@ -43,7 +45,7 @@ export default function PrintBookingPage() {
 
     const fetchBooking = async () => {
       try {
-        const res = await fetch(`/api/bookings/${bookingId}`);
+        const res = await csrfFetch("passenger", `/api/bookings/${bookingId}`);
         if (!res.ok) throw new Error('Booking not found');
         const data = await res.json();
         setBooking(data.booking);

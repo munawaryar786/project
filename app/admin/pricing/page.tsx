@@ -1,5 +1,7 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { useEffect, useMemo, useState } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { FEATURE_FLAGS } from "@/lib/feature-flags";
@@ -140,9 +142,9 @@ export default function AdminPricingPage() {
 
     try {
       const [pricingData, profilesData, commissionsData] = await Promise.all([
-        fetch("/api/admin/pricing", { cache: "no-store" }).then(safeJson),
-        fetch("/api/admin/pricing/profiles", { cache: "no-store" }).then(safeJson),
-        fetch("/api/admin/commissions", { cache: "no-store" }).then(safeJson),
+        csrfFetch("admin", "/api/admin/pricing", { cache: "no-store" }).then(safeJson),
+        csrfFetch("admin", "/api/admin/pricing/profiles", { cache: "no-store" }).then(safeJson),
+        csrfFetch("admin", "/api/admin/commissions", { cache: "no-store" }).then(safeJson),
       ]);
 
       const loadedPricing = pricingData.pricing || {};
@@ -283,7 +285,7 @@ export default function AdminPricingPage() {
         })),
       };
 
-      const data = await fetch("/api/admin/pricing", {
+      const data = await csrfFetch("admin", "/api/admin/pricing", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -313,7 +315,7 @@ export default function AdminPricingPage() {
     setMessage("");
 
     try {
-      const data = await fetch("/api/admin/pricing/profiles", {
+      const data = await csrfFetch("admin", "/api/admin/pricing/profiles", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -356,7 +358,7 @@ export default function AdminPricingPage() {
     setMessage("");
 
     try {
-      const data = await fetch("/api/admin/commissions", {
+      const data = await csrfFetch("admin", "/api/admin/commissions", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

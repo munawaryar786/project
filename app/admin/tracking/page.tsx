@@ -1,5 +1,7 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -32,19 +34,12 @@ export default function DriverTrackingPage() {
   const [lastUpdate, setLastUpdate] = useState<string>("");
 
   useEffect(() => {
-    checkAuth();
     fetchDrivers();
 
     const interval = setInterval(fetchDrivers, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  const checkAuth = () => {
-    const token = localStorage.getItem("drivo-admin-access-token");
-    if (!token) {
-      router.push("/admin/login");
-    }
-  };
 
   const safeJson = async (res: Response) => {
     const text = await res.text();
@@ -58,13 +53,9 @@ export default function DriverTrackingPage() {
 
   const fetchDrivers = async () => {
     try {
-      const token = localStorage.getItem("drivo-admin-access-token");
 
-      const res = await fetch("/api/admin/drivers/tracking", {
+      const res = await csrfFetch("admin", "/api/admin/drivers/tracking", {
         cache: "no-store",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
       });
 
       const data: any = await safeJson(res);

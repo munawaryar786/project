@@ -1,5 +1,7 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -21,7 +23,7 @@ function PaymentSuccessContent() {
 
     const verifyPayment = async () => {
       try {
-        const res = await fetch("/api/payments/verify", {
+        const res = await csrfFetch("passenger", "/api/payments/verify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionId }),
