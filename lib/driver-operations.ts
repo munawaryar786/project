@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { writeOutboxEvent } from "@/lib/outbox";
 import { createOrUpdateDriverEarningForBooking } from "@/lib/commission-engine";
 import { ACTIVE_TRIP_STATUSES, canTransitionTrip, DRIVER_ERROR_CODES, evaluateDriverPresence, isLocationFresh } from "@/lib/driver-state";
+import { driverCompatibility } from "@/lib/dispatch-matching";
+import { getDispatchConfig } from "@/lib/dispatch-config";
 
 type Db = Prisma.TransactionClient;
 const ACCEPTABLE_BOOKING_STATUSES = ["PENDING", "CONFIRMED", "SEARCHING_DRIVER"];
@@ -54,41 +56,32 @@ export async function expireDriverOffers(driverId: string, now = new Date(), db:
     data: { status: "EXPIRED", respondedAt: now } });
 }
 
-export async function createDriverOffer(input: { bookingId: string; driverId: string; expiresAt?: Date }) {
-  try {
-    return await prisma.$transaction(async (tx) => {
-      const now = new Date();
-      const expiresAt = input.expiresAt || new Date(now.getTime() + 30_000);
-      if (!Number.isFinite(expiresAt.getTime()) || expiresAt <= now) {
-        return { ok: false as const, code: DRIVER_ERROR_CODES.OFFER_EXPIRED };
-      }
-      const driver = await tx.driver.findUnique({ where: { id: input.driverId } });
-      if (!driver || driver.status !== "ACTIVE" || !driver.isOnline || driver.isOnTrip ||
-          await findConflictingActiveTrip(input.driverId, undefined, tx)) {
-        return { ok: false as const, code: DRIVER_ERROR_CODES.DRIVER_NOT_AVAILABLE };
-      }
-      const booking = await tx.booking.findFirst({ where: { id: input.bookingId, ...ELIGIBLE } });
-      if (!booking) return { ok: false as const, code: DRIVER_ERROR_CODES.BOOKING_ALREADY_CLAIMED };
-      const existing = await tx.rideRequest.findFirst({ where: { bookingId: input.bookingId, driverId: input.driverId } });
-      if (existing) {
-        if (existing.status === "PENDING" && existing.expiresAt > now) return { ok: true as const, offer: existing, reused: true };
-        if (existing.status === "PENDING") {
-          await tx.rideRequest.updateMany({ where: { id: existing.id, status: "PENDING", expiresAt: { lte: now } },
-            data: { status: "EXPIRED", respondedAt: now } });
-        }
-        // Never overwrite a historical offer or silently retry the same driver.
-        return { ok: false as const, code: "OFFER_ALREADY_EXISTS" };
-      }
-      const claimedBooking = await tx.booking.updateMany({ where: { id: input.bookingId, ...ELIGIBLE },
-        data: { dispatchStatus: "SEARCHING_DRIVER" } });
-      if (claimedBooking.count !== 1) throw new DriverConflict(DRIVER_ERROR_CODES.BOOKING_ALREADY_CLAIMED);
-      const offer = await tx.rideRequest.create({ data: { bookingId: input.bookingId, driverId: input.driverId,
-        status: "PENDING", sentAt: now, expiresAt } });
-      return { ok: true as const, offer, reused: false };
-    });
-  } catch (error) { return transactionFailure(error); }
+export async function createDriverOfferInTransaction(tx: Db, input: { bookingId: string; driverId: string; expiresAt?: Date; dispatchState?: string }) {
+  const now = new Date();
+  const expiresAt = input.expiresAt || new Date(now.getTime() + 30_000);
+  if (!Number.isFinite(expiresAt.getTime()) || expiresAt <= now) return { ok: false as const, code: DRIVER_ERROR_CODES.OFFER_EXPIRED };
+  const driver = await tx.driver.findUnique({ where: { id: input.driverId } });
+  if (!driver || driver.status !== "ACTIVE" || !driver.isOnline || driver.isOnTrip || await findConflictingActiveTrip(input.driverId, undefined, tx)) return { ok: false as const, code: DRIVER_ERROR_CODES.DRIVER_NOT_AVAILABLE };
+  const booking = await tx.booking.findFirst({ where: { id: input.bookingId, ...ELIGIBLE, ...(input.dispatchState ? { dispatchStatus: input.dispatchState } : {}) } });
+  if (!booking) return { ok: false as const, code: DRIVER_ERROR_CODES.BOOKING_ALREADY_CLAIMED };
+  const existing = await tx.rideRequest.findFirst({ where: { bookingId: input.bookingId, driverId: input.driverId } });
+  if (existing) {
+    if (existing.status === "PENDING" && existing.expiresAt > now) return { ok: true as const, offer: existing, reused: true };
+    if (existing.status === "PENDING") await tx.rideRequest.updateMany({ where: { id: existing.id, status: "PENDING", expiresAt: { lte: now } }, data: { status: "EXPIRED", respondedAt: now } });
+    return { ok: false as const, code: "OFFER_ALREADY_EXISTS" };
+  }
+  const activeOffer = await tx.rideRequest.findFirst({ where: { bookingId: input.bookingId, status: "PENDING", expiresAt: { gt: now } }, select: { id: true } });
+  if (activeOffer) return { ok: false as const, code: "ACTIVE_OFFER_EXISTS" };
+  const claimedBooking = await tx.booking.updateMany({ where: { id: input.bookingId, ...ELIGIBLE, ...(input.dispatchState ? { dispatchStatus: input.dispatchState } : {}) }, data: { dispatchStatus: "SEARCHING_DRIVER" } });
+  if (claimedBooking.count !== 1) throw new DriverConflict(DRIVER_ERROR_CODES.BOOKING_ALREADY_CLAIMED);
+  const offer = await tx.rideRequest.create({ data: { bookingId: input.bookingId, driverId: input.driverId, status: "PENDING", sentAt: now, expiresAt } });
+  return { ok: true as const, offer, reused: false };
 }
 
+export async function createDriverOffer(input: { bookingId: string; driverId: string; expiresAt?: Date }) {
+  try { return await prisma.$transaction((tx) => createDriverOfferInTransaction(tx, input)); }
+  catch (error) { return transactionFailure(error); }
+}
 export async function acceptDriverOfferAtomically(input: { offerId: string; driverId: string }) {
   try {
     return await prisma.$transaction(async (tx) => {
@@ -105,6 +98,17 @@ export async function acceptDriverOfferAtomically(input: { offerId: string; driv
       }
       if (await findConflictingActiveTrip(input.driverId, undefined, tx)) {
         return { ok: false as const, code: DRIVER_ERROR_CODES.CONFLICTING_ACTIVE_TRIP };
+      }
+      const acceptanceBooking = await tx.booking.findUnique({ where: { id: offer.bookingId } });
+      const dispatchConfig = getDispatchConfig();
+      if (acceptanceBooking?.dispatchStatus === "SEARCHING_DRIVER" && dispatchConfig.ok) {
+        const compatibility = driverCompatibility({
+          booking: acceptanceBooking, driver, hasConflictingTrip: false, attempted: false,
+          now: new Date(), locationMaxAgeSeconds: dispatchConfig.config.locationMaxAgeSeconds,
+        });
+        if (!compatibility.eligible) {
+          return { ok: false as const, code: compatibility.reason === "DRIVER_BUSY" ? DRIVER_ERROR_CODES.CONFLICTING_ACTIVE_TRIP : DRIVER_ERROR_CODES.DRIVER_NOT_AVAILABLE };
+        }
       }
       const now = new Date();
       const claimedOffer = await tx.rideRequest.updateMany({

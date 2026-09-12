@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { authorizeDriver } from "@/lib/security/authorization";
 import { OFFER_BOOKING_SELECT, serializeOfferBooking } from "@/lib/driver-projections";
 import { expireDriverOffers, getDriverPresence } from "@/lib/driver-operations";
+import { advanceExpiredOffersForDriver } from "@/lib/automatic-dispatch";
 
 const ACTIVE_BOOKING_STATUSES = ["PENDING", "CONFIRMED", "SEARCHING_DRIVER"];
 
@@ -13,6 +14,7 @@ export async function GET(request: NextRequest) {
   try {
     const driverId = auth.actor.id;
     const now = new Date();
+    await advanceExpiredOffersForDriver(driverId);
     await expireDriverOffers(driverId, now);
     const [driver, rideRequests] = await Promise.all([
       prisma.driver.findUnique({

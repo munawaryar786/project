@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyWebhookSignature } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
+import { startAutomaticDispatch } from "@/lib/automatic-dispatch";
 import { hasAuthoritativeBookingPrice } from "@/lib/security/booking-price";
 import {
   bookingToEmailData,
@@ -18,16 +19,18 @@ export async function POST(request: NextRequest) {
     if (!valid || !event) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
     }
-    if (event.type === "checkout.session.completed") {
-      await handleCheckoutCompleted(event.data.object);
-    }
+    const updatedBooking = event.type === "checkout.session.completed"
+      ? await handleCheckoutCompleted(event.data.object)
+      : null;
+    const dispatch = updatedBooking && !updatedBooking.scheduledRide ? await startAutomaticDispatch(updatedBooking.id) : null;
+    if (dispatch && !dispatch.ok) console.warn("[dispatch] payment-confirmed start deferred", { bookingId: updatedBooking.id, code: dispatch.code });
     return NextResponse.json({ received: true });
   } catch {
     return NextResponse.json({ error: "Webhook handler failed" }, { status: 500 });
   }
 }
 
-async function handleCheckoutCompleted(session: any) {
+async function handleCheckoutCompleted(session: any): Promise<any | null> {
   const bookingId = session.metadata?.bookingId;
   const bookingRef = session.metadata?.bookingRef;
   if (!bookingId || !bookingRef || session.payment_status !== "paid") {
@@ -51,10 +54,10 @@ async function handleCheckoutCompleted(session: any) {
     },
     data: { status: "CONFIRMED" },
   });
-  if (updated.count === 0) return;
+  if (updated.count === 0) return null;
 
   const confirmedBooking = await prisma.booking.findUnique({ where: { id: booking.id } });
-  if (!confirmedBooking) return;
+  if (!confirmedBooking) return null;
   if (confirmedBooking.customerEmail) {
     await sendPaymentReceipt({
       ...bookingToEmailData(confirmedBooking),
@@ -63,4 +66,5 @@ async function handleCheckoutCompleted(session: any) {
     });
   }
   await sendBookingCompletionEmails(bookingToEmailData(confirmedBooking));
+  return confirmedBooking;
 }

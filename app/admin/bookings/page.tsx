@@ -167,8 +167,10 @@ const STATUS_OPTIONS = [
 const DISPATCH_OPTIONS = [
   "NOT_STARTED",
   "SEARCHING_DRIVER",
+  "DISPATCHING",
   "ACCEPTED",
   "NO_DRIVER_AVAILABLE",
+  "DISPATCH_EXHAUSTED",
 ];
 
 export default function AdminBookingsPage() {
@@ -488,7 +490,8 @@ export default function AdminBookingsPage() {
       searching: bookings.filter(
         (b) =>
           b.dispatchStatus ===
-          "SEARCHING_DRIVER"
+          "SEARCHING_DRIVER",
+          "DISPATCH_EXHAUSTED"
       ).length,
     };
   }, [bookings]);
@@ -1493,9 +1496,14 @@ function DispatchBadge({
     SEARCHING_DRIVER:
       "bg-blue-100 text-blue-700",
 
+    DISPATCHING:
+      "bg-yellow-100 text-yellow-700",
+
     ACCEPTED:
       "bg-green-100 text-green-700",
 
+    DISPATCH_EXHAUSTED:
+      "bg-red-50 text-red-700",
     NO_DRIVER_AVAILABLE:
       "bg-red-100 text-red-700",
   };

@@ -90,7 +90,7 @@ export default function AdminDashboard() {
         recentBookings.filter((b) => b.dispatchStatus === "SEARCHING_DRIVER").length,
       noDriverAvailable:
         stats?.noDriverAvailable ??
-        recentBookings.filter((b) => b.dispatchStatus === "NO_DRIVER_AVAILABLE").length,
+        recentBookings.filter((b) => ["NO_DRIVER_AVAILABLE", "DISPATCH_EXHAUSTED"].includes(b.dispatchStatus || "")).length,
       todayRevenue:
         stats?.todayRevenue ??
         recentBookings
@@ -274,8 +274,10 @@ function DispatchBadge({ status }: { status?: string | null }) {
   const styles: Record<string, string> = {
     NOT_STARTED: "bg-gray-100 text-gray-600",
     SEARCHING_DRIVER: "bg-drivo-blue-light text-drivo-blue",
+    DISPATCHING: "bg-yellow-50 text-yellow-700",
     ACCEPTED: "bg-drivo-green-light text-drivo-teal",
     NO_DRIVER_AVAILABLE: "bg-red-50 text-red-700",
+    DISPATCH_EXHAUSTED: "bg-red-50 text-red-700",
   };
 
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${styles[value] || "bg-gray-100 text-gray-600"}`}>{t(`dispatch.${value}`, value)}</span>;

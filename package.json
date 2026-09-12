@@ -11,7 +11,8 @@
     "test:ux1": "node scripts/ux1-check.cjs",
     "seed:pricing": "node prisma/seed-pricing.js",
     "postinstall": "prisma generate",
-    "test:phase3b": "node scripts/phase3b-check.cjs && node scripts/phase3b-runtime-check.cjs"
+    "test:phase3b": "node scripts/phase3b-check.cjs && node scripts/phase3b-runtime-check.cjs",
+    "test:phase3c": "node scripts/phase3c-check.cjs"
   },
   "dependencies": {
     "@googlemaps/google-maps-services-js": "^3.4.2",

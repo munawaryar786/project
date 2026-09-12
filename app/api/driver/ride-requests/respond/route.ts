@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeDriver } from "@/lib/security/authorization";
 import { acceptDriverOfferAtomically, declineDriverOffer } from "@/lib/driver-operations";
+import { advanceDispatch } from "@/lib/automatic-dispatch";
 import { DRIVER_ERROR_CODES, errorBody } from "@/lib/driver-state";
 
 
@@ -27,6 +28,9 @@ export async function PATCH(request: NextRequest) {
     ? await acceptDriverOfferAtomically({ offerId: requestId, driverId: auth.actor.id })
     : await declineDriverOffer(requestId, auth.actor.id);
   if (!result.ok) return NextResponse.json(errorBody(result.code, result.code.replaceAll("_", " ")), { status: statusFor(result.code) });
-  if (action !== "ACCEPT") return NextResponse.json({ success: true, action: "DECLINED", offerId: requestId });
+  if (action !== "ACCEPT") {
+    const advancement = result.bookingId ? await advanceDispatch(result.bookingId) : null;
+    return NextResponse.json({ success: true, action: "DECLINED", offerId: requestId, dispatch: advancement?.ok ? advancement.outcome : "ADVANCEMENT_PENDING" });
+  }
   return NextResponse.json({ success: true, action: "ACCEPTED", offerId: requestId, bookingId: result.bookingId });
 }

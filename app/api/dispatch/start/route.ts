@@ -1,271 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { prisma } from "@/lib/prisma";
 import { authorizeAdmin } from "@/lib/security/authorization";
 import { authorizePassenger } from "@/lib/passenger-auth";
-import { createDriverOffer } from "@/lib/driver-operations";
-import { isLocationFresh } from "@/lib/driver-state";
+import { startAutomaticDispatch } from "@/lib/automatic-dispatch";
 
-const REQUEST_TIMEOUT_SECONDS = 30;
 const DispatchSchema = z.object({ bookingId: z.string().regex(/^[a-f0-9]{24}$/i) }).strict();
-const DRIVER_LOCATION_STALE_MINUTES = 30;
-
-function toNumber(value: unknown): number | null {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
-function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number) {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) ** 2;
-
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function normalizeVehicleType(vehicleType?: string | null) {
-  return vehicleType?.trim().toUpperCase() || "UNKNOWN";
-}
-
-function vehicleMatches(
-  driverVehicle: string | null | undefined,
-  serviceType: string,
-  passengerCount: number
-) {
-  const vehicle = normalizeVehicleType(driverVehicle);
-
-  // TEMP PRODUCTION-SAFE MVP RULE:
-  // If vehicle type is not set in admin, allow driver for dispatch.
-  // Later, when all drivers have vehicles assigned, make this stricter.
-  if (vehicle === "UNKNOWN") return true;
-
-  if (passengerCount >= 5) {
-    return ["7_SEATER", "MINIVAN", "VAN", "WAV"].includes(vehicle);
-  }
-
-  if (serviceType === "ACCESSIBLE") {
-    return ["WAV", "7_SEATER", "MINIVAN", "VAN"].includes(vehicle);
-  }
-
-  if (serviceType === "AIRPORT") {
-    return ["STANDARD", "7_SEATER", "MINIVAN", "VAN", "WAV"].includes(vehicle);
-  }
-
-  return true;
-}
-
-function isFreshLocation(lastLocationUpdate: Date | null) {
-  if (!lastLocationUpdate) return false;
-  return isLocationFresh(lastLocationUpdate, new Date(), DRIVER_LOCATION_STALE_MINUTES * 60 * 1000);
-}
 
 export async function POST(request: NextRequest) {
-  try {
-    const adminAuth = await authorizeAdmin(request);
-    const passengerAuth = adminAuth.ok ? null : await authorizePassenger(request);
-    if (!adminAuth.ok && passengerAuth && !passengerAuth.ok) return passengerAuth.response;
+  const adminAuth = await authorizeAdmin(request);
+  const passengerAuth = adminAuth.ok ? null : await authorizePassenger(request);
+  if (!adminAuth.ok && passengerAuth && !passengerAuth.ok) return passengerAuth.response;
 
-    const parsed = DispatchSchema.safeParse(await request.json());
-    if (!parsed.success) return NextResponse.json({ error: "Invalid dispatch request" }, { status: 400 });
-    const { bookingId } = parsed.data;
+  const parsed = DispatchSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: "Invalid dispatch request", code: "INVALID_REQUEST" }, { status: 400 });
 
-    const booking = await prisma.booking.findUnique({
-      where: { id: bookingId },
-    });
-
-    if (!booking) {
-      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
-    }
-
-    if (passengerAuth?.ok) {
-      if (booking.passengerId !== passengerAuth.actor.id) {
-        return NextResponse.json({ error: "Booking not found" }, { status: 404 });
-      }
-    }
-
-    if (booking.driverId || booking.dispatchStatus === "ACCEPTED" ||
-      !["PENDING", "CONFIRMED", "SEARCHING_DRIVER"].includes(booking.status)) {
-      return NextResponse.json(
-        { error: "Booking cannot be dispatched" },
-        { status: 409 }
-      );
-    }
-    if (booking.paymentMethod === "CARD" && booking.status === "PENDING") {
-      return NextResponse.json({ error: "Booking is awaiting payment" }, { status: 409 });
-    }
-
-    const now = new Date();
-    const activeRequest = await prisma.rideRequest.findFirst({
-      where: { bookingId, status: "PENDING", expiresAt: { gt: now } },
-      select: { id: true },
-    });
-    if (activeRequest) {
-      return NextResponse.json({ success: true, alreadyDispatched: true });
-    }
-
-    await prisma.rideRequest.updateMany({
-      where: {
-        bookingId,
-        status: "PENDING",
-        expiresAt: { lte: now },
-      },
-      data: {
-        status: "EXPIRED",
-        respondedAt: now,
-      },
-    });
-
-    const previousRequests = await prisma.rideRequest.findMany({
-      where: {
-        bookingId,
-        status: { in: ["DECLINED", "REJECTED", "ACCEPTED", "EXPIRED", "CANCELLED"] },
-      },
-      select: { driverId: true },
-    });
-
-    const excludedDriverIds = previousRequests.map((r) => r.driverId);
-
-    const drivers = await prisma.driver.findMany({ 
-    
-      where: {
-        status: "ACTIVE",
-        isOnline: true,
-        isOnTrip: false,
-        id: { notIn: excludedDriverIds },
-      },
-      select: {
-        id: true,
-        fullName: true,
-        phone: true,
-        vehicleType: true,
-        vehiclePlate: true,
-        vehicleCapacity: true,
-        currentLat: true,
-        currentLng: true,
-        lastLocationUpdate: true,
-        isOnline: true,
-        isOnTrip: true,
-        status: true,
-      },
-    });
-    const capacityFilteredDrivers =
-  booking.passengerCount >= 6
-    ? drivers.filter((driver) => (driver.vehicleCapacity ?? 4) >= 6)
-    : drivers;
-
-    const pickupLat = toNumber((booking as any).pickupLat);
-    const pickupLng = toNumber((booking as any).pickupLng);
-
-    const rankedDrivers = capacityFilteredDrivers
-      .filter((driver) =>
-        vehicleMatches(driver.vehicleType, booking.serviceType, booking.passengerCount)
-      )
-      .map((driver) => {
-        const driverLat = toNumber(driver.currentLat);
-        const driverLng = toNumber(driver.currentLng);
-
-        const hasFreshLocation =
-          pickupLat !== null &&
-          pickupLng !== null &&
-          driverLat !== null &&
-          driverLng !== null &&
-          isFreshLocation(driver.lastLocationUpdate);
-
-        const distance = hasFreshLocation
-          ? distanceKm(pickupLat, pickupLng, driverLat, driverLng)
-          : null;
-
-        const lastUpdateScore = driver.lastLocationUpdate
-          ? new Date(driver.lastLocationUpdate).getTime()
-          : 0;
-
-        return { driver, distance, hasFreshLocation, lastUpdateScore };
-      })
-      .sort((a, b) => {
-        if (a.distance !== null && b.distance !== null) return a.distance - b.distance;
-        if (a.distance !== null) return -1;
-        if (b.distance !== null) return 1;
-        return b.lastUpdateScore - a.lastUpdateScore;
-      });
-
-    console.log("🧪 DISPATCH DEBUG", {
-      booking: booking.bookingRef,
-      serviceType: booking.serviceType,
-      passengerCount: booking.passengerCount,
-      availableDrivers: drivers.length,
-      rankedDrivers: rankedDrivers.map((r) => ({
-        name: r.driver.fullName,
-        vehicleType: r.driver.vehicleType,
-        isOnline: r.driver.isOnline,
-        isOnTrip: r.driver.isOnTrip,
-        distance: r.distance,
-      })),
-    });
-
-    const selected = rankedDrivers[0];
-
-    if (!selected) {
-      await prisma.booking.update({
-        where: { id: bookingId },
-        data: { dispatchStatus: "NO_DRIVER_AVAILABLE" },
-      });
-
-      return NextResponse.json(
-        { error: "No online available driver found" },
-        { status: 404 }
-      );
-    }
-
-    const expiresAt = new Date(Date.now() + REQUEST_TIMEOUT_SECONDS * 1000);
-
-    const offerResult = await createDriverOffer({ bookingId, driverId: selected.driver.id, expiresAt });
-    if (!offerResult.ok) {
-      return NextResponse.json({ error: "Driver offer could not be created", code: offerResult.code }, { status: offerResult.code === "TRANSACTION_UNAVAILABLE" ? 503 : 409 });
-    }
-    const rideRequest = offerResult.offer;
-
-    const updatedBooking = await prisma.booking.findUnique({
-      where: { id: bookingId },
-      select: { id: true, bookingRef: true, status: true, dispatchStatus: true },
-    });
-
-    console.log("═══════════════════════════════════════");
-    console.log("📡 DISPATCH STARTED");
-    console.log(`📋 Booking: ${booking.bookingRef}`);
-    console.log(`🚗 Driver:  ${selected.driver.fullName}`);
-    console.log(
-      `📍 Distance: ${
-        selected.distance !== null ? `${selected.distance.toFixed(2)} km` : "N/A"
-      }`
-    );
-    console.log(`⏰ Expires: ${expiresAt.toISOString()}`);
-    console.log("═══════════════════════════════════════");
-
-    return NextResponse.json({
-      success: true,
-      booking: updatedBooking,
-      rideRequest,
-      driver: {
-        id: selected.driver.id,
-        fullName: selected.driver.fullName,
-        vehicleType: selected.driver.vehicleType,
-        vehiclePlate: selected.driver.vehiclePlate,
-        distanceKm:
-          selected.distance !== null ? Number(selected.distance.toFixed(2)) : null,
-        hasFreshLocation: selected.hasFreshLocation,
-      },
-    });
-  } catch (error) {
-    console.error("❌ Dispatch start error:", error);
-    return NextResponse.json(
-      { error: "Failed to start dispatch" },
-      { status: 500 }
-    );
+  const booking = await prisma.booking.findUnique({
+    where: { id: parsed.data.bookingId },
+    select: { id: true, passengerId: true },
+  });
+  if (!booking) return NextResponse.json({ error: "Booking not found", code: "BOOKING_NOT_FOUND" }, { status: 404 });
+  if (passengerAuth?.ok && booking.passengerId !== passengerAuth.actor.id) {
+    return NextResponse.json({ error: "Booking not found", code: "BOOKING_NOT_FOUND" }, { status: 404 });
   }
+  const activeOffer = await prisma.rideRequest.findFirst({ where: { bookingId: booking.id, status: "PENDING", expiresAt: { gt: new Date() } }, select: { id: true } });
+  if (activeOffer) return NextResponse.json({ success: true, alreadyDispatched: true, dispatch: "OFFER_PENDING" });
+
+  const result = await startAutomaticDispatch(parsed.data.bookingId);
+  if (!result.ok) {
+    const status = result.code === "DISPATCH_CONFIG_MISSING" ? 409
+      : result.code === "BOOKING_NOT_FOUND" ? 404
+      : result.code === "DISPATCH_TRANSACTION_UNAVAILABLE" ? 503
+      : 409;
+    return NextResponse.json({ error: "Dispatch could not start", code: result.code }, { status });
+  }
+
+  return NextResponse.json({
+    success: true,
+    dispatch: result.outcome,
+    offerId: result.offerId,
+    dispatchStatus: result.outcome === "OFFER_CREATED" || result.outcome === "OFFER_PENDING" ? "SEARCHING_DRIVER" : result.outcome,
+  });
 }

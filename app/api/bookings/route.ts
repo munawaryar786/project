@@ -11,6 +11,7 @@ import { authorizeAdmin } from "@/lib/security/authorization";
 import { signBookingPrice } from "@/lib/security/booking-price";
 import { requiresWav } from "@/lib/assisted-transport";
 import { rateLimits, withRateLimit } from "@/lib/rate-limit";
+import { startAutomaticDispatch } from "@/lib/automatic-dispatch";
 import {
   bookingToEmailData,
   isSeniorAssistedService,
@@ -378,6 +379,11 @@ async function createBooking(request: NextRequest) {
         } as unknown as Prisma.InputJsonValue,
       },
     });
+
+    if (currentPassenger && !booking.scheduledRide && booking.paymentMethod !== "CARD") {
+      const dispatch = await startAutomaticDispatch(booking.id);
+      if (!dispatch.ok) console.warn("[dispatch] immediate start deferred", { bookingId: booking.id, code: dispatch.code });
+    }
 
     let seniorAssistedAdminEmailSent = false;
     let seniorAssistedDriverSafeEmailSent = false;
