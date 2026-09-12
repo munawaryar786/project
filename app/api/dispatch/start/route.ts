@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { authorizeAdmin } from "@/lib/security/authorization";
 import { authorizePassenger } from "@/lib/passenger-auth";
+import { createDriverOffer } from "@/lib/driver-operations";
+import { isLocationFresh } from "@/lib/driver-state";
 
 const REQUEST_TIMEOUT_SECONDS = 30;
 const DispatchSchema = z.object({ bookingId: z.string().regex(/^[a-f0-9]{24}$/i) }).strict();
@@ -60,8 +62,7 @@ function vehicleMatches(
 
 function isFreshLocation(lastLocationUpdate: Date | null) {
   if (!lastLocationUpdate) return false;
-  const ageMs = Date.now() - new Date(lastLocationUpdate).getTime();
-  return ageMs <= DRIVER_LOCATION_STALE_MINUTES * 60 * 1000;
+  return isLocationFresh(lastLocationUpdate, new Date(), DRIVER_LOCATION_STALE_MINUTES * 60 * 1000);
 }
 
 export async function POST(request: NextRequest) {
@@ -123,7 +124,7 @@ export async function POST(request: NextRequest) {
     const previousRequests = await prisma.rideRequest.findMany({
       where: {
         bookingId,
-        status: { in: ["REJECTED", "ACCEPTED"] },
+        status: { in: ["DECLINED", "REJECTED", "ACCEPTED", "EXPIRED", "CANCELLED"] },
       },
       select: { driverId: true },
     });
@@ -223,18 +224,14 @@ export async function POST(request: NextRequest) {
 
     const expiresAt = new Date(Date.now() + REQUEST_TIMEOUT_SECONDS * 1000);
 
-    const rideRequest = await prisma.rideRequest.create({
-      data: {
-        bookingId,
-        driverId: selected.driver.id,
-        status: "PENDING",
-        expiresAt,
-      },
-    });
+    const offerResult = await createDriverOffer({ bookingId, driverId: selected.driver.id, expiresAt });
+    if (!offerResult.ok) {
+      return NextResponse.json({ error: "Driver offer could not be created", code: offerResult.code }, { status: offerResult.code === "TRANSACTION_UNAVAILABLE" ? 503 : 409 });
+    }
+    const rideRequest = offerResult.offer;
 
-    const updatedBooking = await prisma.booking.update({
+    const updatedBooking = await prisma.booking.findUnique({
       where: { id: bookingId },
-      data: { dispatchStatus: "SEARCHING_DRIVER" },
       select: { id: true, bookingRef: true, status: true, dispatchStatus: true },
     });
 

@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { DEFAULT_COMMISSION_RATE } from "@/lib/pricing-engine";
 
@@ -66,13 +67,13 @@ export async function resolveCommissionRate({
   driverId,
   fleetId,
   serviceType,
-}: CommissionResolutionInput): Promise<CommissionResolution> {
+}: CommissionResolutionInput, db: Prisma.TransactionClient = prisma): Promise<CommissionResolution> {
   const [configs, settings] = await Promise.all([
-    prisma.commissionConfig.findMany({
+    db.commissionConfig.findMany({
       where: { active: true },
       orderBy: { updatedAt: "desc" },
     }),
-    prisma.pricingSettings.findUnique({ where: { key: "default" } }),
+    db.pricingSettings.findUnique({ where: { key: "default" } }),
   ]);
 
   const findScoped = (scope: string, ids: Array<string | null | undefined>) => {
@@ -130,14 +131,14 @@ export async function resolveCommissionRate({
 }
 
 export async function calculateBookingFinancialBreakdown(
-  booking: BookingFinancialInput
+  booking: BookingFinancialInput, db: Prisma.TransactionClient = prisma
 ): Promise<BookingFinancialBreakdown> {
   const totalFare = roundMoney(readFare(booking.fareTotalFare) || readFare(booking.estimatedPrice));
   const commission = await resolveCommissionRate({
     driverId: booking.driverId,
     fleetId: booking.fleetId,
     serviceType: booking.serviceType,
-  });
+  }, db);
   const platformCommission = roundMoney(totalFare * (commission.commissionRate / 100));
   const driverEarnings = roundMoney(totalFare - platformCommission);
 
@@ -153,8 +154,8 @@ export async function calculateBookingFinancialBreakdown(
   };
 }
 
-export async function createOrUpdateDriverEarningForBooking(bookingId: string) {
-  const booking = await prisma.booking.findUnique({
+export async function createOrUpdateDriverEarningForBooking(bookingId: string, db: Prisma.TransactionClient = prisma) {
+  const booking = await db.booking.findUnique({
     where: { id: bookingId },
     include: { driver: true },
   });
@@ -168,9 +169,9 @@ export async function createOrUpdateDriverEarningForBooking(bookingId: string) {
     serviceType: booking.serviceType,
     fareTotalFare: booking.fareTotalFare,
     estimatedPrice: booking.estimatedPrice,
-  });
+  }, db);
 
-  return prisma.driverEarning.upsert({
+  return db.driverEarning.upsert({
     where: { bookingId: booking.id },
     update: {
       totalFare: financial.totalFare,

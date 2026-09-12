@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import BrandLogo from "@/components/shared/BrandLogo";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { ACTIVE_TRIP_STATUSES } from "@/lib/driver-state";
 import { csrfFetch } from "@/lib/client/csrf-fetch";
 
 interface Booking {
@@ -11,8 +12,10 @@ interface Booking {
   bookingRef: string;
   status: string;
   serviceType: string;
-  pickupAddress: string;
-  dropoffAddress: string;
+  pickupAddress?: string;
+  dropoffAddress?: string;
+  pickupArea?: string;
+  dropoffArea?: string;
   scheduledDate: string;
   scheduledTime: string;
   passengerCount: number;
@@ -100,6 +103,7 @@ export default function DriverDashboard() {
 
   const [driver, setDriver] = useState<any>(null);
   const [isOnline, setIsOnline] = useState(false);
+  const [presenceState, setPresenceState] = useState("OFFLINE");
   const [availabilityUpdating, setAvailabilityUpdating] = useState(false);
 
   const [todayBookings, setTodayBookings] = useState<Booking[]>([]);
@@ -124,6 +128,24 @@ export default function DriverDashboard() {
   const [updating, setUpdating] = useState<string | null>(null);
   const [expandedBooking, setExpandedBooking] = useState<string | null>(null);
   const [showCashModal, setShowCashModal] = useState<string | null>(null);
+  const cashDialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showCashModal) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const dialog = cashDialogRef.current;
+    const focusable = () => Array.from(dialog?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") || []);
+    focusable()[0]?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !updating) setShowCashModal(null);
+      if (event.key !== "Tab") return;
+      const controls = focusable();
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); previous?.focus(); };
+  }, [showCashModal, updating]);
 
   const [locationStatus, setLocationStatus] = useState<
     "idle" | "tracking" | "blocked" | "unsupported" | "error"
@@ -191,6 +213,10 @@ export default function DriverDashboard() {
             body: JSON.stringify({
               lat: position.coords.latitude,
               lng: position.coords.longitude,
+              accuracy: position.coords.accuracy,
+              clientTimestamp: position.timestamp,
+              ...(position.coords.speed !== null ? { speed: position.coords.speed } : {}),
+              ...(position.coords.heading !== null ? { heading: position.coords.heading } : {}),
             }),
           });
 
@@ -224,6 +250,13 @@ export default function DriverDashboard() {
     return () => navigator.geolocation.clearWatch(watchId);
   }, [driver, isOnline]);
 
+  useEffect(() => {
+    if (!driver) return;
+    const timer = setInterval(() => {
+      void csrfFetch("driver", "/api/driver/heartbeat", { method: "POST" }).catch(() => setRefreshError("Connection interrupted. Refresh the dashboard."));
+    }, 20000);
+    return () => clearInterval(timer);
+  }, [driver]);
   const safeJson = async (res: Response) => {
     const text = await res.text();
     if (!text) return {};
@@ -241,11 +274,12 @@ export default function DriverDashboard() {
       });
       const data: any = await safeJson(res);
 
+      if (!res.ok) throw new Error(data.error || "Bookings could not be refreshed");
       setTodayBookings(data.todayBookings || []);
       setUpcomingBookings(data.upcomingBookings || []);
       setCompletedBookings(data.completedBookings || []);
     } catch (err) {
-      console.error("Failed to fetch bookings:", err);
+      setRefreshError("Bookings could not be refreshed. Please retry.");
     } finally {
       setLoading(false);
     }
@@ -260,9 +294,15 @@ export default function DriverDashboard() {
 
       if (res.ok) {
         setRideRequests(data.rideRequests || []);
+        setPresenceState(data.presence || "OFFLINE");
+        setIsOnline(Boolean(data.driver?.isOnline));
+      } else {
+        setRideRequests([]);
+        throw new Error(data.error || "Offers could not be refreshed");
       }
     } catch (err) {
-      console.error("Failed to fetch ride requests:", err);
+      setRideRequests([]);
+      setRefreshError("Offers could not be refreshed. Please retry.");
     }
   };
 
@@ -325,7 +365,8 @@ export default function DriverDashboard() {
       const updatedDriver = { ...driver, isOnline: nextStatus };
 
       setDriver(updatedDriver);
-      setIsOnline(nextStatus);
+      setIsOnline(Boolean(data.driver?.isOnline));
+      setPresenceState(data.presence || "OFFLINE");
     } catch (err) {
       console.error("Availability update failed:", err);
       alert("Nepodarilo sa zmeniť dostupnosť.");
@@ -378,13 +419,15 @@ export default function DriverDashboard() {
 
     setUpdating(bookingId);
 
+    const commandByStatus: Record<string, string> = { DRIVER_ENROUTE: "enroute", ARRIVED: "arrived", IN_PROGRESS: "start", COMPLETED: "complete" };
+    const command = commandByStatus[newStatus];
+    if (!command) { setUpdating(null); return; }
+
     try {
-      const res = await csrfFetch("driver", "/api/driver/status", {
-        method: "PATCH",
+      const res = await csrfFetch("driver", "/api/driver/bookings/" + bookingId + "/" + command, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          bookingId,
-          newStatus,
           cashConfirmed,
         }),
       });
@@ -412,7 +455,7 @@ export default function DriverDashboard() {
   );
 
   const activeTrip = allActive.find((booking) =>
-    ["ASSIGNED", "CONFIRMED", "DRIVER_ENROUTE", "IN_PROGRESS"].includes(
+    (ACTIVE_TRIP_STATUSES as readonly string[]).includes(
       booking.status
     )
   );
@@ -431,7 +474,7 @@ export default function DriverDashboard() {
   }
 
   return (
-    <div className="pb-24">
+    <div className="pb-24 [&_button]:min-h-11 [&_a]:min-h-11 [&_button:focus-visible]:outline-2 [&_button:focus-visible]:outline-offset-2 [&_button:focus-visible]:outline-blue-700 [&_a:focus-visible]:outline-2 [&_a:focus-visible]:outline-offset-2">
       <div className="mb-6 bg-white border border-gray-200 rounded-3xl p-5 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
@@ -456,7 +499,8 @@ export default function DriverDashboard() {
           <button
             onClick={toggleAvailability}
             disabled={availabilityUpdating}
-            className={`px-6 py-3 rounded-2xl font-black text-sm transition-colors ${
+            aria-label={isOnline ? "Set driver offline" : "Set driver online"}
+            className={`px-6 py-3 rounded-2xl font-black text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 ${
               isOnline
                 ? "bg-green-700 text-white hover:bg-green-800"
                 : "bg-gray-200 text-gray-700 hover:bg-gray-300"
@@ -470,22 +514,22 @@ export default function DriverDashboard() {
           </button>
           <button
             onClick={() => void logout()}
-            className="px-4 py-3 rounded-2xl border border-gray-300 font-black text-sm text-gray-700 hover:bg-gray-50"
+            aria-label="Log out of driver dashboard"
+            className="px-4 py-3 rounded-2xl border border-gray-300 font-black text-sm text-gray-700 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
           >
-            Odhl?si?
+            Log out
           </button>
         </div>
 
         <div
+          aria-live="polite"
           className={`mt-4 text-xs font-semibold rounded-2xl px-4 py-3 ${
             isOnline
               ? "bg-green-50 text-green-700 border border-green-200"
               : "bg-gray-50 text-gray-600 border border-gray-200"
           }`}
         >
-          {isOnline
-            ? "Ste dostupný pre nové jazdy."
-            : "Ste offline a nebudete dostávať nové jazdy."}
+          {presenceState.replaceAll("_", " ")}
         </div>
 
         <LocationStatusCard
@@ -496,7 +540,7 @@ export default function DriverDashboard() {
       </div>
 
       {rideRequests.length > 0 && (
-        <div className="mb-6 space-y-4">
+        <div className="mb-6 space-y-4" aria-live="polite">
           {rideRequests.map((request) => (
             <IncomingRideRequestCard
               key={request.id}
@@ -545,7 +589,7 @@ export default function DriverDashboard() {
       </div>
 
       {refreshError && (
-        <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-700">
+        <div role="alert" className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-700">
           {refreshError}
         </div>
       )}
@@ -557,17 +601,18 @@ export default function DriverDashboard() {
           }
         }}
         disabled={refreshing}
-        className="w-full mb-6 py-3 bg-white border border-gray-200 rounded-2xl text-sm font-bold text-gray-600 hover:bg-gray-50 transition-colors"
+        aria-label="Refresh driver dashboard"
+        className="w-full mb-6 py-3 bg-white border border-gray-200 rounded-2xl text-sm font-bold text-gray-600 hover:bg-gray-50 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
       >
         {refreshing ? t("driverPortal.refreshing") : t("driverPortal.refresh")}
       </button>
 
       {showCashModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl">
+          <div ref={cashDialogRef} role="dialog" aria-modal="true" aria-labelledby="cash-confirmation-title" className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl">
             <div className="text-center">
               <div className="text-5xl mb-3">💵</div>
-              <h3 className="text-xl font-black text-gray-900 mb-2">
+              <h3 id="cash-confirmation-title" className="text-xl font-black text-gray-900 mb-2">
                 Potvrdenie hotovosti
               </h3>
               <p className="text-sm text-gray-600 mb-4">
@@ -763,42 +808,31 @@ function IncomingRideRequestCard({
         </div>
 
         <div className="bg-white/20 rounded-2xl px-4 py-3 text-center">
-          <div className="text-2xl font-black">{secondsLeft}s</div>
+          <div className="text-2xl font-black" aria-live="polite" aria-label={"Offer expires in " + secondsLeft + " seconds"}>{secondsLeft}s</div>
           <div className="text-[10px] uppercase font-bold">Čas</div>
         </div>
       </div>
 
       <div className="bg-white/10 rounded-3xl p-4 space-y-3">
         <div>
-          <p className="text-[11px] uppercase opacity-70 font-bold">
-            Vyzdvihnutie
-          </p>
-          <p className="font-bold">📍 {request.booking?.pickupAddress}</p>
+          <p className="text-[11px] uppercase opacity-70 font-bold">Pickup area</p>
+          <p className="font-bold">{request.booking?.pickupArea || "Area unavailable"}</p>
         </div>
-
         <div>
-          <p className="text-[11px] uppercase opacity-70 font-bold">Cieľ</p>
-          <p className="font-bold">🏁 {request.booking?.dropoffAddress}</p>
+          <p className="text-[11px] uppercase opacity-70 font-bold">Destination area</p>
+          <p className="font-bold">{request.booking?.dropoffArea || "Area unavailable"}</p>
         </div>
-
         <div className="grid grid-cols-2 gap-3 text-sm">
-          <div className="bg-white/10 rounded-2xl p-3 font-bold">
-            👥 {request.booking?.passengerCount} osôb
-          </div>
-          <div className="bg-white/10 rounded-2xl p-3 font-bold">
-            💳 {request.booking?.paymentMethod}
-          </div>
+          <div className="bg-white/10 rounded-2xl p-3 font-bold">{request.booking?.passengerCount} passengers</div>
+          <div className="bg-white/10 rounded-2xl p-3 font-bold">{request.booking?.wavRequired ? "Accessible vehicle" : request.booking?.serviceType}</div>
         </div>
-
-        <ChildrenTransportSummary booking={request.booking} dark />
-        <AssistanceSummary booking={request.booking} dark />
       </div>
-
       <div className="grid grid-cols-2 gap-3 mt-5">
         <button
           onClick={onReject}
           disabled={updating || secondsLeft <= 0}
-          className="py-4 rounded-3xl bg-red-500 hover:bg-red-600 text-white font-black disabled:opacity-50"
+          aria-label={"Decline offer " + request.booking?.bookingRef}
+          className="py-4 rounded-3xl bg-red-500 hover:bg-red-600 text-white font-black disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         >
           {updating ? "⏳..." : "❌ Odmietnuť"}
         </button>
@@ -806,7 +840,8 @@ function IncomingRideRequestCard({
         <button
           onClick={onAccept}
           disabled={updating || secondsLeft <= 0}
-          className="py-4 rounded-3xl bg-white text-green-700 hover:bg-green-50 font-black disabled:opacity-50"
+          aria-label={"Accept offer " + request.booking?.bookingRef}
+          className="py-4 rounded-3xl bg-white text-green-700 hover:bg-green-50 font-black disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         >
           {updating ? "⏳..." : "✅ Prijať"}
         </button>
@@ -871,9 +906,7 @@ function ActiveTripCard({
         </a>
 
         <a
-          href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
-            booking.pickupAddress
-          )}`}
+          href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(booking.pickupAddress || "")}`}
           target="_blank"
           rel="noopener noreferrer"
           className="text-center py-3 bg-white text-gray-950 rounded-2xl font-black"
@@ -970,7 +1003,7 @@ function BookingCard({
 
   return (
     <div className="bg-white border border-gray-200 rounded-3xl overflow-hidden shadow-sm">
-      <button onClick={onToggle} className="w-full p-4 text-left">
+      <button aria-expanded={expanded} onClick={onToggle} className="w-full p-4 text-left">
         <div className="flex items-start justify-between mb-2">
           <div className="flex items-center gap-2">
             <span className="text-xl">
@@ -1079,9 +1112,7 @@ function BookingCard({
           )}
 
           <a
-            href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
-              booking.pickupAddress
-            )}`}
+            href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(booking.pickupAddress || "")}`}
             target="_blank"
             rel="noopener noreferrer"
             className="block w-full py-3 bg-blue-50 text-blue-700 font-bold rounded-2xl text-sm text-center hover:bg-blue-100"
@@ -1322,6 +1353,11 @@ function getNextAction(booking: Booking) {
         nextStatus: "DRIVER_ENROUTE",
       };
     case "DRIVER_ENROUTE":
+      return {
+        label: "Arrived at pickup",
+        nextStatus: "ARRIVED",
+      };
+    case "ARRIVED":
       if (booking.paymentMethod === "CASH") {
         return {
           label: "💵 Potvrdiť hotovosť + začať",

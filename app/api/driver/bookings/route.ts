@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { DRIVER_TRIP_SELECT, serializeDriverTrip } from "@/lib/driver-projections";
+import { isTerminalTripStatus } from "@/lib/driver-state";
 import { authorizeDriver } from "@/lib/security/authorization";
 
 export async function GET(request: NextRequest) {
@@ -9,14 +11,15 @@ export async function GET(request: NextRequest) {
     const bookings = await prisma.booking.findMany({
       where: { driverId: auth.actor.id },
       orderBy: { scheduledDate: "asc" },
-      include: { earning: true },
+      select: { ...DRIVER_TRIP_SELECT, estimatedPrice: true, fareTotalFare: true, earning: { select: { driverAmount: true } } },
     });
+    const safeBookings = bookings.map(serializeDriverTrip);
     const today = new Date().toISOString().split("T")[0];
-    const active = (b: { status: string }) => !["COMPLETED", "CANCELLED"].includes(b.status);
+    const active = (b: { status: string }) => !isTerminalTripStatus(b.status);
     return NextResponse.json({
-      todayBookings: bookings.filter((b) => b.scheduledDate === today && active(b)),
-      upcomingBookings: bookings.filter((b) => b.scheduledDate > today && active(b)),
-      completedBookings: bookings.filter((b) => ["COMPLETED", "CANCELLED"].includes(b.status)),
+      todayBookings: safeBookings.filter((b) => b.scheduledDate <= today && active(b)),
+      upcomingBookings: safeBookings.filter((b) => b.scheduledDate > today && active(b)),
+      completedBookings: safeBookings.filter((b) => isTerminalTripStatus(b.status)),
       totalAssigned: bookings.length,
     });
   } catch {

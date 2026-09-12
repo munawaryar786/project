@@ -292,6 +292,12 @@ model Driver {
   currentLat         Float?
   currentLng         Float?
   lastLocationUpdate DateTime?
+  lastLocationClientAt DateTime?
+  lastLocationReceivedAt DateTime?
+  lastLocationAccuracy Float?
+  lastLocationSpeed Float?
+  lastLocationHeading Float?
+  lastHeartbeatAt DateTime?
   isOnTrip           Boolean   @default(false)
   isOnline           Boolean   @default(false)
 
@@ -309,6 +315,7 @@ model Driver {
   @@index([isOnline])
   @@index([isOnTrip])
   @@index([vehicleId])
+  @@index([lastHeartbeatAt])
 }
 
 // ============================================
@@ -390,7 +397,26 @@ model RideRequest {
   @@index([driverId])
   @@index([status])
   @@index([expiresAt])
+  @@unique([bookingId, driverId])
   @@map("ride_requests")
+}
+
+// Transactional domain event foundation. A relay/worker is intentionally deferred.
+model OutboxEvent {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  eventType String
+  aggregateType String
+  aggregateId String
+  idempotencyKey String @unique
+  payload Json
+  state String @default("PENDING")
+  createdAt DateTime @default(now())
+  publishedAt DateTime?
+
+  @@index([aggregateType, aggregateId])
+  @@index([state, createdAt])
+  @@map("outbox_events")
 }
 
 // ============================================
