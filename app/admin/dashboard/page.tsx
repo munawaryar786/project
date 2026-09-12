@@ -5,6 +5,7 @@ import { csrfFetch } from "@/lib/client/csrf-fetch";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { io } from "socket.io-client";
 
 interface Booking {
   id: string;
@@ -46,12 +47,22 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState("");
+  const [realtimeStatus, setRealtimeStatus] = useState<"connecting" | "connected" | "offline">("connecting");
 
   useEffect(() => {
     void fetchStats();
     const interval = setInterval(() => void fetchStats(), 10000);
     return () => clearInterval(interval);
   }, [locale]);
+
+  useEffect(() => {
+    const socket = io("/admin", { path: "/socket.io", transports: ["websocket"], withCredentials: true, reconnection: true });
+    socket.on("connect", () => setRealtimeStatus("connected"));
+    socket.on("disconnect", () => setRealtimeStatus("offline"));
+    socket.on("connect_error", () => setRealtimeStatus("offline"));
+    ["dispatch.updated", "booking.updated", "trip.updated", "notification.created"].forEach((event) => socket.on(event, () => void fetchStats()));
+    return () => { socket.removeAllListeners(); socket.close(); };
+  }, []);
 
   const safeJson = async (res: Response) => {
     const text = await res.text();

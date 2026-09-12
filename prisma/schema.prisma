@@ -411,12 +411,32 @@ model OutboxEvent {
   idempotencyKey String @unique
   payload Json
   state String @default("PENDING")
+  attempts Int @default(0)
+  claimedAt DateTime?
+  lastError String?
+  nextAttemptAt DateTime?
   createdAt DateTime @default(now())
   publishedAt DateTime?
 
   @@index([aggregateType, aggregateId])
   @@index([state, createdAt])
+  @@index([state, nextAttemptAt, createdAt])
   @@map("outbox_events")
+}
+
+model Notification {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  recipientType String
+  recipientId String
+  type String
+  data Json
+  dedupeKey String @unique
+  readAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([recipientType, recipientId, createdAt])
+  @@index([recipientType, recipientId, readAt])
+  @@map("notifications")
 }
 
 // ============================================

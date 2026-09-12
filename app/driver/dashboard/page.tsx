@@ -6,6 +6,7 @@ import BrandLogo from "@/components/shared/BrandLogo";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { ACTIVE_TRIP_STATUSES } from "@/lib/driver-state";
 import { csrfFetch } from "@/lib/client/csrf-fetch";
+import { io } from "socket.io-client";
 
 interface Booking {
   id: string;
@@ -116,6 +117,7 @@ export default function DriverDashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState("");
+  const [realtimeStatus, setRealtimeStatus] = useState<"connecting" | "connected" | "offline">("connecting");
   const [financial, setFinancial] = useState({
     dailyEarnings: 0,
     weeklyEarnings: 0,
@@ -257,6 +259,18 @@ export default function DriverDashboard() {
     }, 20000);
     return () => clearInterval(timer);
   }, [driver]);
+  useEffect(() => {
+    if (!driver) return;
+    const socket = io("/driver", { path: "/socket.io", transports: ["websocket"], withCredentials: true, reconnection: true });
+    setRealtimeStatus("connecting");
+    const refresh = () => { void fetchDriverData(driver.id, true); };
+    socket.on("connect", () => setRealtimeStatus("connected"));
+    socket.on("disconnect", () => setRealtimeStatus("offline"));
+    socket.on("connect_error", () => setRealtimeStatus("offline"));
+    ["driver.offer.updated", "booking.updated", "trip.updated", "notification.created"].forEach((event) => socket.on(event, refresh));
+    return () => { socket.removeAllListeners(); socket.close(); };
+  }, [driver]);
+
   const safeJson = async (res: Response) => {
     const text = await res.text();
     if (!text) return {};
@@ -495,6 +509,7 @@ export default function DriverDashboard() {
               </p>
             </div>
           </div>
+          <p aria-live="polite" className="text-xs text-gray-500">Realtime: {realtimeStatus === "connected" ? "connected" : realtimeStatus === "connecting" ? "connecting" : "temporarily unavailable; polling continues"}</p>
 
           <button
             onClick={toggleAvailability}
