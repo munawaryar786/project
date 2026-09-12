@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import {
@@ -13,7 +13,7 @@ import {
   validatePassengerPassword,
 } from "@/lib/passenger-auth";
 import { prisma } from "@/lib/prisma";
-import { rateLimits, withRateLimit } from "@/lib/rate-limit";
+import { authRateLimitResponse, enforceAuthRateLimit, rateLimits, resolveClientIp } from "@/lib/rate-limit";
 
 const CreateAccountSchema = z
   .object({
@@ -68,6 +68,13 @@ async function handler(request: NextRequest) {
     }
 
     const normalizedPhone = normalizePassengerPhone(data.phone);
+    const normalizedEmail = normalizePassengerEmail(data.email);
+    const distributedLimit = await enforceAuthRateLimit({ domain: "account-create", identities: [
+      { dimension: "ip", value: resolveClientIp(request), max: rateLimits.passengerAccountCreate.max, windowMs: rateLimits.passengerAccountCreate.windowMs },
+      { dimension: "phone", value: normalizedPhone, max: rateLimits.passengerAccountCreate.max, windowMs: rateLimits.passengerAccountCreate.windowMs },
+      { dimension: "email", value: normalizedEmail, max: rateLimits.passengerAccountCreate.max, windowMs: rateLimits.passengerAccountCreate.windowMs },
+    ] });
+    if (!distributedLimit.allowed) return authRateLimitResponse(distributedLimit, "Too many account creation attempts. Please wait and try again.");
     const booking = await prisma.booking.findUnique({ where: { id: data.bookingId } });
     if (!booking) {
       return NextResponse.json({ error: "Booking not found" }, { status: 404 });
@@ -121,7 +128,6 @@ async function handler(request: NextRequest) {
       },
     });
 
-    const normalizedEmail = normalizePassengerEmail(data.email);
     const emailOwner = await prisma.passenger.findFirst({ where: { email: { equals: normalizedEmail, mode: "insensitive" } } });
     if (emailOwner && emailOwner.id !== existing?.id) {
       return proofError("EMAIL_ALREADY_IN_USE", "This email is already linked to another Drivo account. Please use a different email.", 409);
@@ -230,4 +236,5 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.passengerAccountCreate);
+export const runtime = "nodejs";
+export const POST = handler;

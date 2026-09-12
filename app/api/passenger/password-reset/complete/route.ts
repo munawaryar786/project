@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { consumeVerificationProofById, createPassengerSession, findVerificationProof, hashSecret, normalizePassengerPhone, publicPassenger, revokePassengerSessions, setPassengerCookie, setTrustedDeviceCookie, validatePassengerPassword } from "@/lib/passenger-auth";
-import { rateLimits, withRateLimit } from "@/lib/rate-limit";
+import { rateLimits, withDistributedIpRateLimit } from "@/lib/rate-limit";
 
 const CompleteSchema = z.object({
   // Legacy phone proof is accepted only for backwards-compatible server callers; UI and issuance are email-only.
@@ -50,4 +50,5 @@ async function handler(request: NextRequest) {
     return NextResponse.json({ error: "Password reset could not be completed." }, { status: 500 });
   }
 }
-export const POST = withRateLimit(handler, rateLimits.passengerPasswordResetComplete);
+export const runtime = "nodejs";
+export const POST = withDistributedIpRateLimit(handler, { domain: "password-reset-complete", max: rateLimits.passengerPasswordResetComplete.max, windowMs: rateLimits.passengerPasswordResetComplete.windowMs, message: rateLimits.passengerPasswordResetComplete.message });

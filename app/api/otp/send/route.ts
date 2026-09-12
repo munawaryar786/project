@@ -1,9 +1,9 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { sendWhatsAppVerification } from "@/lib/twilio";
 import { isValidE164Phone, normalizePassengerPhone } from "@/lib/passenger-auth";
-import { consumeRateLimit, rateLimits, withRateLimit } from "@/lib/rate-limit";
+import { authRateLimitResponse, enforceAuthRateLimit, rateLimits, resolveClientIp } from "@/lib/rate-limit";
 
 const PassengerOtpPurposeSchema = z.enum(["PASSENGER_REGISTRATION", "PASSENGER_LEGACY_PASSWORD_SETUP"]);
 const OTPSchema = z.object({
@@ -24,10 +24,16 @@ async function handler(request: NextRequest) {
     const normalizedPhone = normalizePassengerPhone(parsed.data.phone);
     if (!isValidE164Phone(normalizedPhone)) return otpError("PHONE_INVALID", "Enter a valid mobile number.");
 
-    const phoneLimit = consumeRateLimit(`registration_otp_phone:${normalizedPhone}`, rateLimits.passengerRegistrationOtpPhone);
-    if (!phoneLimit.allowed) {
-      return NextResponse.json({ success: false, code: "RATE_LIMITED", error: "Too many OTP requests. Please try again later.", retryAfter: phoneLimit.retryAfter }, { status: 429, headers: { "Retry-After": String(phoneLimit.retryAfter) } });
-    }
+    // Phase 3J registration_otp_phone (3 requests / 5 minutes) is now Redis-backed.
+    const distributedLimit = await enforceAuthRateLimit({
+      domain: "otp-send",
+      identities: [
+        { dimension: "ip", value: resolveClientIp(request), max: rateLimits.passengerRegistrationOtpSend.max, windowMs: rateLimits.passengerRegistrationOtpSend.windowMs },
+        { dimension: "phone", value: normalizedPhone, max: rateLimits.passengerRegistrationOtpPhone.max, windowMs: rateLimits.passengerRegistrationOtpPhone.windowMs },
+      ],
+      cooldown: { value: `${purpose}:${normalizedPhone}`, windowMs: 30_000 },
+    });
+    if (!distributedLimit.allowed) return authRateLimitResponse(distributedLimit, "Too many OTP requests. Please try again later.");
 
     const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
     if (!booking) return otpError("BOOKING_NOT_FOUND", "Booking not found.", 404);
@@ -66,4 +72,5 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.passengerRegistrationOtpSend);
+export const runtime = "nodejs";
+export const POST = handler;

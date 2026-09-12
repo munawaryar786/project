@@ -13,6 +13,8 @@ process.env.JWT_SECRET = "phase3a-test-legacy-key-only-0000000000000";
 process.env.APP_ORIGIN = "https://gate.example";
 process.env.DATABASE_URL = "mongodb://127.0.0.1:1/isolated_never_connected";
 process.env.NEXT_PUBLIC_CHILDREN_TRANSPORT_ENABLED = "false";
+process.env.AUTH_RATE_LIMIT_KEY_SECRET = "phase3l-test-key-only-000000000000000000000000";
+globalThis.__drivoAuthRateLimitRedis = { status: "ready", eval: async () => [1, 900, 4, 4] };
 globalThis.fetch = async () => { throw new Error("Unexpected network access in gate test"); };
 const { NextRequest, NextResponse } = require("next/server");
 const { AppRouteRouteModule } = require("next/dist/server/route-modules/app-route/module");
@@ -53,7 +55,7 @@ const prisma = {
 };
 const mocks = {
   "@/lib/prisma": {prisma},
-  "@/lib/rate-limit": {withRateLimit: h => h, rateLimits: new Proxy({}, {get:()=>({})})},
+  "@/lib/rate-limit": { withRateLimit: h => h, withDistributedIpRateLimit: h => h, authRateLimitResponse: () => NextResponse.json({ error: "rate limited" }, { status: 429 }), enforceAuthRateLimit: async () => ({ allowed: true, unavailable: false, retryAfter: 1, remaining: 4 }), resolveClientIp: () => "127.0.0.1", rateLimits: new Proxy({}, { get: () => ({ max: 5, windowMs: 900000, message: "rate limited" }) }) },
   "@/lib/stripe": {
     formatAmountForStripe: a => Math.round(a * 100),
     createPaymentSession: async p => {stripeParams=p; return {sessionId:"cs_test",sessionUrl:"https://checkout.example"};},

@@ -1,5 +1,9 @@
 import Redis from "ioredis";
 
+const globalForDrivoRedis = globalThis as typeof globalThis & {
+  __drivoAuthRateLimitRedis?: Redis;
+};
+
 function redisUrl() { return process.env.REDIS_URL?.trim() || null; }
 export function redisConfigured() { return Boolean(redisUrl()); }
 export function assertProductionRedis() {
@@ -12,6 +16,17 @@ export function createRedisConnection(role: string) {
   const url = assertProductionRedis();
   const client = new Redis(url, { maxRetriesPerRequest: null, enableReadyCheck: true, lazyConnect: true, connectionName: `drivo-${role}` });
   client.on("error", (error) => console.error("[realtime.redis.error]", { role, message: "redis_connection_error" }));
+  return client;
+}
+/**
+ * Shared server-only auth limiter connection using the existing Phase 3D
+ * Redis URL, TLS, authentication, and lifecycle policy.
+ */
+export function getAuthRateLimitConnection() {
+  const current = globalForDrivoRedis.__drivoAuthRateLimitRedis;
+  if (current && current.status !== "end") return current;
+  const client = createRedisConnection("auth-rate-limit");
+  globalForDrivoRedis.__drivoAuthRateLimitRedis = client;
   return client;
 }
 export function safeRedisStatus(client: Redis | null) { return client?.status === "ready"; }

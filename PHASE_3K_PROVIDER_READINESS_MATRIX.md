@@ -1,0 +1,18 @@
+﻿# PHASE 3K PROVIDER READINESS MATRIX
+
+Only configuration names and source integration are recorded. Values are intentionally omitted. Local `.env`/`.env.local` files do not prove production access; production status is `UNKNOWN` until an approved operator verifies it.
+
+| Provider | Required config names | Source integration | Local name presence (names/status only) | Real integration tested? | Production blocker? |
+|---|---|---|---|---|---|
+| Twilio Verify / WhatsApp | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID` (and `TWILIO_PHONE_NUMBER` legacy/optional) | `lib/twilio.ts` uses Verify `verifications` and `verificationChecks`; registration routes use `channel: "whatsapp"`; approved status is required; no local OTP authority | Missing in `.env` and `.env.local`; placeholders only in `.env.example` | No provider call or WhatsApp delivery; staging required | Yes until config and real +421 delivery are verified |
+| SMTP | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`; `ADMIN_BOOKING_EMAIL`, `PUBLIC_SITE_URL` | `lib/email.ts` SMTP transport, EmailDelivery idempotency, reset/invoice/no-driver templates | SMTP names configured in `.env.local` only; absent/empty in `.env`; admin/public URL names present locally; production unknown | No SMTP/Gmail send/render test | Yes until production config and staging delivery/rendering |
+| Google Maps / Routes | Server `GOOGLE_MAPS_API_KEY` / `GOOGLE_ROUTES_API_KEY`; browser `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | `lib/google-maps.ts` address/distance APIs; `lib/navigation/routes.ts` server Routes API; browser driver map uses public key | Google Maps names configured in `.env.local`; Routes name absent; example placeholders only; production restrictions unknown | No Google Routes/navigation call | Yes until key restrictions, billing, quota and staging navigation |
+| Stripe | `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`; origin names `PUBLIC_SITE_URL`/`APP_URL`/`NEXT_PUBLIC_SITE_URL` | `lib/stripe.ts` server client; webhook route calls signature verification; checkout/verify derive server amount | Secret and publishable names present in `.env.local`; webhook secret absent; production mode unknown | No charge or webhook delivery test | Yes until webhook secret/mode and staging webhook |
+| Redis | `REDIS_URL`, `DRIVO_REALTIME_PORT`, `DRIVO_REALTIME_ALLOWED_ORIGINS` | `lib/realtime/redis.ts` ioredis; production requires `rediss://`; Socket.IO adapter/emitter and BullMQ use Redis | `REDIS_URL` absent in local `.env`/`.env.local`; example is loopback placeholder | No Redis connection/reconnect/multi-instance test | Yes until private TLS/auth/HA/persistence and recovery evidence |
+
+## Source and deployment observations
+
+- The repository contains `realtime/server.ts` (Socket.IO, `/socket.io`, WebSocket-only, Redis adapter, `/healthz`) and `workers/realtime-worker.ts` (BullMQ outbox/expiry/scheduled queues, relay, retry and reconciliation).
+- `package.json` exposes `npm run start`, `npm run realtime:start`, and `npm run worker:start`; no PM2/ecosystem, Docker Compose, nginx, or Caddy configuration is present in the repository.
+- Therefore the expected production process list and reverse-proxy/WebSocket upgrade behavior require manual operator evidence. No process was restarted.
+- Auth rate limits in `lib/rate-limit.ts` are a process-local `Map`, not Redis-backed. OTP send/resend/verify, password login, and password-reset request limits are therefore not shared across app instances; this is a production blocker and needs a dedicated fix phase.

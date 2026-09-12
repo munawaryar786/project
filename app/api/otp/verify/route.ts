@@ -1,9 +1,9 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { checkWhatsAppVerification } from "@/lib/twilio";
 import { createVerificationProof, isValidE164Phone, normalizePassengerPhone } from "@/lib/passenger-auth";
-import { consumeRateLimit, rateLimits, withRateLimit } from "@/lib/rate-limit";
+import { authRateLimitResponse, enforceAuthRateLimit, rateLimits, resolveClientIp } from "@/lib/rate-limit";
 
 const OTP_PURPOSES = new Set(["PASSENGER_REGISTRATION", "PASSENGER_LEGACY_PASSWORD_SETUP"]);
 function otpError(code: string, message: string, status = 400) { return NextResponse.json({ success: false, code, message, error: message }, { status }); }
@@ -21,8 +21,14 @@ async function handler(request: NextRequest) {
     const normalizedPhone = booking.normalizedPhone || normalizePassengerPhone(`${booking.customerPhoneCode}${booking.customerPhone}`, booking.customerPhoneCode);
     if (!isValidE164Phone(normalizedPhone)) return otpError("PHONE_INVALID", "The booking phone number is invalid.");
 
-    const verifyLimit = consumeRateLimit(`registration_otp_verify_phone:${normalizedPhone}`, rateLimits.passengerRegistrationOtpVerify);
-    if (!verifyLimit.allowed) return NextResponse.json({ success: false, code: "RATE_LIMITED", error: "Too many verification attempts. Please request a new code.", retryAfter: verifyLimit.retryAfter }, { status: 429, headers: { "Retry-After": String(verifyLimit.retryAfter) } });
+    const distributedLimit = await enforceAuthRateLimit({
+      domain: "otp-verify",
+      identities: [
+        { dimension: "ip", value: resolveClientIp(request), max: rateLimits.passengerRegistrationOtpVerify.max, windowMs: rateLimits.passengerRegistrationOtpVerify.windowMs },
+        { dimension: "phone", value: normalizedPhone, max: rateLimits.passengerRegistrationOtpVerify.max, windowMs: rateLimits.passengerRegistrationOtpVerify.windowMs },
+      ],
+    });
+    if (!distributedLimit.allowed) return authRateLimitResponse(distributedLimit, "Too many verification attempts. Please request a new code.");
 
     const otpRecord = await prisma.oTP.findFirst({ where: { bookingId, phone: normalizedPhone, purpose, used: false, expiresAt: { gt: new Date() }, attempts: { lt: 5 } }, orderBy: { createdAt: "desc" } });
     if (!otpRecord) return otpError("OTP_EXPIRED", "Verification code expired. Please request a new code.");
@@ -59,4 +65,5 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.passengerRegistrationOtpVerify);
+export const runtime = "nodejs";
+export const POST = handler;

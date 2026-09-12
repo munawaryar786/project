@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import { authRateLimitResponse, enforceAuthRateLimit, rateLimits, resolveClientIp } from "@/lib/rate-limit";
 import { createPassengerSession, isValidE164Phone, normalizePassengerEmail, normalizePassengerPhone, publicPassenger, setPassengerCookie } from "@/lib/passenger-auth";
 import { prisma } from "@/lib/prisma";
-import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 
 const PasswordLoginSchema = z.object({
   identifier: z.string().trim().min(3).max(160).optional(),
@@ -37,6 +37,11 @@ async function handler(request: NextRequest) {
     if (!parsed.success) return NextResponse.json(genericError, { status: 401 });
     const rawIdentifier = (parsed.data.identifier || parsed.data.phone || "").trim();
     const normalizedPhone = rawIdentifier.includes("@") ? "" : normalizePassengerPhone(rawIdentifier);
+    const normalizedEmail = rawIdentifier.includes("@") ? normalizePassengerEmail(rawIdentifier) : "";
+    const identities = [{ dimension: "ip", value: resolveClientIp(request), max: rateLimits.passengerLoginPassword.max, windowMs: rateLimits.passengerLoginPassword.windowMs }];
+    if (normalizedEmail || isValidE164Phone(normalizedPhone)) identities.push({ dimension: "identifier", value: normalizedEmail || normalizedPhone, max: rateLimits.passengerLoginPassword.max, windowMs: rateLimits.passengerLoginPassword.windowMs });
+    const distributedLimit = await enforceAuthRateLimit({ domain: "password-login", identities });
+    if (!distributedLimit.allowed) return authRateLimitResponse(distributedLimit, "Too many login attempts. Please try again later.");
     const passenger = await findPassenger(rawIdentifier);
     if (!passenger?.passwordHash || passenger.status !== "ACTIVE") return NextResponse.json(genericError, { status: 401 });
     if (!(await bcrypt.compare(parsed.data.password, passenger.passwordHash))) return NextResponse.json(genericError, { status: 401 });
@@ -54,4 +59,5 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.passengerLoginPassword);
+export const runtime = "nodejs";
+export const POST = handler;

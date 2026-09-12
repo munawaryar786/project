@@ -8,7 +8,7 @@ import {
   setTrustedDeviceCookie,
 } from "@/lib/passenger-auth";
 import { prisma } from "@/lib/prisma";
-import { rateLimits, withRateLimit } from "@/lib/rate-limit";
+import { authRateLimitResponse, enforceAuthRateLimit, rateLimits, resolveClientIp } from "@/lib/rate-limit";
 
 const VerifySchema = z.object({
   phone: z.string().trim().min(6),
@@ -29,6 +29,11 @@ async function handler(request: NextRequest) {
     }
 
     const normalizedPhone = normalizePassengerPhone(parsed.data.phone);
+    const distributedLimit = await enforceAuthRateLimit({ domain: "login-step-up-otp", identities: [
+      { dimension: "ip", value: resolveClientIp(request), max: rateLimits.passengerLoginStepUpOtpVerify.max, windowMs: rateLimits.passengerLoginStepUpOtpVerify.windowMs },
+      { dimension: "phone", value: normalizedPhone, max: rateLimits.passengerLoginStepUpOtpVerify.max, windowMs: rateLimits.passengerLoginStepUpOtpVerify.windowMs },
+    ] });
+    if (!distributedLimit.allowed) return authRateLimitResponse(distributedLimit, "Too many verification attempts. Please request a new code.");
     const passenger = await prisma.passenger.findFirst({
       where: { OR: [{ phone: normalizedPhone }, { normalizedPhone }] },
     });
@@ -101,4 +106,5 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.passengerLoginStepUpOtpVerify);
+export const runtime = "nodejs";
+export const POST = handler;

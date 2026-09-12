@@ -1,9 +1,9 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createOpaqueToken, createVerificationProof, normalizePassengerEmail } from "@/lib/passenger-auth";
 import { sendPassengerPasswordResetEmail } from "@/lib/email";
-import { rateLimits, withRateLimit } from "@/lib/rate-limit";
+import { authRateLimitResponse, enforceAuthRateLimit, rateLimits, resolveClientIp } from "@/lib/rate-limit";
 import { getSourceDomain } from "@/lib/utils";
 
 const Schema = z.object({ email: z.string().trim().email().max(160) });
@@ -14,6 +14,14 @@ async function handler(request: NextRequest) {
     const parsed = Schema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json(generic);
     const email = normalizePassengerEmail(parsed.data.email);
+    const distributedLimit = await enforceAuthRateLimit({
+      domain: "password-reset",
+      identities: [
+        { dimension: "ip", value: resolveClientIp(request), max: rateLimits.passengerPasswordResetEmailSend.max, windowMs: rateLimits.passengerPasswordResetEmailSend.windowMs },
+        { dimension: "email", value: email, max: rateLimits.passengerPasswordResetEmailSend.max, windowMs: rateLimits.passengerPasswordResetEmailSend.windowMs },
+      ],
+    });
+    if (!distributedLimit.allowed) return authRateLimitResponse(distributedLimit, "Too many password reset attempts. Please try again later.");
     const passenger = await prisma.passenger.findFirst({ where: { email: { equals: email, mode: "insensitive" }, passwordHash: { not: null }, status: "ACTIVE" } });
     if (!passenger) return NextResponse.json(generic);
     const resetAttemptId = createOpaqueToken(16);
@@ -27,4 +35,5 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.passengerPasswordResetEmailSend);
+export const runtime = "nodejs";
+export const POST = handler;

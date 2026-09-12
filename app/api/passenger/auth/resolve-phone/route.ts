@@ -1,8 +1,8 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isValidE164Phone, normalizePassengerPhone } from "@/lib/passenger-auth";
 import { prisma } from "@/lib/prisma";
-import { rateLimits, withRateLimit } from "@/lib/rate-limit";
+import { authRateLimitResponse, enforceAuthRateLimit, rateLimits, resolveClientIp } from "@/lib/rate-limit";
 import { maskPhone } from "@/lib/utils";
 
 const ResolvePhoneSchema = z.object({ phone: z.string().trim().min(6), bookingId: z.string().optional().nullable(), draftId: z.string().optional().nullable() });
@@ -13,6 +13,11 @@ async function handler(request: NextRequest) {
     if (!parsed.success) return NextResponse.json({ success: false, error: "Invalid request" }, { status: 400 });
     const normalizedPhone = normalizePassengerPhone(parsed.data.phone);
     if (!isValidE164Phone(normalizedPhone)) return NextResponse.json({ success: false, error: "Invalid phone number" }, { status: 400 });
+    const distributedLimit = await enforceAuthRateLimit({ domain: "phone-resolve", identities: [
+      { dimension: "ip", value: resolveClientIp(request), max: rateLimits.passengerRegistrationPhoneCheck.max, windowMs: rateLimits.passengerRegistrationPhoneCheck.windowMs },
+      { dimension: "phone", value: normalizedPhone, max: rateLimits.passengerRegistrationPhoneCheck.max, windowMs: rateLimits.passengerRegistrationPhoneCheck.windowMs },
+    ] });
+    if (!distributedLimit.allowed) return authRateLimitResponse(distributedLimit, "Too many phone checks. Please wait and try again.");
     if (parsed.data.bookingId) {
       const booking = await prisma.booking.findUnique({ where: { id: parsed.data.bookingId } });
       if (!booking) return NextResponse.json({ success: false, error: "Booking not found" }, { status: 404 });
@@ -29,4 +34,5 @@ async function handler(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Could not check phone number. Please try again." }, { status: 500 });
   }
 }
-export const POST = withRateLimit(handler, rateLimits.passengerRegistrationPhoneCheck);
+export const runtime = "nodejs";
+export const POST = handler;
