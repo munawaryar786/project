@@ -296,6 +296,7 @@ const en = {
   "legal.gdprTitle": "Your Data Rights",
   "legal.updated": "Last updated: May 2026",
   "admin.dashboard": "Dashboard",
+  "admin.operations": "Operations",
   "admin.bookings": "Bookings",
   "admin.drivers": "Drivers",
   "admin.tracking": "Live Tracking",

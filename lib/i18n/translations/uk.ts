@@ -278,6 +278,7 @@ const uk = {
   "legal.gdprTitle": "Ваші права щодо даних",
   "legal.updated": "Останнє оновлення: травень 2026",
   "admin.dashboard": "Панель",
+  "admin.operations": "Operations",
   "admin.bookings": "Бронювання",
   "admin.drivers": "Водії",
   "admin.tracking": "Live відстеження",

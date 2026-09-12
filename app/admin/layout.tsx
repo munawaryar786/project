@@ -63,6 +63,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       active: pathname === "/admin/dashboard",
     },
     {
+      href: "/admin/operations",
+      label: t("admin.operations", "Operations"),
+      icon: "OP",
+      active: pathname.startsWith("/admin/operations"),
+    },
+    {
       href: "/admin/bookings",
       label: t("admin.bookings"),
       icon: "BK",

@@ -130,6 +130,7 @@ model Booking {
   otps    OTP[]
   earning DriverEarning?
   ledgerEntries DriverLedgerEntry[]
+  rideRequests RideRequest[]
 
   @@index([status])
   @@index([passengerId])
@@ -312,6 +313,7 @@ model Driver {
   locationHistory DriverLocation[]
   earnings        DriverEarning[]
   ledgerEntries   DriverLedgerEntry[]
+  rideRequests    RideRequest[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -420,6 +422,8 @@ model RideRequest {
 
   bookingId String @db.ObjectId
   driverId  String @db.ObjectId
+  booking Booking @relation(fields: [bookingId], references: [id])
+  driver Driver @relation(fields: [driverId], references: [id])
 
   status String @default("PENDING")
 
@@ -487,7 +491,28 @@ model AdminUser {
   authVersion  Int    @default(0)
 
   createdAt DateTime @default(now())
+  auditEvents AdminAuditEvent[]
 }
+
+model AdminAuditEvent {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  adminId String @db.ObjectId
+  admin AdminUser @relation(fields: [adminId], references: [id])
+  action String
+  targetType String
+  targetId String
+  reason String
+  requestId String @unique
+  outcome String
+  safeMetadata Json?
+  createdAt DateTime @default(now())
+
+  @@index([adminId, createdAt])
+  @@index([targetType, targetId, createdAt])
+  @@index([action, createdAt])
+  @@map("admin_audit_events")
+}
+
 
 // ============================================
 // VEHICLES

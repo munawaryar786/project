@@ -296,6 +296,7 @@ const sk = {
   "legal.gdprTitle": "Vaše práva k údajom",
   "legal.updated": "Posledná aktualizácia: máj 2026",
   "admin.dashboard": "Dashboard",
+  "admin.operations": "Operations",
   "admin.bookings": "Rezervácie",
   "admin.drivers": "Vodiči",
   "admin.tracking": "Live sledovanie",

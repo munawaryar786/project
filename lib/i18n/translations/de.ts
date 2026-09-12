@@ -278,6 +278,7 @@ const de = {
   "legal.gdprTitle": "Ihre Datenrechte",
   "legal.updated": "Zuletzt aktualisiert: Mai 2026",
   "admin.dashboard": "Dashboard",
+  "admin.operations": "Operations",
   "admin.bookings": "Buchungen",
   "admin.drivers": "Fahrer",
   "admin.tracking": "Live-Tracking",

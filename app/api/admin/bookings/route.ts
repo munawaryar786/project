@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
       total: bookingsWithFinancials.length,
     });
   } catch (error) {
-    console.error("❌ Admin bookings fetch error:", error);
+    console.error("Ã¢ÂÅ’ Admin bookings fetch error:", error);
     return NextResponse.json(
       { error: "Failed to fetch bookings" },
       { status: 500 }
@@ -129,6 +129,12 @@ export async function PATCH(request: NextRequest) {
     const parsed = AdminBookingPatchSchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ error: "Invalid booking update" }, { status: 400 });
     const { bookingId, status, driverId } = parsed.data;
+
+    // Lifecycle transitions stay in domain endpoints; this compatibility route only permits assignment.
+    const requestedLifecycleStatus = status as string | undefined;
+    if (requestedLifecycleStatus && (!driverId || requestedLifecycleStatus !== "ASSIGNED")) {
+      return NextResponse.json({ error: "Lifecycle changes require the authoritative domain action", code: "STATUS_ACTION_REQUIRES_DOMAIN_ENDPOINT" }, { status: 409 });
+    }
 
     if (!bookingId) {
       return NextResponse.json(
@@ -242,13 +248,13 @@ export async function PATCH(request: NextRequest) {
       include: bookingFinancialInclude,
     });
 
-    console.log("═══════════════════════════════════════");
-    console.log("📋 ADMIN BOOKING UPDATED");
+    console.log("Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â");
+    console.log("Ã°Å¸â€œâ€¹ ADMIN BOOKING UPDATED");
     console.log(`Ref: ${updatedBooking.bookingRef}`);
-    console.log(`Status: ${currentBooking.status} → ${updatedBooking.status}`);
+    console.log(`Status: ${currentBooking.status} Ã¢â€ â€™ ${updatedBooking.status}`);
     console.log(`Dispatch: ${updatedBooking.dispatchStatus || "NOT_STARTED"}`);
     console.log(`Driver: ${updatedBooking.driver?.fullName || "None"}`);
-    console.log("═══════════════════════════════════════");
+    console.log("Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â");
 
     return NextResponse.json({
       success: true,
@@ -257,7 +263,7 @@ export async function PATCH(request: NextRequest) {
         : updatedBooking,
     });
   } catch (error) {
-    console.error("❌ Admin booking update error:", error);
+    console.error("Ã¢ÂÅ’ Admin booking update error:", error);
     return NextResponse.json(
       { error: "Failed to update booking" },
       { status: 500 }
