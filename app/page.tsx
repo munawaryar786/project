@@ -67,9 +67,12 @@ function Hero() {
               {t("hero.subtitle")}
             </p>
 
-            <div className="flex w-full flex-col sm:w-auto sm:flex-row">
-              <Link href="/book" className="btn-primary min-h-[52px] w-full px-7 text-[16px] sm:w-auto">
-                {t("hero.bookNow")}
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+              <Link href="/book?service=accessible" className="btn-primary min-h-[52px] w-full px-7 text-[16px] sm:w-auto">
+                {t("hero.bookAccessible")}
+              </Link>
+              <Link href="/book?service=airport" className="btn-outline min-h-[52px] w-full border-white/25 bg-white/[0.08] px-7 text-[16px] text-white backdrop-blur-sm hover:bg-white/[0.12] hover:text-white sm:w-auto">
+                {t("hero.bookAirport")}
               </Link>
             </div>
           </div>
@@ -143,9 +146,9 @@ function Hero() {
 function ServicesSection() {
   const { t } = useLanguage();
   const services = [
-    { ...SERVICES[0], serviceType: "standard", nameKey: "services.taxi.title", descKey: "services.taxi.desc", img: HOME_IMAGES.taxi },
-    { ...SERVICES[1], serviceType: "airport", nameKey: "services.airport.title", descKey: "services.airport.desc", img: HOME_IMAGES.airport },
     { ...SERVICES[2], serviceType: "accessible", nameKey: "services.accessible.title", descKey: "services.accessible.desc", img: HOME_IMAGES.accessible },
+    { ...SERVICES[1], serviceType: "airport", nameKey: "services.airport.title", descKey: "services.airport.desc", img: HOME_IMAGES.airport },
+    { ...SERVICES[0], serviceType: "standard", nameKey: "services.taxi.title", descKey: "services.taxi.desc", img: HOME_IMAGES.taxi },
     { ...SERVICES[3], serviceType: "children", nameKey: "services.children.title", descKey: "services.children.desc", img: HOME_IMAGES.children },
   ].filter((service) => isCustomerServiceEnabled(service.serviceType));
 

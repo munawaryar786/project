@@ -9,13 +9,15 @@ const en = {
   "nav.driverPortal": "Driver Portal",
 
   // Hero
-  "hero.title": "Reliable Taxi, Airport Transfers and Assisted Transport in Bratislava",
+  "hero.title": "Accessible Mobility, Senior Assistance & Airport Transfers in Bratislava",
   "hero.subtitle":
-    "From everyday city rides to transport for seniors, passengers with disabilities and families, we provide safe mobility, professional assistance and fair prices for every passenger.",
+    "Dedicated wheelchair-accessible vehicles (WAV) and door-to-door personal assistance for seniors, ZŤP passengers, medical appointments, and airport transfers across Bratislava and surrounding regions.",
   "hero.bookNow": "Book a Ride Now",
+  "hero.bookAccessible": "Book Accessible Ride",
+  "hero.bookAirport": "Book Airport Transfer",
   "hero.whatsapp": "WhatsApp",
   "hero.badge1": "Licensed drivers",
-  "hero.badge2": "Care, Safety and Mobility for Everyone",
+  "hero.badge2": "Specialized Accessible Mobility & Door-to-Door Care",
   "hero.badge3": "Simple booking",
                
   // Services
@@ -29,9 +31,9 @@ const en = {
   "services.accessible.tagline":
     "Dignity, patience and assistance at every step.",
   "services.accessible.desc":
-    "Safe and dignified transport for seniors, ZTP passengers and assisted mobility users. Door-to-door help, hospital visits, rehabilitation visits, companions and WAV support.",
+    "Safe and dignified transport for seniors, ZŤP passengers and assisted mobility users. Door-to-door help, hospital visits, rehabilitation visits, companions and WAV support.",
   "services.accessible.what":
-    "Safe and dignified transport for seniors, ZTP passengers and assisted mobility users.",
+    "Safe and dignified transport for seniors, ZŤP passengers and assisted mobility users.",
   "services.accessible.for": "Our services are designed for:",
   "services.accessible.wheelchair": "Wheelchair users",
   "services.accessible.limited": "People with limited mobility",

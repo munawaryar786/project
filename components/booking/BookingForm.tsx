@@ -1495,11 +1495,11 @@ scheduledTime:
     img: string;
   }[] = [
     {
-      value: "standard",
-      label: t("services.taxi.title"),
-      icon: "🚕",
-      desc: t("services.taxi.tagline"),
-      img: "/drivo-taxi-service.jpeg",
+      value: "accessible",
+      label: t("services.accessible.title"),
+      icon: "♿",
+      desc: t("services.accessible.tagline"),
+      img: "/drivo-wav-wheelchair.jpeg",
     },
     {
       value: "airport",
@@ -1509,11 +1509,11 @@ scheduledTime:
       img: "/drivo-airport-transfer.jpeg",
     },
     {
-      value: "accessible",
-      label: t("services.accessible.title"),
-      icon: "♿",
-      desc: "ZŤP / Seniorská doprava",
-      img: "/drivo-wav-wheelchair.jpeg",
+      value: "standard",
+      label: t("services.taxi.title"),
+      icon: "🚕",
+      desc: t("services.taxi.tagline"),
+      img: "/drivo-taxi-service.jpeg",
     },
     {
       value: "children",
@@ -1783,6 +1783,8 @@ scheduledTime:
             <button
               key={s.value}
               type="button"
+              aria-pressed={serviceType === s.value}
+              aria-label={s.label}
               onClick={() => {
                 if (serviceType !== s.value) {
                   setError("");
@@ -1807,13 +1809,13 @@ scheduledTime:
                   setWaitAndGreet(false);
                 }
               }}
-              className={`group relative rounded-2xl border-2 overflow-hidden transition-all ${
+              className={`group relative min-h-[180px] overflow-hidden rounded-2xl border-2 transition-all focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-drivo-green/30 ${
                 serviceType === s.value
                   ? "border-drivo-green ring-4 ring-drivo-green/10"
                   : "border-drivo-border hover:border-drivo-green/30"
               }`}
             >
-              <div className="relative h-20 overflow-hidden">
+              <div className="relative h-32 overflow-hidden">
                 <Image
                   src={s.img}
                   alt={s.label}
@@ -1826,7 +1828,7 @@ scheduledTime:
 
               <div className="absolute bottom-0 left-0 right-0 p-2 text-center">
                 <span className="text-[12px] font-semibold text-white block">
-                  {s.icon} {s.label}
+                  {s.label}
                 </span>
                 <span className="text-[10px] text-white/60">{s.desc}</span>
               </div>

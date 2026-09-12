@@ -7,13 +7,15 @@ const de = {
   "nav.contact": "Kontakt",
   "nav.driverPortal": "Fahrer-Portal",
 
-  "hero.title": "Zuverlässiges Taxi, Flughafentransfers und begleitete Beförderung in Bratislava",
+  "hero.title": "Barrierefreie Mobilität, Seniorenbegleitung und Flughafentransfers in Bratislava",
   "hero.subtitle":
-    "Von täglichen Stadtfahrten bis zur Beförderung von Senioren, Menschen mit Behinderungen und Familien bieten wir sichere Mobilität, professionelle Unterstützung und faire Preise für jeden Fahrgast.",
+    "Spezialisierte rollstuhlgerechte Fahrzeuge (WAV) und persönliche Unterstützung von Tür zu Tür für Senioren, ZTP-Passagiere, Arzttermine und Flughafentransfers in Bratislava und Umgebung.",
   "hero.bookNow": "Jetzt Fahrt buchen",
+  "hero.bookAccessible": "Barrierefreie Fahrt buchen",
+  "hero.bookAirport": "Flughafentransfer buchen",
   "hero.whatsapp": "WhatsApp",
   "hero.badge1": "Lizenzierte Fahrer",
-  "hero.badge2": "Fürsorge, Sicherheit und Mobilität für alle",
+  "hero.badge2": "Spezialisierte barrierefreie Mobilität und Betreuung von Tür zu Tür",
   "hero.badge3": "Einfache Buchung",
 
   "services.title": "Unsere Dienstleistungen",

@@ -9,13 +9,15 @@ const sk = {
   "nav.driverPortal": "Portál vodiča",
 
   // Hero
-  "hero.title": "Spoľahlivé taxi, letiskové transfery a asistovaná doprava v Bratislave",
+  "hero.title": "Bezbariérová mobilita, asistencia seniorom a letiskové transfery v Bratislave",
   "hero.subtitle":
-    "Od každodenných jázd po meste až po prepravu seniorov, osôb ZŤP a rodín. Poskytujeme bezpečnú dopravu, profesionálnu asistenciu a férové ceny pre každého cestujúceho.",
+    "Špecializované vozidlá prístupné pre invalidné vozíky (WAV) a osobná asistencia od dverí k dverám pre seniorov, cestujúcich so ZŤP, lekárske návštevy a letiskové transfery v Bratislave a okolí.",
   "hero.bookNow": "Objednať jazdu teraz",
+  "hero.bookAccessible": "Objednať asistovanú jazdu",
+  "hero.bookAirport": "Objednať letiskový transfer",
   "hero.whatsapp": "WhatsApp",
   "hero.badge1": "Licencovaní vodiči",
-  "hero.badge2": "Starostlivosť, bezpečnosť a mobilita pre každého",
+  "hero.badge2": "Špecializovaná bezbariérová mobilita a asistencia od dverí k dverám",
   "hero.badge3": "Jednoduché objednávanie",
 
   // Services

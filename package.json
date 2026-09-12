@@ -20,7 +20,8 @@
     "test:phase3e": "node scripts/phase3e-check.cjs",
     "test:phase3f": "node scripts/phase3f-check.cjs",
     "test:phase3g": "node scripts/phase3g-check.cjs",
-    "test:phase3h": "node scripts/phase3h-check.cjs"
+    "test:phase3h": "node scripts/phase3h-check.cjs",
+    "test:homepage-priority": "node scripts/homepage-priority-check.cjs"
   },
   "dependencies": {
     "@googlemaps/google-maps-services-js": "^3.4.2",
