@@ -11,10 +11,11 @@ import { prisma } from "@/lib/prisma";
 import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 
 const PasswordLoginSchema = z.object({
-  phone: z.string().trim().min(6),
+  identifier: z.string().trim().min(3).max(160).optional(),
+  phone: z.string().trim().min(6).optional(),
   password: z.string().min(1),
   bookingId: z.string().optional().nullable(),
-});
+}).refine((data) => Boolean(data.identifier || data.phone), { path: ["identifier"], message: "Phone number or email is required." });
 
 async function handler(request: NextRequest) {
   try {
@@ -26,12 +27,17 @@ async function handler(request: NextRequest) {
       );
     }
 
-    const normalizedPhone = normalizePassengerPhone(parsed.data.phone);
+    const rawIdentifier = parsed.data.identifier || parsed.data.phone || "";
+    const isEmail = rawIdentifier.includes("@");
+    const normalizedEmail = isEmail ? rawIdentifier.toLowerCase() : "";
+    const normalizedPhone = isEmail ? "" : normalizePassengerPhone(rawIdentifier);
     const passenger = await prisma.passenger.findFirst({
-      where: { OR: [{ phone: normalizedPhone }, { normalizedPhone }] },
+      where: isEmail
+        ? { email: normalizedEmail }
+        : { OR: [{ phone: normalizedPhone }, { normalizedPhone }] },
     });
 
-    const genericError = { error: "Phone number or password is incorrect." };
+    const genericError = { error: "Phone number, email, or password is incorrect." };
     if (!passenger?.passwordHash || passenger.status !== "ACTIVE") {
       return NextResponse.json(genericError, { status: 401 });
     }
@@ -43,12 +49,12 @@ async function handler(request: NextRequest) {
 
     const updated = await prisma.passenger.update({
       where: { id: passenger.id },
-      data: { lastLoginAt: new Date(), normalizedPhone, phone: normalizedPhone },
+      data: { lastLoginAt: new Date(), ...(normalizedPhone ? { normalizedPhone, phone: normalizedPhone } : {}) },
     });
 
     if (parsed.data.bookingId) {
       await prisma.booking.updateMany({
-        where: { id: parsed.data.bookingId, normalizedPhone },
+        where: { id: parsed.data.bookingId, ...(normalizedPhone ? { normalizedPhone } : {}) },
         data: {
           passengerId: passenger.id,
           passengerAuthStatus: "AUTHENTICATED",
@@ -69,7 +75,7 @@ async function handler(request: NextRequest) {
     console.log(`Passenger login success: ${passenger.id}`);
     return response;
   } catch (error) {
-    console.error("Passenger password login error:", error);
+    console.error("Passenger password login error:", error instanceof Error ? error.message : "unknown");
     return NextResponse.json({ error: "Login failed." }, { status: 500 });
   }
 }

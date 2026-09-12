@@ -6,6 +6,7 @@ import type { Booking } from "@prisma/client";
 import { Resend } from "resend";
 import { EMAIL, PHONE_NUMBER, WHATSAPP_URL } from "./constants";
 import { maskEmail, maskPhone } from "./utils";
+import { prisma } from "./prisma";
 import {
   buildSeniorAssistedAdminEmail,
   buildSeniorAssistedDriverSafeEmail,
@@ -213,7 +214,11 @@ function renderRows(rows: Array<[string, string | number | null | undefined]>) {
     .join("");
 }
 
-function buildEmailShell(title: string, preheader: string, body: string) {
+function buildEmailShell(title: string, preheader: string, body: string, sourceDomain?: string | null) {
+  const logoUrl = getPublicSiteUrl(sourceDomain);
+  const brand = logoUrl
+    ? `<img src="${escapeHtml(`${logoUrl}/drivo-logo-transparent.png`)}" width="132" alt="Drivo" style="display:block; max-width:132px; height:auto; border:0;" />`
+    : `<span style="color: #b7f7d1; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase;">Drivo</span>`;
   return `<!doctype html>
 <html>
   <head>
@@ -231,8 +236,8 @@ function buildEmailShell(title: string, preheader: string, body: string) {
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 640px; background: #ffffff; border-radius: 8px; overflow: hidden;">
             <tr>
               <td style="background: #113f36; color: #ffffff; padding: 24px;">
-                <p style="margin: 0 0 6px; color: #b7f7d1; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase;">Drivo</p>
-                <h1 style="margin: 0; font-size: 24px; line-height: 1.25;">${escapeHtml(title)}</h1>
+                ${brand}
+                <h1 style="margin: 10px 0 0; font-size: 24px; line-height: 1.25;">${escapeHtml(title)}</h1>
               </td>
             </tr>
             <tr>
@@ -262,7 +267,7 @@ function buildAdminNotificationEmail(data: BookingEmailData) {
     ["Passenger count", data.passengerCount],
     ["Luggage type", data.luggageType],
     ["Payment method", data.paymentMethod],
-    ["Estimated price", formatPrice(data.estimatedPrice)],
+    ["Confirmed total", formatPrice(data.estimatedPrice)],
   ];
 
   if (data.specialNotes) rows.push(["Special notes", data.specialNotes]);
@@ -285,6 +290,7 @@ function buildAdminNotificationEmail(data: BookingEmailData) {
     <p style="margin: 22px 0 0; color: #6b7280; font-size: 13px;">
       Admin panel: ${escapeHtml(process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000")}/admin/bookings
     </p>`
+    , data.sourceDomain
   );
 }
 
@@ -298,8 +304,14 @@ function buildCustomerConfirmationEmail(data: BookingEmailData) {
     ["Service type", serviceLabel(data.serviceType)],
     ["Passenger count", data.passengerCount],
     ["Payment method", data.paymentMethod],
-    ["Estimated price", formatPrice(data.estimatedPrice)],
+    ["Confirmed total", formatPrice(data.estimatedPrice)],
   ];
+  if (data.luggageType) rows.push(["Luggage", data.luggageType]);
+  if (data.distanceKm != null) rows.push(["Trip distance", `${data.distanceKm} km`]);
+  if (data.assistanceLevel || data.wheelchairNeeded || data.wavRequired) {
+    rows.push(["Assistance", data.assistanceLevel || (data.wavRequired || data.wheelchairNeeded ? "Accessibility vehicle/support" : "Requested")]);
+  }
+  if (data.status) rows.push(["Booking status", data.status]);
 
   return buildEmailShell(
     `Booking confirmed: ${data.bookingRef}`,
@@ -318,6 +330,7 @@ function buildCustomerConfirmationEmail(data: BookingEmailData) {
         WhatsApp: <a href="${escapeHtml(WHATSAPP_URL)}" style="color: #047857;">${escapeHtml(WHATSAPP_URL)}</a>
       </p>
     </div>`
+    , data.sourceDomain
   );
 }
 
@@ -336,7 +349,7 @@ function buildAdminNotificationText(data: BookingEmailData) {
     `Passenger count: ${data.passengerCount}`,
     `Luggage type: ${data.luggageType}`,
     `Payment method: ${data.paymentMethod}`,
-    `Estimated price: ${formatPrice(data.estimatedPrice)}`,
+    `Confirmed total: ${formatPrice(data.estimatedPrice)}`,
     data.specialNotes ? `Special notes: ${data.specialNotes}` : null,
   ]
     .filter(Boolean)
@@ -354,7 +367,7 @@ function buildCustomerConfirmationText(data: BookingEmailData) {
     `Service type: ${serviceLabel(data.serviceType)}`,
     `Passenger count: ${data.passengerCount}`,
     `Payment method: ${data.paymentMethod}`,
-    `Estimated price: ${formatPrice(data.estimatedPrice)}`,
+    `Confirmed total: ${formatPrice(data.estimatedPrice)}`,
     "",
     "Drivo support",
     `Phone: ${PHONE_NUMBER}`,
@@ -379,6 +392,7 @@ function buildPaymentReceiptHtml(
         ["Payment ID", data.paymentId],
       ])}
     </table>`
+    , data.sourceDomain
   );
 }
 
@@ -656,6 +670,28 @@ async function deliverEmail(message: EmailMessage): Promise<EmailSendResult> {
   };
 }
 
+function sanitizeEmailError(value: string | undefined) {
+  return String(value || "email_delivery_failed")
+    .replace(/(password|pass|token|secret|api[_-]?key|authorization)\s*[:=]\s*[^\s,;]+/gi, "$1=[redacted]")
+    .replace(/https?:\/\/[^\s]+/gi, "[url-redacted]")
+    .slice(0, 240);
+}
+async function deliverIdempotentEmail(logicalKey: string, kind: string, message: EmailMessage): Promise<EmailSendResult> {
+  let record = await prisma.emailDelivery.findUnique({ where: { logicalKey } });
+  if (!record) {
+    try { record = await prisma.emailDelivery.create({ data: { logicalKey, kind, recipient: normalizeRecipients(message.to).join(", ") } }); }
+    catch { record = await prisma.emailDelivery.findUnique({ where: { logicalKey } }); }
+  }
+  if (!record) return { success: false, provider: "none", error: "Email delivery record unavailable." };
+  const claimed = await prisma.emailDelivery.updateMany({ where: { logicalKey, status: { in: ["PENDING", "RETRY"] }, attempts: { lt: 3 } }, data: { status: "PROCESSING", attempts: { increment: 1 } } });
+  if (claimed.count !== 1) {
+    if (record.status === "SENT") return { success: true, provider: "none", warning: "Email already delivered." };
+    return { success: false, provider: "none", warning: "Email delivery is already in progress." };
+  }
+  const result = await deliverEmail(message);
+  await prisma.emailDelivery.updateMany({ where: { logicalKey, status: "PROCESSING" }, data: result.success ? { status: "SENT", sentAt: new Date(), lastError: null } : { status: record.attempts + 1 >= 3 ? "FAILED" : "RETRY", lastError: sanitizeEmailError(result.error || result.warning || "delivery_failed") } });
+  return result;
+}
 function logEmailResult(label: string, to: string, result: EmailSendResult) {
   if (result.success) {
     console.log(`[email] ${label} sent via ${result.provider} to ${to}`);
@@ -664,7 +700,7 @@ function logEmailResult(label: string, to: string, result: EmailSendResult) {
 
   console.warn(
     `[email] ${label} was not sent via ${result.provider}: ${
-      result.error || result.warning || "unknown warning"
+      sanitizeEmailError(result.error || result.warning || "unknown warning")
     }`
   );
 }
@@ -687,7 +723,7 @@ export function bookingToEmailData(booking: Booking): BookingEmailData {
     luggageType: booking.luggageType,
     specialNotes: booking.specialNotes,
     sourceDomain: booking.sourceDomain,
-    estimatedPrice: booking.estimatedPrice,
+    estimatedPrice: booking.fareTotalFare ?? booking.estimatedPrice,
     distanceKm: booking.distanceKm,
     flightNumber: booking.flightNumber,
     airline: booking.airline,
@@ -788,6 +824,27 @@ export async function sendSeniorAssistedBookingEmails(data: BookingEmailData) {
 
   return { adminFull, driverSafe };
 }
+export async function sendPassengerPasswordResetEmail(input: { to: string; resetToken: string; resetAttemptId: string; expiresAt: Date; sourceDomain?: string | null }): Promise<EmailSendResult> {
+  const siteUrl = getPublicSiteUrl(input.sourceDomain) || "http://localhost:3000";
+  const resetUrl = siteUrl + "/passenger/reset?token=" + encodeURIComponent(input.resetToken) + "&attempt=" + encodeURIComponent(input.resetAttemptId);
+  const body = "<p style=\"font:15px/1.6 Arial;color:#374151\">We received a request to reset your Drivo passenger password.</p><p style=\"font:14px/1.6 Arial;color:#374151\">This secure link expires in 10 minutes and can be used once.</p><p><a href=\"" + escapeHtml(resetUrl) + "\" style=\"display:inline-block;background:#11b8a6;color:#fff;padding:12px 18px;border-radius:6px;text-decoration:none;font-weight:700\">Reset password</a></p><p style=\"font:13px/1.6 Arial;color:#60707d\">If you did not request this, ignore this email. Drivo support: " + escapeHtml(EMAIL) + " / " + escapeHtml(PHONE_NUMBER) + ".</p>";
+  return deliverIdempotentEmail("PASSWORD_RESET_EMAIL:" + input.resetAttemptId, "PASSWORD_RESET", { to: input.to, subject: "Reset your Drivo passenger password", html: buildEmailShell("Reset your Drivo password", "Secure password reset for your Drivo account.", body, input.sourceDomain), text: ["Reset your Drivo passenger password", "", "This link expires in 10 minutes and can be used once:", resetUrl, "", "If you did not request this, ignore this email.", "Drivo support: " + EMAIL + " / " + PHONE_NUMBER].join("\\n") });
+}
+
+export async function sendBookingConfirmationInvoice(data: BookingEmailData): Promise<EmailSendResult> {
+  if (data.status !== "CONFIRMED") return { success: false, provider: "none", warning: "Booking is not confirmed." };
+  if (!data.customerEmail) return { success: false, provider: "none", warning: "Customer email is missing." };
+  return deliverIdempotentEmail("BOOKING_CONFIRMATION_INVOICE:" + data.bookingRef, "BOOKING_CONFIRMATION_INVOICE", { to: data.customerEmail, subject: "Drivo booking confirmation / invoice - " + data.bookingRef, html: buildCustomerConfirmationEmail(data), text: buildCustomerConfirmationText(data) });
+}
+
+export async function sendNoDriverAdminEscalation(data: BookingEmailData): Promise<EmailSendResult> {
+  const adminEmail = getAdminEmail();
+  const rows = [["Booking reference", data.bookingRef], ["Service", serviceLabel(data.serviceType)], ["Ride type", data.scheduledDate ? "Scheduled" : "Immediate"], ["Pickup time", data.scheduledDate + " " + data.scheduledTime], ["Pickup", data.pickupAddress], ["Destination", data.dropoffAddress], ["Passengers", String(data.passengerCount)], ["Luggage", data.luggageType], ["Accessibility", data.wheelchairNeeded ? "Wheelchair capability required" : "No wheelchair requirement recorded"], ["Booking status", data.status || "UNKNOWN"], ["Dispatch status", "DISPATCH_EXHAUSTED"]].map(([label,value]) => "<tr><td style=\"padding:8px 0;color:#60707d;width:38%\">" + escapeHtml(label) + "</td><td style=\"padding:8px 0;font-weight:700;color:#10202f\">" + escapeHtml(value) + "</td></tr>").join("");
+  const siteUrl = getPublicSiteUrl(data.sourceDomain);
+  const adminLink = siteUrl ? siteUrl + "/admin/operations" : null;
+  const body = "<p style=\"font:15px/1.6 Arial;color:#374151\">Automatic dispatch is exhausted and a driver assignment is required.</p><table width=\"100%\">" + rows + "</table>" + (adminLink ? "<p><a href=\"" + escapeHtml(adminLink) + "\">Open Admin Operations</a></p>" : "") + "<p style=\"font:13px/1.6 Arial;color:#60707d\">Reason: no eligible driver accepted the dispatch cycle. Assign through the authorized Admin Operations flow.</p>";
+  return deliverIdempotentEmail("NO_DRIVER_ADMIN_ESCALATION:" + data.bookingRef, "NO_DRIVER_ADMIN_ESCALATION", { to: adminEmail, subject: "Driver Assignment Required - " + data.bookingRef, html: buildEmailShell("Driver Assignment Required", "Drivo dispatch requires manual driver assignment.", body, data.sourceDomain), text: ["Driver Assignment Required", "", "Booking: " + data.bookingRef, "Service: " + serviceLabel(data.serviceType), "Pickup: " + data.pickupAddress, "Destination: " + data.dropoffAddress, "Pickup time: " + data.scheduledDate + " " + data.scheduledTime, "Passengers: " + data.passengerCount, "Dispatch: DISPATCH_EXHAUSTED", "Reason: no eligible driver accepted.", adminLink || ""].filter(Boolean).join("\\n") });
+}
 export async function sendCustomerConfirmation(
   data: BookingEmailData
 ): Promise<EmailSendResult> {
@@ -818,34 +875,12 @@ export async function sendCustomerConfirmation(
 }
 
 export async function sendBookingCompletionEmails(data: BookingEmailData) {
-  console.log(`[email] Booking completion email flow started for ${data.bookingRef}`);
-
-  if (isSeniorAssistedService(data.serviceType)) {
-    console.log(
-      `[email] Standard completion emails skipped for senior/assisted booking ${data.bookingRef}; admin-only emails are sent at booking creation.`
-    );
-    return {
-      admin: { success: true, provider: "none" as const, warning: "Skipped for senior/assisted booking." },
-      customer: { success: true, provider: "none" as const, warning: "Skipped for senior/assisted booking." },
-      skipped: true,
-    };
-  }
-
-  const [admin, customer] = await Promise.all([
-    notifyAdminNewBooking(data),
-    sendCustomerConfirmation(data),
-  ]);
-
-  if (!admin.success || !customer.success) {
-    console.warn(
-      `[email] Booking ${data.bookingRef} completed, but one or more emails failed. Booking remains saved.`
-    );
-  }
-
-  return { admin, customer };
-}
-
-export async function sendPaymentReceipt(
+  if (data.status !== "CONFIRMED") return { admin: { success: true, provider: "none" as const, warning: "Booking is not confirmed." }, customer: { success: false, provider: "none" as const, warning: "Booking is not confirmed." }, skipped: true };
+  const customer = await sendBookingConfirmationInvoice(data);
+  if (isSeniorAssistedService(data.serviceType)) return { admin: { success: true, provider: "none" as const, warning: "Admin assisted notification is handled by the existing flow." }, customer, skipped: false };
+  const admin = await notifyAdminNewBooking(data);
+  return { admin, customer, skipped: false };
+}export async function sendPaymentReceipt(
   data: BookingEmailData & { amount: number; paymentId: string }
 ): Promise<EmailSendResult> {
   if (!data.customerEmail) {

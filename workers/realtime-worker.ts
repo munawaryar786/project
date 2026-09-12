@@ -9,15 +9,34 @@ import { eventTypeForDomain, safeEvent } from "@/lib/realtime/contracts";
 import { OUTBOX_STATES, REALTIME_EVENTS, REALTIME_QUEUES } from "@/lib/realtime/constants";
 import { getOfferExpiryQueue, getScheduledRideQueue, closeQueues } from "@/lib/realtime/queues";
 import { relayOutboxOnce } from "@/lib/outbox-relay";
+import { bookingToEmailData, sendNoDriverAdminEscalation } from "@/lib/email";
 
 const redis = createRedisConnection("worker-emitter");
 const emitter = new Emitter(redis as any);
 function payloadOf(event: any) { return (event.payload && typeof event.payload === "object" ? event.payload : {}) as Record<string, any>; }
 async function signal(event: any, recipientType: "DRIVER" | "ADMIN" | "PASSENGER", recipientId: string, stateHint?: string) { const type = eventTypeForDomain(event.eventType); emitter.of(`/${recipientType.toLowerCase()}`).to(`${recipientType.toLowerCase()}:${recipientId}`).emit(type, safeEvent({ eventId: event.id, type, entityId: event.aggregateId, stateHint, actorType: recipientType })); }
 async function routeEvent(event: any) {
-  const p = payloadOf(event); const bookingId = String(p.bookingId || event.aggregateId); const booking = await prisma.booking.findUnique({ where: { id: bookingId }, select: { driverId: true, passengerId: true } });
+  const p = payloadOf(event); const bookingId = String(p.bookingId || event.aggregateId); const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
   if (event.eventType === "OFFER_CREATED" && p.driverId) { await createNotification({ recipientType: "DRIVER", recipientId: String(p.driverId), type: "DRIVER_OFFER_UPDATED", data: { bookingId, offerId: String(p.offerId || "") }, dedupeKey: notificationDedupe(event.id, "DRIVER", String(p.driverId)) }); await signal(event, "DRIVER", String(p.driverId), "offer-updated"); const offer = p.offerId ? await prisma.rideRequest.findUnique({ where: { id: String(p.offerId) }, select: { expiresAt: true } }) : null; if (offer) { const delay = Math.max(0, offer.expiresAt.getTime() - Date.now()); await getOfferExpiryQueue().add("expire", { offerId: String(p.offerId), bookingId }, { jobId: `offer-expiry-${String(p.offerId)}`, delay }); } return; }
-  if (event.eventType === "DISPATCH_EXHAUSTED") { const admins = await prisma.adminUser.findMany({ select: { id: true } }); for (const admin of admins) { await createNotification({ recipientType: "ADMIN", recipientId: admin.id, type: "DISPATCH_EXHAUSTED", data: { bookingId }, dedupeKey: notificationDedupe(event.id, "ADMIN", admin.id) }); await signal(event, "ADMIN", admin.id, "manual-attention"); } return; }
+  if (event.eventType === "DRIVER_OFFER_ACCEPTED") {
+    const admins = await prisma.adminUser.findMany({ select: { id: true } });
+    for (const admin of admins) {
+      await createNotification({ recipientType: "ADMIN", recipientId: admin.id, type: "DRIVER_ASSIGNED", data: { bookingId, bookingRef: booking?.bookingRef || "", driverId: String(p.driverId || booking?.driverId || ""), serviceType: booking?.serviceType || "", status: booking?.status || "ASSIGNED", pickupAt: booking?.pickupAt?.toISOString?.() || null }, dedupeKey: notificationDedupe(event.id, "ADMIN", admin.id) });
+      await signal(event, "ADMIN", admin.id, "driver-assigned");
+    }
+    if (booking?.driverId) await signal(event, "DRIVER", booking.driverId, "assigned");
+    if (booking?.passengerId) await signal(event, "PASSENGER", booking.passengerId, "assigned");
+    return;
+  }
+  if (event.eventType === "DISPATCH_EXHAUSTED") {
+    const admins = await prisma.adminUser.findMany({ select: { id: true } });
+    for (const admin of admins) {
+      await createNotification({ recipientType: "ADMIN", recipientId: admin.id, type: "DISPATCH_EXHAUSTED", data: { bookingId, bookingRef: booking?.bookingRef || "", serviceType: booking?.serviceType || "", status: booking?.status || "", dispatchStatus: booking?.dispatchStatus || "DISPATCH_EXHAUSTED" }, dedupeKey: notificationDedupe(event.id, "ADMIN", admin.id) });
+      await signal(event, "ADMIN", admin.id, "manual-attention");
+    }
+    if (booking) await sendNoDriverAdminEscalation(bookingToEmailData(booking));
+    return;
+  }
   if (booking?.driverId) await signal(event, "DRIVER", booking.driverId, event.eventType.toLowerCase());
   if (booking?.passengerId) await signal(event, "PASSENGER", booking.passengerId, event.eventType.toLowerCase());
   const admins = await prisma.adminUser.findMany({ select: { id: true } }); for (const admin of admins) await signal(event, "ADMIN", admin.id, event.eventType.toLowerCase());

@@ -464,6 +464,22 @@ model OutboxEvent {
   @@map("outbox_events")
 }
 
+model EmailDelivery {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  logicalKey  String   @unique
+  kind        String
+  recipient   String
+  status      String   @default("PENDING")
+  attempts    Int      @default(0)
+  lastError   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  sentAt      DateTime?
+
+  @@index([kind, status, createdAt])
+  @@index([status, createdAt])
+  @@map("email_deliveries")
+}
 model Notification {
   id String @id @default(auto()) @map("_id") @db.ObjectId
   recipientType String

@@ -125,6 +125,13 @@ export const rateLimits = {
     message: "Too many verification attempts. Please request a new code."
   },
 
+  passengerPasswordResetEmailSend: {
+    scope: "password_reset_email_send",
+    max: 5,
+    windowMs: 15 * 60 * 1000,
+    message: "Too many password reset attempts. Please wait and try again."
+  },
+
   passengerPasswordResetOtpSend: {
     scope: "password_reset_otp_send",
     max: 5,

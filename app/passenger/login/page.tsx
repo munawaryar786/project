@@ -71,7 +71,7 @@ export default function PassengerLoginPage() {
       const res = await csrfFetch("passenger", "/api/passenger/login/password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, password }),
+        body: JSON.stringify({ identifier: phone, password }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || t("passenger.loginError"));
@@ -132,11 +132,12 @@ export default function PassengerLoginPage() {
             </form>
           ) : (
             <form onSubmit={loginPassword} className="mt-6 space-y-4">
-              <input className="input" type="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={t("passenger.phone")} required />
+              <input className="input" type="text" autoComplete="username" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={t("passenger.phoneOrEmail", "Phone or email")} required />
               <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t("passenger.password")} required />
               <button className="btn-primary w-full justify-center" disabled={loading}>
                 {loading ? t("passenger.loading") : t("passenger.signIn")}
               </button>
+              <a href="/passenger/reset" className="block text-center text-sm font-semibold text-drivo-green hover:underline">{t("passenger.forgotPassword", "Forgot password?")}</a>
             </form>
           )}
         </div>

@@ -1,0 +1,106 @@
+const fs = require("node:fs");
+const path = require("node:path");
+
+const root = process.cwd();
+const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+const exists = (file) => fs.existsSync(path.join(root, file));
+const checks = [];
+function check(name, condition, detail = "") {
+  checks.push({ name, ok: Boolean(condition), detail });
+}
+function has(file, pattern) {
+  return pattern instanceof RegExp ? pattern.test(read(file)) : read(file).includes(pattern);
+}
+
+check("checklist exists", exists("PHASE_3I_CHECKLIST.md"));
+check("read-only query plan exists", exists("PHASE_3I_PRODUCTION_READ_ONLY_QUERY_PLAN.md"));
+check("passenger email reset route exists", exists("app/api/passenger/password-reset/email/route.ts"));
+check("passenger reset page exists", exists("app/passenger/reset/page.tsx"));
+check("EmailDelivery schema model exists", has("prisma/schema.prisma", "model EmailDelivery"));
+check("EmailDelivery logical key is unique", has("prisma/schema.prisma", "logicalKey  String   @unique"));
+check("EmailDelivery status index exists", has("prisma/schema.prisma", "@@index([kind, status, createdAt])"));
+check("OTP generation uses crypto randomInt", has("lib/utils.ts", "crypto.randomInt(100000, 1000000)"));
+check("OTP send uses canonical generator", has("app/api/otp/send/route.ts", "generateOTP()"));
+check("OTP verification atomically claims code", has("app/api/otp/verify/route.ts", "prisma.oTP.updateMany"));
+check("OTP claim requires unused code", has("app/api/otp/verify/route.ts", "used: false"));
+check("OTP claim requires expiry", has("app/api/otp/verify/route.ts", "expiresAt: { gt: new Date() }"));
+check("OTP claim limits attempts", has("app/api/otp/verify/route.ts", "attempts: { lt: otpRecord.maxAttempts }"));
+check("phone normalization remains canonical", has("app/api/passenger/login/password/route.ts", "normalizePassengerPhone"));
+check("password login supports identifier", has("app/api/passenger/login/password/route.ts", "identifier"));
+check("password login checks email", has("app/api/passenger/login/password/route.ts", "email: normalizedEmail"));
+check("password login checks bcrypt", has("app/api/passenger/login/password/route.ts", "bcrypt.compare"));
+check("password login creates canonical session", has("app/api/passenger/login/password/route.ts", "createPassengerSession"));
+check("password login returns generic error", has("app/api/passenger/login/password/route.ts", "Phone number, email, or password is incorrect."));
+check("account creation normalizes email", has("app/api/passenger/account/create/route.ts", "normalizedEmail"));
+check("account creation rejects duplicate email", has("app/api/passenger/account/create/route.ts", "EMAIL_ALREADY_IN_USE"));
+check("email reset validates email", has("app/api/passenger/password-reset/email/route.ts", "z.string().trim().email()"));
+check("email reset generic response", has("app/api/passenger/password-reset/email/route.ts", "If an account exists for this email"));
+check("email reset uses active password account", has("app/api/passenger/password-reset/email/route.ts", "passwordHash: { not: null }"));
+check("email reset invalidates prior proofs", has("app/api/passenger/password-reset/email/route.ts", "consumedAt: new Date()"));
+check("email reset creates opaque attempt", has("app/api/passenger/password-reset/email/route.ts", "createOpaqueToken(16)"));
+check("email reset uses dedicated purpose", has("app/api/passenger/password-reset/email/route.ts", "PASSENGER_PASSWORD_RESET_EMAIL"));
+check("email reset route is rate limited", has("app/api/passenger/password-reset/email/route.ts", "passengerPasswordResetEmailSend"));
+check("reset completion accepts attempt id", has("app/api/passenger/password-reset/complete/route.ts", "resetAttemptId"));
+check("reset completion verifies email proof hash", has("app/api/passenger/password-reset/complete/route.ts", "hashSecret(data.passwordResetProofToken)"));
+check("reset completion consumes proof atomically", has("app/api/passenger/password-reset/complete/route.ts", "consumeVerificationProofById"));
+check("reset completion revokes sessions", has("app/api/passenger/password-reset/complete/route.ts", "revokePassengerSessions"));
+check("reset completion revokes trusted devices", has("app/api/passenger/password-reset/complete/route.ts", "passengerTrustedDevice.updateMany"));
+check("reset completion increments auth version", has("app/api/passenger/password-reset/complete/route.ts", "authVersion: { increment: 1 }"));
+check("reset completion establishes session", has("app/api/passenger/password-reset/complete/route.ts", "createPassengerSession"));
+check("login UI links forgot password", has("app/passenger/login/page.tsx", "/passenger/reset"));
+check("reset UI uses csrfFetch", has("app/passenger/reset/page.tsx", "csrfFetch"));
+check("reset UI supports email request", has("app/passenger/reset/page.tsx", "/api/passenger/password-reset/email"));
+check("reset UI supports token completion", has("app/passenger/reset/page.tsx", "/api/passenger/password-reset/complete"));
+check("email helper is idempotent", has("lib/email.ts", "deliverIdempotentEmail"));
+check("reset logical key is stable", has("lib/email.ts", "PASSWORD_RESET_EMAIL:"));
+check("invoice logical key is booking based", has("lib/email.ts", "BOOKING_CONFIRMATION_INVOICE:"));
+check("escalation logical key is booking based", has("lib/email.ts", "NO_DRIVER_ADMIN_ESCALATION:"));
+check("invoice requires confirmed booking", has("lib/email.ts", 'data.status !== "CONFIRMED"'));
+check("invoice requires customer email", has("lib/email.ts", "Customer email is missing."));
+check("invoice uses finalized fare fallback", has("lib/email.ts", "booking.fareTotalFare ?? booking.estimatedPrice"));
+check("invoice title is explicit", has("lib/email.ts", "booking confirmation / invoice"));
+check("reset mail includes one time language", has("lib/email.ts", "can be used once"));
+check("admin escalation includes dispatch status", has("lib/email.ts", "DISPATCH_EXHAUSTED"));
+check("admin escalation uses masked/logical source", has("lib/email.ts", "sendNoDriverAdminEscalation") && !has("lib/email.ts", "Customer phone: " + "data.customerPhone"));
+check("worker listens for driver accepted", has("workers/realtime-worker.ts", 'event.eventType === "DRIVER_OFFER_ACCEPTED"'));
+check("worker persists driver assigned notifications", has("workers/realtime-worker.ts", 'type: "DRIVER_ASSIGNED"'));
+check("worker signals passenger assignment", has("workers/realtime-worker.ts", 'signal(event, "PASSENGER"'));
+check("worker listens for dispatch exhausted", has("workers/realtime-worker.ts", 'event.eventType === "DISPATCH_EXHAUSTED"'));
+check("worker persists exhausted notification", has("workers/realtime-worker.ts", 'type: "DISPATCH_EXHAUSTED"'));
+check("worker sends exhausted admin email", has("workers/realtime-worker.ts", "sendNoDriverAdminEscalation"));
+check("worker uses safe booking projection", has("workers/realtime-worker.ts", "bookingToEmailData"));
+check("worker admin recipients are database driven", has("workers/realtime-worker.ts", "adminUser.findMany"));
+check("dispatch exhausted email is not broadcast to drivers", !has("workers/realtime-worker.ts", 'sendNoDriverAdminEscalation(bookingToEmailData(booking)) &&'));
+check("authoritative quote function remains present", has("lib/booking-quote.ts", "calculateAuthoritativeBookingQuote"));
+check("quote uses pickup and dropoff", has("lib/pricing.ts", "pickup") && has("lib/pricing.ts", "dropoff"));
+check("pricing settings authority remains present", has("lib/pricing-engine-config.ts", "pricingSettings"));
+check("pricing tiers authority remains present", has("lib/pricing-engine-config.ts", "pricingDistanceTier"));
+check("booking distance field remains present", has("prisma/schema.prisma", "distanceKm"));
+check("assistance pricing remains present", has("lib/pricing-engine.ts", "assistedTransport"));
+check("waiting pricing remains present", has("lib/pricing-engine.ts", "waitingCharge"));
+check("payment webhook remains authoritative", has("app/api/payments/webhook/route.ts", "sendBookingCompletionEmails"));
+check("payment webhook confirms before completion email", has("app/api/payments/webhook/route.ts", "status: \"CONFIRMED\""));
+check("no second auth architecture", !["app", "lib", "workers", "prisma"].some((dir) => { const walk = (base) => fs.readdirSync(path.join(root, base), { withFileTypes: true }).flatMap((entry) => entry.isDirectory() ? walk(path.join(base, entry.name)) : [path.join(base, entry.name)]); return walk(dir).filter((file) => /\\.(ts|tsx|js|cjs)$/.test(file)).some((file) => /AuthV2|EmailV2|PricingV2|BookingV2/.test(read(file))); }));
+check("no second quote engine", !read("PHASE_3I_CHECKLIST.md").match(/create\s+PricingV2|calculateQuoteV2|quoteEngineV2/));
+check("no production migration command", !has("PHASE_3I_CHECKLIST.md", "prisma db push"));
+check("no production seed command", !has("PHASE_3I_CHECKLIST.md", "prisma db seed"));
+check("homepage regression script exists", exists("scripts/homepage-priority-check.cjs"));
+check("Phase 3H regression script exists", exists("scripts/phase3h-check.cjs"));
+check("Phase 3G regression script exists", exists("scripts/phase3g-check.cjs"));
+check("Phase 3F regression script exists", exists("scripts/phase3f-check.cjs"));
+check("Phase 3E regression script exists", exists("scripts/phase3e-check.cjs"));
+check("Phase 3D regression script exists", exists("scripts/phase3d-check.cjs"));
+check("Phase 3C regression script exists", exists("scripts/phase3c-check.cjs"));
+check("Phase 3B regression script exists", exists("scripts/phase3b-check.cjs"));
+check("Phase 3A security scripts exist", exists("scripts/phase3a-security-check.js") && exists("scripts/phase3a-runtime-check.js"));
+check("UX1 regression script exists", exists("scripts/ux1-check.cjs"));
+check("package exposes Phase 3I check", /test:phase3i/.test(read("package.json")));
+
+const failures = checks.filter((item) => !item.ok);
+for (const item of checks) console.log(`${item.ok ? "PASS" : "FAIL"} ${item.name}${item.detail ? ` — ${item.detail}` : ""}`);
+console.log(`PHASE3I_CHECK_COUNT=${checks.length}`);
+if (failures.length) {
+  console.error(`Phase 3I checks failed: ${failures.length}`);
+  process.exit(1);
+}
+console.log("Phase 3I static/source checks passed.");

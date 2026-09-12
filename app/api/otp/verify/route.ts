@@ -97,6 +97,19 @@ async function handler(request: NextRequest) {
       }
     }
 
+    const consumed = await prisma.oTP.updateMany({
+      where: {
+        id: otpRecord.id,
+        code,
+        used: false,
+        expiresAt: { gt: new Date() },
+        attempts: { lt: otpRecord.maxAttempts },
+      },
+      data: { used: true },
+    });
+    if (consumed.count !== 1) {
+      return otpError("OTP_INVALID", "Invalid or expired verification code.");
+    }
     let proof: { proofToken: string; expiresAt: Date };
     try {
       proof = await createVerificationProof({
@@ -114,10 +127,7 @@ async function handler(request: NextRequest) {
       );
     }
 
-    await prisma.oTP.update({
-      where: { id: otpRecord.id },
-      data: { used: true },
-    });
+
 
     await prisma.booking.update({
       where: { id: bookingId },

@@ -5,6 +5,7 @@ import { sendOTPWithFallback } from "@/lib/twilio";
 import type { OTPDeliveryResult } from "@/lib/twilio";
 import { normalizePassengerPhone } from "@/lib/passenger-auth";
 import { rateLimits, withRateLimit } from "@/lib/rate-limit";
+import { generateOTP } from "@/lib/utils";
 
 const PassengerOtpPurposeSchema = z.enum([
   "PASSENGER_REGISTRATION",
@@ -88,7 +89,7 @@ async function handler(request: NextRequest) {
       data: { used: true },
     });
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = generateOTP();
     await prisma.oTP.create({
       data: {
         code: otp,

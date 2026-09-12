@@ -120,6 +120,11 @@ async function handler(request: NextRequest) {
       },
     });
 
+    const normalizedEmail = data.email.trim().toLowerCase();
+    const emailOwner = await prisma.passenger.findFirst({ where: { email: normalizedEmail } });
+    if (emailOwner && emailOwner.id !== existing?.id) {
+      return proofError("EMAIL_ALREADY_IN_USE", "This email is already linked to another Drivo account. Please use a different email.", 409);
+    }
     if (existing?.passwordHash) {
       return NextResponse.json(
         {
@@ -162,7 +167,7 @@ async function handler(request: NextRequest) {
             phoneVerified: true,
             phoneVerifiedAt: existing.phoneVerifiedAt || new Date(),
             fullName: data.fullName,
-            email: data.email.toLowerCase(),
+            email: normalizedEmail,
             passwordHash,
             profileCompleted: true,
             status: "ACTIVE",
