@@ -694,6 +694,13 @@ const en = {
   "passenger.sendResetCode": "Send reset code",
   "passenger.resetContinue": "Reset Password & Continue",
   "passenger.backToLogin": "Back to login",
-};
+  "driverPortal.scheduledMarketplace": "Scheduled ride marketplace",
+  "driverPortal.scheduledMarketplaceHelp": "Plan ahead with compatible future rides.",
+  "driverPortal.noScheduledRides": "No scheduled rides available.",
+  "driverPortal.claimRide": "Claim ride",
+  "driverPortal.claiming": "Claiming...",
+  "driverPortal.claimedScheduledRides": "Your upcoming scheduled rides",
+  "driverPortal.pickupIn": "Pickup in",
+  "driverPortal.pickupNow": "Pickup soon",};
 
 export default en;

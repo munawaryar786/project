@@ -695,6 +695,13 @@ const sk = {
   "passenger.resetContinue": "Resetovat heslo a pokracovat",
   "passenger.backToLogin": "Spat na prihlasenie",
   "booking.driverAssistanceRequired": "Vyziada sa asistencia vodica",
-};
+  "driverPortal.scheduledMarketplace": "Trh planovanych jazd",
+  "driverPortal.scheduledMarketplaceHelp": "Naplanovat kompatibilne buduce jazdy.",
+  "driverPortal.noScheduledRides": "Ziadne planovane jazdy nie su k dispozicii.",
+  "driverPortal.claimRide": "Prevziat jazdu",
+  "driverPortal.claiming": "Preberam...",
+  "driverPortal.claimedScheduledRides": "Vase nadchadzajuce planovane jazdy",
+  "driverPortal.pickupIn": "Odchod o",
+  "driverPortal.pickupNow": "Jazda coskoro",};
 
 export default sk;

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyWebhookSignature } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
 import { startAutomaticDispatch } from "@/lib/automatic-dispatch";
+import { isScheduledBooking } from "@/lib/scheduled-marketplace";
 import { hasAuthoritativeBookingPrice } from "@/lib/security/booking-price";
 import {
   bookingToEmailData,
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest) {
     const updatedBooking = event.type === "checkout.session.completed"
       ? await handleCheckoutCompleted(event.data.object)
       : null;
-    const dispatch = updatedBooking && !updatedBooking.scheduledRide ? await startAutomaticDispatch(updatedBooking.id) : null;
+    const dispatch = updatedBooking && !isScheduledBooking(updatedBooking) ? await startAutomaticDispatch(updatedBooking.id) : null;
     if (dispatch && !dispatch.ok) console.warn("[dispatch] payment-confirmed start deferred", { bookingId: updatedBooking.id, code: dispatch.code });
     return NextResponse.json({ received: true });
   } catch {

@@ -12,6 +12,7 @@ import { signBookingPrice } from "@/lib/security/booking-price";
 import { requiresWav } from "@/lib/assisted-transport";
 import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 import { startAutomaticDispatch } from "@/lib/automatic-dispatch";
+import { isScheduledBooking, parseMarketDateTime, SCHEDULED_MARKET_CONFIG } from "@/lib/scheduled-marketplace";
 import {
   bookingToEmailData,
   isSeniorAssistedService,
@@ -128,6 +129,10 @@ async function createBooking(request: NextRequest) {
     }
 
     const data = parsed.data;
+    const marketTimezone = SCHEDULED_MARKET_CONFIG.timezone;
+    const pickupAt = parseMarketDateTime(data.pickupDate || data.scheduledDate, data.pickupTime || data.scheduledTime, marketTimezone);
+    if (!pickupAt) return NextResponse.json({ error: "Invalid scheduled pickup date/time", code: "INVALID_SCHEDULE_TIME" }, { status: 400 });
+    const scheduledIntent = data.scheduledRide || data.serviceType === "CHILDREN" || pickupAt.getTime() > Date.now() + 5 * 60 * 1000;
     if (!isCustomerServiceEnabled(data.serviceType)) {
       return NextResponse.json(
         { error: "Children Transport is temporarily unavailable for new bookings." },
@@ -310,7 +315,9 @@ async function createBooking(request: NextRequest) {
         returnTime: data.returnTime || null,
         waitingDuration: data.waitingDuration || null,
         customWaitingDuration: data.customWaitingDuration || null,
-        scheduledRide: data.scheduledRide,
+        scheduledRide: scheduledIntent,
+        pickupAt,
+        marketTimezone,
         recurrence: data.recurrence || data.recurrenceType || null,
         recurrenceCustom: data.recurrenceCustom || null,
         childrenDetails: data.childrenDetails || undefined,
@@ -380,7 +387,7 @@ async function createBooking(request: NextRequest) {
       },
     });
 
-    if (currentPassenger && !booking.scheduledRide && booking.paymentMethod !== "CARD") {
+    if (currentPassenger && !isScheduledBooking(booking) && booking.paymentMethod !== "CARD") {
       const dispatch = await startAutomaticDispatch(booking.id);
       if (!dispatch.ok) console.warn("[dispatch] immediate start deferred", { bookingId: booking.id, code: dispatch.code });
     }

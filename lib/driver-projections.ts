@@ -5,7 +5,7 @@ import type { Prisma } from "@prisma/client";
 export const DRIVER_TRIP_SELECT = {
   id: true, bookingRef: true, status: true, dispatchStatus: true, serviceType: true,
   pickupAddress: true, dropoffAddress: true, pickupLat: true, pickupLng: true, dropoffLat: true, dropoffLng: true,
-  scheduledDate: true, scheduledTime: true, pickupDate: true, pickupTime: true,
+  scheduledDate: true, scheduledTime: true, pickupDate: true, pickupTime: true, pickupAt: true, marketTimezone: true,
   passengerCount: true, luggageType: true, smallBags: true, largeBags: true,
   wheelchairNeeded: true, seniorPassenger: true, ztpCardHolder: true, wheelchairUser: true,
   companionRequired: true, assistanceLevel: true, wheelchairType: true, canTransferToSeat: true,
@@ -24,8 +24,8 @@ export const DRIVER_TRIP_SELECT = {
 export const OFFER_BOOKING_SELECT = {
   id: true, bookingRef: true, status: true, dispatchStatus: true, serviceType: true,
   scheduledDate: true, scheduledTime: true, passengerCount: true, luggageType: true,
-  smallBags: true, largeBags: true, wavRequired: true, vehicleRequired: true, tripType: true,
-  returnDate: true, returnTime: true, scheduledRide: true, pickupDate: true, pickupTime: true, distanceKm: true,
+  smallBags: true, largeBags: true, wavRequired: true, wheelchairNeeded: true, wheelchairType: true, canTransferToSeat: true, waitingTimeRequired: true, vehicleRequired: true, tripType: true,
+  returnDate: true, returnTime: true, scheduledRide: true, pickupDate: true, pickupTime: true, pickupAt: true, marketTimezone: true, distanceKm: true,
 } satisfies Prisma.BookingSelect;
 type OfferBooking = Prisma.BookingGetPayload<{ select: typeof OFFER_BOOKING_SELECT }>;
 export function serializeOfferBooking(booking: OfferBooking) {

@@ -8,6 +8,7 @@ import { ACTIVE_TRIP_STATUSES } from "@/lib/driver-state";
 import { csrfFetch } from "@/lib/client/csrf-fetch";
 import { io } from "socket.io-client";
 import { DriverNavigationPanel } from "@/components/driver/DriverNavigation";
+import { ScheduledMarketplace } from "@/components/driver/ScheduledMarketplace";
 
 interface Booking {
   id: string;
@@ -591,6 +592,8 @@ export default function DriverDashboard() {
           />
         </div>
       )}
+
+      <ScheduledMarketplace />
 
       <div className="grid grid-cols-3 gap-3 mb-6">
         <StatCard label="Dnes" value={todayBookings.length} tone="amber" />

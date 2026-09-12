@@ -58,6 +58,8 @@ model Booking {
   waitingDuration                 String?
   customWaitingDuration           String?
   scheduledRide                   Boolean  @default(false)
+  pickupAt                        DateTime?
+  marketTimezone                  String?  @default("Europe/Bratislava")
   recurrence                      String?
   recurrenceCustom                String?
   childFullName                   String?
@@ -135,6 +137,7 @@ model Booking {
   @@index([driverId])
   @@index([dispatchStatus])
   @@index([createdAt])
+  @@index([pickupAt])
 }
 
 // ============================================

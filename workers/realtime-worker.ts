@@ -1,12 +1,13 @@
 import { Worker, type Job } from "bullmq";
 import { Emitter } from "@socket.io/redis-emitter";
 import { prisma } from "@/lib/prisma";
-import { advanceDispatch } from "@/lib/automatic-dispatch";
+import { advanceDispatch, startScheduledRecoveryDispatch } from "@/lib/automatic-dispatch";
+import { processScheduledRideJob, reconcileScheduledRideJobs } from "@/lib/scheduled-jobs";
 import { createNotification, notificationDedupe } from "@/lib/notifications";
 import { createRedisConnection, closeRedis } from "@/lib/realtime/redis";
 import { eventTypeForDomain, safeEvent } from "@/lib/realtime/contracts";
 import { OUTBOX_STATES, REALTIME_EVENTS, REALTIME_QUEUES } from "@/lib/realtime/constants";
-import { getOfferExpiryQueue, closeQueues } from "@/lib/realtime/queues";
+import { getOfferExpiryQueue, getScheduledRideQueue, closeQueues } from "@/lib/realtime/queues";
 import { relayOutboxOnce } from "@/lib/outbox-relay";
 
 const redis = createRedisConnection("worker-emitter");
@@ -30,15 +31,18 @@ async function processOutbox(job: Job<{ outboxEventId: string }>) {
 async function processExpiry(job: Job<{ offerId: string; bookingId: string }>) {
   const offer = await prisma.rideRequest.findUnique({ where: { id: job.data.offerId }, select: { status: true, expiresAt: true, bookingId: true } }); if (!offer || offer.status !== "PENDING") return;
   if (offer.expiresAt.getTime() > Date.now()) { await getOfferExpiryQueue().add("expire", job.data, { jobId: `offer-expiry-${job.data.offerId}-rescheduled`, delay: offer.expiresAt.getTime() - Date.now() }); return; }
-  const result = await advanceDispatch(offer.bookingId); console.info("[worker.offer-expiry]", { offerId: job.data.offerId, bookingId: offer.bookingId, outcome: result.ok ? (result as any).outcome : (result as any).code });
+  const booking = await prisma.booking.findUnique({ where: { id: offer.bookingId }, select: { scheduledRide: true } });
+  const result = booking?.scheduledRide ? await startScheduledRecoveryDispatch(offer.bookingId) : await advanceDispatch(offer.bookingId); console.info("[worker.offer-expiry]", { offerId: job.data.offerId, bookingId: offer.bookingId, outcome: result.ok ? (result as any).outcome : (result as any).code });
 }
 const outboxWorker = new Worker(REALTIME_QUEUES.OUTBOX, processOutbox, { connection: createRedisConnection("worker-outbox") as any, concurrency: 5 });
 const expiryWorker = new Worker(REALTIME_QUEUES.OFFER_EXPIRY, processExpiry, { connection: createRedisConnection("worker-expiry") as any, concurrency: 5 });
+const scheduledWorker = new Worker(REALTIME_QUEUES.SCHEDULED_RIDES, processScheduledRideJob, { connection: createRedisConnection("worker-scheduled") as any, concurrency: 5 });
 outboxWorker.on("failed", (job, error) => console.error("[worker.outbox.failed]", { jobId: job?.id, message: "job_failed" }));
 expiryWorker.on("failed", (job, error) => console.error("[worker.expiry.failed]", { jobId: job?.id, message: "job_failed" }));
+scheduledWorker.on("failed", (job, error) => console.error("[worker.scheduled.failed]", { jobId: job?.id, message: "job_failed" }));
 console.info("[worker.start]", { queues: Object.values(REALTIME_QUEUES) });
 const relayTimer = setInterval(() => void relayOutboxOnce().catch((error) => console.error("[worker.relay.failed]", { message: "relay_failed" })), 2000);
 const reconcileTimer = setInterval(() => void reconcileExpired().catch((error) => console.error("[worker.expiry-reconcile.failed]", { message: "expiry_reconcile_failed" })), 30000);
-async function reconcileExpired() { const rows = await prisma.rideRequest.findMany({ where: { status: "PENDING", expiresAt: { lte: new Date() } }, select: { bookingId: true }, take: 100 }); for (const row of rows) await advanceDispatch(row.bookingId); await relayOutboxOnce(100); }
-async function shutdown(signal: string) { console.info("[worker.stop]", { signal }); clearInterval(relayTimer); clearInterval(reconcileTimer); await outboxWorker.close(); await expiryWorker.close(); await closeQueues(); await closeRedis(redis); process.exit(0); }
+async function reconcileExpired() { await reconcileScheduledRideJobs().catch(() => 0); const rows = await prisma.rideRequest.findMany({ where: { status: "PENDING", expiresAt: { lte: new Date() } }, select: { bookingId: true }, take: 100 }); for (const row of rows) await advanceDispatch(row.bookingId); await relayOutboxOnce(100); }
+async function shutdown(signal: string) { console.info("[worker.stop]", { signal }); clearInterval(relayTimer); clearInterval(reconcileTimer); await outboxWorker.close(); await expiryWorker.close(); await scheduledWorker.close(); await closeQueues(); await closeRedis(redis); process.exit(0); }
 process.once("SIGTERM", () => void shutdown("SIGTERM")); process.once("SIGINT", () => void shutdown("SIGINT"));

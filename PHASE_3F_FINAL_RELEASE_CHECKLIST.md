@@ -1,0 +1,31 @@
+# DRIVO Phase 3F Final Release Gate Checklist
+
+- [x] Branch and ancestry verified
+- [x] Worktree scope and file inventory audited
+- [x] Prisma schema diff audited; no db push/migration
+- [x] UTC/timezone/DST handling audited
+- [x] Scheduled/immediate dispatch boundary verified
+- [x] Payment and booking eligibility verified
+- [x] Pre-claim privacy projection audited
+- [x] Claim authorization and CSRF/origin audited
+- [x] Atomic two-driver claim proof audited
+- [x] Claim idempotency and assignment consistency audited
+- [x] Previous/next route feasibility audited
+- [x] Buffer and provider-failure behavior audited
+- [x] Assisted/WAV/Children/luggage compatibility audited
+- [x] Release/unclaim policy audited
+- [x] pickupAt reschedule stale-job safety audited
+- [x] T-30/T-20/T-15 behavior audited
+- [x] Readiness failure and double-dispatch safety audited
+- [x] BullMQ reconciliation and idempotency audited
+- [x] Outbox/realtime/notification behavior audited
+- [x] Marketplace/upcoming UI audited
+- [x] Return/recurrence behavior audited
+- [x] Passenger/admin/fare safety audited
+- [x] Language/accessibility/performance audited
+- [x] Phase 3F and all regression suites run
+- [x] Build/typecheck/lint/Prisma checks run
+- [x] Production read-only query plan prepared but not executed
+- [x] Staging E2E scenarios documented
+- [x] Production prerequisites and risks documented
+- [x] No Phase 3G/3H implementation

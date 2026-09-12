@@ -72,11 +72,11 @@ async function claimDispatch(tx: Db, bookingId: string, allowedStates: string[])
   return changed.count === 1;
 }
 
-async function runCycle(tx: Db, bookingId: string, config: DispatchConfig, allowInitial: boolean) {
+async function runCycle(tx: Db, bookingId: string, config: DispatchConfig, allowInitial: boolean, allowScheduled = false) {
   const now = new Date();
   const booking = await tx.booking.findUnique({ where: { id: bookingId } });
   if (!booking) return { ok: false as const, code: "BOOKING_NOT_FOUND" };
-  const eligibility = bookingDispatchEligibility(booking);
+  const eligibility = bookingDispatchEligibility(booking, { allowScheduled });
   if (!eligibility.eligible) return { ok: false as const, code: eligibility.reason };
   const pending = await tx.rideRequest.findFirst({
     where: { bookingId, status: "PENDING", expiresAt: { gt: now } },
@@ -148,7 +148,7 @@ export async function startAutomaticDispatch(bookingId: string, overrides?: Part
   const configResult = getDispatchConfig(overrides);
   if (!configResult.ok) return configResult;
   try {
-    return await prisma.$transaction((tx) => runCycle(tx, bookingId, configResult.config, true));
+    return await prisma.$transaction((tx) => runCycle(tx, bookingId, configResult.config, true, false));
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "P2034") {
       return { ok: false as const, code: "DISPATCH_STATE_CONFLICT" };
@@ -162,7 +162,7 @@ export async function advanceDispatch(bookingId: string, overrides?: Partial<Dis
   const configResult = getDispatchConfig(overrides);
   if (!configResult.ok) return configResult;
   try {
-    return await prisma.$transaction((tx) => runCycle(tx, bookingId, configResult.config, false));
+    return await prisma.$transaction((tx) => runCycle(tx, bookingId, configResult.config, false, false));
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "P2034") {
       return { ok: false as const, code: "DISPATCH_STATE_CONFLICT" };
@@ -209,4 +209,15 @@ export async function advanceExpiredOffersForDriver(driverId: string) {
   const results = [];
   for (const bookingId of [...new Set(expired.map(row => row.bookingId))]) results.push(await advanceDispatch(bookingId));
   return results;
+}
+
+export async function startScheduledRecoveryDispatch(bookingId: string, overrides?: Partial<DispatchConfig>) {
+  const configResult = getDispatchConfig(overrides);
+  if (!configResult.ok) return configResult;
+  try {
+    return await prisma.$transaction((tx) => runCycle(tx, bookingId, configResult.config, false, true));
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === "P2034") return { ok: false as const, code: "DISPATCH_STATE_CONFLICT" };
+    return { ok: false as const, code: "DISPATCH_TRANSACTION_UNAVAILABLE" };
+  }
 }

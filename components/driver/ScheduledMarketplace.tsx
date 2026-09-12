@@ -1,0 +1,21 @@
+"use client";
+import { useEffect, useState } from "react";
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
+
+export function ScheduledMarketplace() {
+  const { t } = useLanguage();
+  const [data, setData] = useState<any>({ marketplace: [], claimedRides: [] });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => { const timer = setInterval(() => setClock(Date.now()), 30000); return () => clearInterval(timer); }, []);
+  const load = async () => { const res = await csrfFetch("driver", "/api/driver/scheduled-rides", { cache: "no-store" }); if (res.ok) setData(await res.json()); };
+  useEffect(() => { void load(); const timer = setInterval(() => void load(), 30000); return () => clearInterval(timer); }, []);
+  const formatUntil = (value: any) => { const ms = new Date(value || 0).getTime() - clock; if (!Number.isFinite(ms) || ms <= 0) return t("driverPortal.pickupNow", "Pickup soon"); const total = Math.floor(ms / 60000); const days = Math.floor(total / 1440); const hours = Math.floor((total % 1440) / 60); const minutes = total % 60; return days ? `${days}d ${hours}h` : `${hours}h ${minutes}m`; };
+  const claim = async (id: string) => { setBusy(id); const res = await csrfFetch("driver", `/api/driver/scheduled-rides/${id}/claim`, { method: "POST" }); setBusy(null); if (res.ok) await load(); };
+  return <section aria-labelledby="scheduled-marketplace-heading" className="mb-6 rounded-3xl border border-indigo-100 bg-indigo-50/60 p-5">
+    <div className="flex items-center justify-between gap-3"><div><h2 id="scheduled-marketplace-heading" className="text-base font-black text-gray-900">{t("driverPortal.scheduledMarketplace", "Scheduled ride marketplace")}</h2><p className="mt-1 text-xs text-gray-600">{t("driverPortal.scheduledMarketplaceHelp", "Plan ahead with compatible future rides.")}</p></div><button type="button" onClick={() => void load()} className="min-h-11 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-bold text-indigo-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700">{t("driverPortal.refresh", "Refresh")}</button></div>
+    <div className="mt-4 space-y-3">{data.marketplace.length === 0 ? <p className="rounded-2xl bg-white p-4 text-sm text-gray-600">{t("driverPortal.noScheduledRides", "No scheduled rides available.")}</p> : data.marketplace.map((ride: any) => <article key={ride.id} className="rounded-2xl bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="font-bold text-gray-900">{ride.pickupArea} -&gt; {ride.dropoffArea}</p><p className="text-xs text-gray-600">{ride.scheduledDate || ride.pickupDate} {ride.scheduledTime || ride.pickupTime} - {ride.serviceType}</p><p className="mt-1 text-xs text-gray-500">{ride.passengerCount} passengers - {ride.luggageType} - {t("driverPortal.pickupIn", "Pickup in")} {formatUntil(ride.pickupAt)}</p></div><button type="button" disabled={busy === ride.id} onClick={() => void claim(ride.id)} className="min-h-11 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-bold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700 disabled:opacity-50">{busy === ride.id ? t("driverPortal.claiming", "Claiming...") : t("driverPortal.claimRide", "Claim ride")}</button></div></article>)}</div>
+    {data.claimedRides.length > 0 && <div className="mt-5"><h3 className="text-sm font-black text-gray-900">{t("driverPortal.claimedScheduledRides", "Your upcoming scheduled rides")}</h3><div className="mt-2 space-y-2">{data.claimedRides.map((ride: any) => <div key={ride.id} className="rounded-2xl bg-white p-4 text-sm"><span className="font-bold">{ride.pickupAddress} -&gt; {ride.dropoffAddress}</span><span className="ml-2 text-gray-600">{ride.scheduledDate || ride.pickupDate} {ride.scheduledTime || ride.pickupTime}</span></div>)}</div></div>}
+  </section>;
+}

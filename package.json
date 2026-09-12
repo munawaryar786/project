@@ -17,7 +17,8 @@
     "worker:start": "tsx workers/realtime-worker.ts",
     "worker:outbox": "tsx workers/realtime-worker.ts",
     "test:phase3d": "node scripts/phase3d-check.cjs",
-    "test:phase3e": "node scripts/phase3e-check.cjs"
+    "test:phase3e": "node scripts/phase3e-check.cjs",
+    "test:phase3f": "node scripts/phase3f-check.cjs"
   },
   "dependencies": {
     "@googlemaps/google-maps-services-js": "^3.4.2",

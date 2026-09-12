@@ -677,6 +677,13 @@ const de = {
   "passenger.resetContinue": "Passwort zuruecksetzen und fortsetzen",
   "passenger.backToLogin": "Zurueck zur Anmeldung",
   "booking.driverAssistanceRequired": "Fahrerassistenz erforderlich",
-};
+  "driverPortal.scheduledMarketplace": "Marktplatz fur geplante Fahrten",
+  "driverPortal.scheduledMarketplaceHelp": "Planen Sie kompatible kunftige Fahrten.",
+  "driverPortal.noScheduledRides": "Keine geplanten Fahrten verfugbar.",
+  "driverPortal.claimRide": "Fahrt ubernehmen",
+  "driverPortal.claiming": "Wird ubernommen...",
+  "driverPortal.claimedScheduledRides": "Ihre kommenden geplanten Fahrten",
+  "driverPortal.pickupIn": "Abholung in",
+  "driverPortal.pickupNow": "Abholung bald",};
 
 export default de;

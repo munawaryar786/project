@@ -677,6 +677,13 @@ const uk = {
   "passenger.resetContinue": "Reset Password & Continue",
   "passenger.backToLogin": "Back to login",
   "booking.driverAssistanceRequired": "Driver assistance required",
-};
+  "driverPortal.scheduledMarketplace": "Rynok zaplanovanykh poizdok",
+  "driverPortal.scheduledMarketplaceHelp": "Planuit sumisni maybutni poizdky.",
+  "driverPortal.noScheduledRides": "Zaplanovanykh poizdok nemaie.",
+  "driverPortal.claimRide": "Vziaty poizdku",
+  "driverPortal.claiming": "Vziattia...",
+  "driverPortal.claimedScheduledRides": "Vashi nastupni zaplanovani poizdky",
+  "driverPortal.pickupIn": "Do poizdky",
+  "driverPortal.pickupNow": "Poizdka skoro",};
 
 export default uk;

@@ -29,7 +29,7 @@ const finiteCoordinate = (value: unknown, min: number, max: number) => {
   return Number.isFinite(value) && value >= min && value <= max ? value : null;
 };
 
-export function bookingDispatchEligibility(booking: any) {
+export function bookingDispatchEligibility(booking: any, options: { allowScheduled?: boolean } = {}) {
   if (!booking) return { eligible: false as const, reason: DISPATCH_REASON.BOOKING_NOT_DISPATCHABLE };
   if (booking.driverId) return { eligible: false as const, reason: DISPATCH_REASON.BOOKING_ALREADY_ASSIGNED };
   if (["CANCELLED", "COMPLETED", "NO_SHOW"].includes(booking.status)) {
@@ -41,7 +41,7 @@ export function bookingDispatchEligibility(booking: any) {
   if (booking.dispatchStatus === "ACCEPTED") {
     return { eligible: false as const, reason: DISPATCH_REASON.BOOKING_ALREADY_ASSIGNED };
   }
-  if (booking.scheduledRide === true) {
+  if (booking.scheduledRide === true && options.allowScheduled !== true) {
     return { eligible: false as const, reason: DISPATCH_REASON.SCHEDULED_RIDE };
   }
   if (booking.paymentMethod === "CARD" && booking.status === "PENDING") {
@@ -60,6 +60,9 @@ export type DriverCompatibilityInput = {
   attempted: boolean;
   now: Date;
   locationMaxAgeSeconds: number;
+  requireOnline?: boolean;
+  requireFreshLocation?: boolean;
+  rejectBusy?: boolean;
 };
 
 function normalized(value: unknown) {
@@ -70,12 +73,12 @@ export function driverCompatibility(input: DriverCompatibilityInput) {
   const { booking, driver } = input;
   if (input.attempted) return { eligible: false as const, reason: DISPATCH_REASON.ALREADY_OFFERED };
   if (!driver || driver.status !== "ACTIVE") return { eligible: false as const, reason: DISPATCH_REASON.DRIVER_INACTIVE };
-  if (!driver.isOnline) return { eligible: false as const, reason: DISPATCH_REASON.DRIVER_OFFLINE };
-  if (driver.isOnTrip || input.hasConflictingTrip) return { eligible: false as const, reason: DISPATCH_REASON.DRIVER_BUSY };
-  if (driver.currentLat === null || driver.currentLat === undefined || driver.currentLng === null || driver.currentLng === undefined) {
+  if (input.requireOnline !== false && !driver.isOnline) return { eligible: false as const, reason: DISPATCH_REASON.DRIVER_OFFLINE };
+  if (input.rejectBusy !== false && (driver.isOnTrip || input.hasConflictingTrip)) return { eligible: false as const, reason: DISPATCH_REASON.DRIVER_BUSY };
+  if (input.requireFreshLocation !== false && (driver.currentLat === null || driver.currentLat === undefined || driver.currentLng === null || driver.currentLng === undefined)) {
     return { eligible: false as const, reason: DISPATCH_REASON.DRIVER_LOCATION_MISSING };
   }
-  if (!isLocationFresh(driver.lastLocationReceivedAt, input.now, input.locationMaxAgeSeconds * 1000)) {
+  if (input.requireFreshLocation !== false && !isLocationFresh(driver.lastLocationReceivedAt, input.now, input.locationMaxAgeSeconds * 1000)) {
     return { eligible: false as const, reason: DISPATCH_REASON.DRIVER_LOCATION_STALE };
   }
 
