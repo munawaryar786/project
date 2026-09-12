@@ -25,12 +25,28 @@ const SESSION_TTL_MS = SESSION_TTL_SECONDS.PASSENGER * 1000;
 const DEVICE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const OTP_PROOF_TTL_MS = 10 * 60 * 1000;
 
-export function normalizePassengerPhone(phone: string) {
-  const compact = phone.replace(/[\s().-]/g, "");
+/** Normalize a user-entered phone to E.164 using explicit country context when supplied. */
+export function normalizePassengerPhone(phone: string, countryCode = "+421") {
+  const raw = String(phone || "").trim();
+  const compact = raw.replace(/[\s().-]/g, "");
   if (!compact) return "";
-  if (compact.startsWith("+")) return `+${compact.slice(1).replace(/\D/g, "")}`;
-  if (compact.startsWith("00")) return `+${compact.slice(2).replace(/\D/g, "")}`;
-  return `+${compact.replace(/\D/g, "")}`;
+  const digits = compact.replace(/\D/g, "");
+  if (!digits) return "";
+  if (compact.startsWith("+")) return `+${digits}`;
+  if (compact.startsWith("00")) return `+${digits.slice(2)}`;
+
+  const context = String(countryCode || "+421").replace(/[^\d]/g, "");
+  const local = digits.replace(/^0+/, "");
+  if (!context || !local) return "";
+  return `+${context}${local}`;
+}
+
+export function isValidE164Phone(phone: string) {
+  return /^\+[1-9]\d{7,14}$/.test(phone);
+}
+
+export function normalizePassengerEmail(email: string) {
+  return String(email || "").trim().toLowerCase();
 }
 
 export function hashSecret(value: string) {

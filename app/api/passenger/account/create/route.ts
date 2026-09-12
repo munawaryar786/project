@@ -5,6 +5,7 @@ import {
   consumeVerificationProofById,
   createPassengerSession,
   hashSecret,
+  normalizePassengerEmail,
   normalizePassengerPhone,
   publicPassenger,
   setPassengerCookie,
@@ -74,7 +75,7 @@ async function handler(request: NextRequest) {
 
     const bookingPhone =
       booking.normalizedPhone ||
-      normalizePassengerPhone(`${booking.customerPhoneCode}${booking.customerPhone}`);
+      normalizePassengerPhone(`${booking.customerPhoneCode}${booking.customerPhone}`, booking.customerPhoneCode);
     if (bookingPhone !== normalizedPhone) {
       return proofError(
         "PROOF_PHONE_MISMATCH",
@@ -120,8 +121,8 @@ async function handler(request: NextRequest) {
       },
     });
 
-    const normalizedEmail = data.email.trim().toLowerCase();
-    const emailOwner = await prisma.passenger.findFirst({ where: { email: normalizedEmail } });
+    const normalizedEmail = normalizePassengerEmail(data.email);
+    const emailOwner = await prisma.passenger.findFirst({ where: { email: { equals: normalizedEmail, mode: "insensitive" } } });
     if (emailOwner && emailOwner.id !== existing?.id) {
       return proofError("EMAIL_ALREADY_IN_USE", "This email is already linked to another Drivo account. Please use a different email.", 409);
     }
@@ -157,6 +158,11 @@ async function handler(request: NextRequest) {
       );
     }
 
+    // Atomically consume the server-side verification capability before mutating account state.
+    if (!(await consumeVerificationProofById(proof.id))) {
+      return proofError("PROOF_REPLAYED", "Phone verification could not be confirmed. Please verify again.");
+    }
+
     const passwordHash = await bcrypt.hash(data.password, 12);
     const passenger = existing
       ? await prisma.passenger.update({
@@ -182,7 +188,7 @@ async function handler(request: NextRequest) {
             phoneVerified: true,
             phoneVerifiedAt: new Date(),
             fullName: data.fullName,
-            email: data.email.toLowerCase(),
+            email: normalizedEmail,
             passwordHash,
             profileCompleted: true,
             status: "ACTIVE",
@@ -202,8 +208,6 @@ async function handler(request: NextRequest) {
         passengerAuthCompletedAt: new Date(),
       },
     });
-
-    await consumeVerificationProofById(proof.id);
 
     const token = await createPassengerSession(passenger);
     const response = NextResponse.json({

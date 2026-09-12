@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { createOpaqueToken, createVerificationProof } from "@/lib/passenger-auth";
+import { createOpaqueToken, createVerificationProof, normalizePassengerEmail } from "@/lib/passenger-auth";
 import { sendPassengerPasswordResetEmail } from "@/lib/email";
 import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 import { getSourceDomain } from "@/lib/utils";
@@ -13,8 +13,8 @@ async function handler(request: NextRequest) {
   try {
     const parsed = Schema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json(generic);
-    const email = parsed.data.email.toLowerCase();
-    const passenger = await prisma.passenger.findFirst({ where: { email, passwordHash: { not: null }, status: "ACTIVE" } });
+    const email = normalizePassengerEmail(parsed.data.email);
+    const passenger = await prisma.passenger.findFirst({ where: { email: { equals: email, mode: "insensitive" }, passwordHash: { not: null }, status: "ACTIVE" } });
     if (!passenger) return NextResponse.json(generic);
     const resetAttemptId = createOpaqueToken(16);
     await prisma.passengerVerificationProof.updateMany({ where: { passengerId: passenger.id, purpose: "PASSENGER_PASSWORD_RESET_EMAIL", consumedAt: null }, data: { consumedAt: new Date() } });

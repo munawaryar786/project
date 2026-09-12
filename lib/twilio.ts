@@ -1,172 +1,98 @@
-import twilio from 'twilio';
+﻿import twilio from "twilio";
+import { maskPhone } from "./utils";
 
-// Lazy initialization - only create client when credentials are valid
 let twilioClient: any = null;
 
 function getTwilioClient() {
   if (twilioClient) return twilioClient;
-  
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
-  
-  // Only initialize if credentials are valid and start with AC
-  if (accountSid && authToken && accountSid.startsWith('AC')) {
-    twilioClient = twilio(accountSid, authToken);
-    return twilioClient;
-  }
-  
-  return null;
+  if (!accountSid || !authToken || !accountSid.startsWith("AC")) return null;
+  twilioClient = twilio(accountSid, authToken);
+  return twilioClient;
 }
 
-const TWILIO_PHONE_NUMBER = process.env.TWILIO_PHONE_NUMBER;
+function getVerifyService() {
+  const client = getTwilioClient();
+  const serviceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
+  if (!client || !serviceSid || !serviceSid.startsWith("VA")) return null;
+  return client.verify.v2.services(serviceSid);
+}
 
-export type OTPDeliveryResult =
-  | {
-      success: true;
-      method: string;
-    }
-  | {
-      success: false;
-      method: string;
-      error: string;
-    };
+export type TwilioVerifyResult =
+  | { success: true; status: string }
+  | { success: false; error: string; providerCode?: string };
 
-/**
- * Send OTP via SMS using Twilio
- * @param phone - Full phone number with country code (e.g., +421908467335)
- * @param otp - 6-digit OTP code
- * @returns Success status and message ID
- */
+/** Send the first-registration challenge through Twilio Verify WhatsApp. */
+export async function sendWhatsAppVerification(phone: string): Promise<TwilioVerifyResult> {
+  const service = getVerifyService();
+  if (!service) {
+    console.error("Twilio Verify is not configured for passenger verification");
+    return { success: false, error: "Verification service is temporarily unavailable." };
+  }
+
+  try {
+    const verification = await service.verifications.create({ to: phone, channel: "whatsapp" });
+    console.info("Twilio Verify WhatsApp challenge requested", {
+      phone: maskPhone(phone),
+      status: verification.status,
+      channel: "whatsapp",
+    });
+    return { success: true, status: String(verification.status || "pending") };
+  } catch (error: any) {
+    console.error("Twilio Verify WhatsApp send failed", {
+      code: error?.code ? String(error.code) : "unknown",
+      status: error?.status ? String(error.status) : "unknown",
+    });
+    return { success: false, error: "We could not send a WhatsApp verification code. Please try again.", providerCode: error?.code ? String(error.code) : undefined };
+  }
+}
+
+/** Check the code with Twilio Verify; Drivo never compares or stores the code. */
+export async function checkWhatsAppVerification(phone: string, code: string): Promise<TwilioVerifyResult> {
+  const service = getVerifyService();
+  if (!service) {
+    console.error("Twilio Verify is not configured for passenger verification");
+    return { success: false, error: "Verification service is temporarily unavailable." };
+  }
+
+  try {
+    const check = await service.verificationChecks.create({ to: phone, code });
+    const status = String(check.status || "").toLowerCase();
+    if (status !== "approved") return { success: false, error: "Invalid or expired verification code." };
+    return { success: true, status };
+  } catch (error: any) {
+    console.error("Twilio Verify WhatsApp check failed", {
+      code: error?.code ? String(error.code) : "unknown",
+      status: error?.status ? String(error.status) : "unknown",
+    });
+    return { success: false, error: "Invalid or expired verification code.", providerCode: error?.code ? String(error.code) : undefined };
+  }
+}
+
+export function twilioVerifyConfigured() {
+  return Boolean(
+    process.env.TWILIO_ACCOUNT_SID?.startsWith("AC") &&
+      process.env.TWILIO_AUTH_TOKEN &&
+      process.env.TWILIO_VERIFY_SERVICE_SID?.startsWith("VA")
+  );
+}
+
+// Retained for unrelated legacy integrations; first-registration and recovery do not call it.
 export async function sendSMSOTP(phone: string, otp: string) {
   const client = getTwilioClient();
-  
-  if (!client) {
-    console.error("❌ Twilio not configured - missing or invalid credentials");
-    return { success: false, error: "Twilio not configured", method: "none" };
-  }
-
+  const from = process.env.TWILIO_PHONE_NUMBER;
+  if (!client || !from) return { success: false, error: "SMS service is unavailable.", method: "sms" };
   try {
     const message = await client.messages.create({
-      body: `Drivo Verification Code: ${otp}\n\nThis code expires in 5 minutes. Do not share this code with anyone.\n\nIf you didn't request this code, please ignore this message.`,
-      from: TWILIO_PHONE_NUMBER,
+      body: `Drivo verification code: ${otp}`,
+      from,
       to: phone,
     });
-
-    console.log(`✅ SMS OTP sent to ${phone} (Message SID: ${message.sid})`);
-    
-    return { 
-      success: true, 
-      method: "sms",
-      messageId: message.sid 
-    };
+    console.info("Legacy SMS delivery requested", { phone: maskPhone(phone), sidPresent: Boolean(message.sid) });
+    return { success: true, method: "sms", messageId: message.sid };
   } catch (error: any) {
-    console.error("❌ SMS OTP send error:", error.message);
-    
-    // Handle specific Twilio errors
-    if (error.code === 21608) {
-      return { success: false, error: "Unable to send SMS to this number. Please verify the number is correct.", method: "sms" };
-    }
-    if (error.code === 21211) {
-      return { success: false, error: "Invalid phone number format", method: "sms" };
-    }
-    if (error.code === 21612) {
-      return { success: false, error: "Phone number is not verified in your Twilio account (trial mode)", method: "sms" };
-    }
-    
-    return { success: false, error: "Failed to send SMS. Please try again.", method: "sms" };
+    console.error("Legacy SMS delivery failed", { code: error?.code ? String(error.code) : "unknown" });
+    return { success: false, error: "SMS delivery failed.", method: "sms" };
   }
-}
-
-/**
- * Send OTP via WhatsApp using Twilio
- * @param phone - Full phone number with country code (e.g., +421908467335)
- * @param otp - 6-digit OTP code
- * @returns Success status and message ID
- */
-export async function sendWhatsAppOTP(phone: string, otp: string) {
-  const client = getTwilioClient();
-  
-  if (!client) {
-    console.error("❌ Twilio not configured - missing or invalid credentials");
-    return { success: false, error: "Twilio not configured", method: "none" };
-  }
-
-  try {
-    // Format phone number for WhatsApp (remove '+' and add 'whatsapp:')
-    const whatsappNumber = phone.startsWith('+') 
-      ? `whatsapp:${phone}` 
-      : `whatsapp:+${phone}`;
-
-    const message = await twilioClient.messages.create({
-      from: `whatsapp:${TWILIO_PHONE_NUMBER}`,
-      to: whatsappNumber,
-      contentSid: process.env.TWILIO_WHATSAPP_TEMPLATE_SID, // Optional: Use approved WhatsApp template
-      contentVariables: process.env.TWILIO_WHATSAPP_TEMPLATE_SID 
-        ? JSON.stringify({ otp_code: otp })
-        : undefined,
-      body: !process.env.TWILIO_WHATSAPP_TEMPLATE_SID 
-        ? `🚕 *Drivo Verification Code*\n\nYour verification code is: *${otp}*\n\nThis code expires in 5 minutes.\n\n_Do not share this code with anyone._\n\nIf you didn't request this code, please ignore this message.`
-        : undefined,
-    });
-
-    console.log(`✅ WhatsApp OTP sent to ${phone} (Message SID: ${message.sid})`);
-    
-    return { 
-      success: true, 
-      method: "whatsapp",
-      messageId: message.sid 
-    };
-  } catch (error: any) {
-    console.error("❌ WhatsApp OTP send error:", error.message);
-    
-    // Handle specific Twilio errors
-    if (error.code === 21612) {
-      return { success: false, error: "Phone number is not verified in your Twilio account (trial mode)", method: "whatsapp" };
-    }
-    if (error.code === 21211) {
-      return { success: false, error: "Invalid phone number format for WhatsApp", method: "whatsapp" };
-    }
-    if (error.code === 21224) {
-      return { success: false, error: "Recipient has not opted in to receive WhatsApp messages", method: "whatsapp" };
-    }
-    
-    return { success: false, error: "Failed to send WhatsApp message. Please try SMS instead.", method: "whatsapp" };
-  }
-}
-
-/**
- * Send OTP with SMS fallback
- * Tries WhatsApp first, falls back to SMS if WhatsApp fails
- * @param phone - Full phone number with country code
- * @param otp - 6-digit OTP code
- * @returns Success status and method used
- */
-export async function sendOTPWithFallback(phone: string, otp: string): Promise<OTPDeliveryResult> {
-  // Try WhatsApp first
-  const whatsappResult = await sendWhatsAppOTP(phone, otp);
-  
-  if (whatsappResult.success) {
-    return {
-      success: true,
-      method: whatsappResult.method,
-    };
-  }
-
-  console.log("⚠️ WhatsApp failed, falling back to SMS...");
-  
-  // Fallback to SMS
-  const smsResult = await sendSMSOTP(phone, otp);
-
-  if (smsResult.success) {
-    return {
-      success: true,
-      method: smsResult.method,
-    };
-  }
-  
-  return {
-    success: false,
-    method: smsResult.method,
-    error: smsResult.error || whatsappResult.error || "OTP delivery failed",
-  };
 }

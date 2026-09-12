@@ -1,0 +1,63 @@
+const fs = require("node:fs");
+const path = require("node:path");
+const root = process.cwd();
+const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+const exists = (file) => fs.existsSync(path.join(root, file));
+const checks = [];
+const check = (name, condition) => checks.push({ name, ok: Boolean(condition) });
+const has = (file, pattern) => pattern instanceof RegExp ? pattern.test(read(file)) : read(file).includes(pattern);
+const no = (file, pattern) => !has(file, pattern);
+function treeText(relative) {
+  const base = path.join(root, relative);
+  if (!fs.existsSync(base)) return "";
+  return fs.readdirSync(base, { withFileTypes: true }).map((entry) => entry.isDirectory() ? treeText(path.join(relative, entry.name)) : fs.readFileSync(path.join(base, entry.name), "utf8")).join("\n");
+}
+
+check("Twilio Verify wrapper exists", has("lib/twilio.ts", "verifications.create"));
+check("Twilio Verify Check exists", has("lib/twilio.ts", "verificationChecks.create"));
+check("WhatsApp channel is explicit", has("lib/twilio.ts", 'channel: "whatsapp"'));
+check("registration send calls Verify", has("app/api/otp/send/route.ts", "sendWhatsAppVerification"));
+check("registration verify calls Verify Check", has("app/api/otp/verify/route.ts", "checkWhatsAppVerification"));
+check("registration does not import local generator", no("app/api/otp/send/route.ts", "generateOTP"));
+check("registration does not compare local code", no("app/api/otp/verify/route.ts", "otpRecord.code"));
+check("registration has no SMS fallback", no("app/api/otp/send/route.ts", "sendSMSOTP") && no("app/api/otp/send/route.ts", "sendOTPWithFallback"));
+check("real Verify code is not stored", has("app/api/otp/send/route.ts", 'code: "TWILIO_VERIFY"'));
+check("Verify status must be approved", has("lib/twilio.ts", 'status !== "approved"'));
+check("server-only service SID", has(".env.example", "TWILIO_VERIFY_SERVICE_SID") && no(".env.example", "NEXT_PUBLIC_TWILIO_VERIFY_SERVICE_SID"));
+check("E.164 validation exists", has("lib/passenger-auth.ts", "isValidE164Phone") && has("app/api/otp/send/route.ts", "isValidE164Phone"));
+check("Slovak context exists", has("lib/passenger-auth.ts", 'countryCode = "+421"'));
+check("resend cooldown exists", has("app/api/otp/send/route.ts", "RESEND_COOLDOWN"));
+check("phone send limit exists", has("app/api/otp/send/route.ts", "registration_otp_phone"));
+check("verify replay CAS exists", has("app/api/otp/verify/route.ts", "used: false") && has("app/api/otp/verify/route.ts", "consumed.count !== 1"));
+check("account proof CAS exists", has("app/api/passenger/account/create/route.ts", "PROOF_REPLAYED"));
+check("returning login accepts identifier", has("app/api/passenger/login/password/route.ts", "identifier"));
+check("returning login normalizes phone", has("app/api/passenger/login/password/route.ts", "normalizePassengerPhone"));
+check("returning login normalizes email", has("app/api/passenger/login/password/route.ts", "normalizePassengerEmail"));
+check("returning login uses bcrypt", has("app/api/passenger/login/password/route.ts", "bcrypt.compare"));
+check("returning login generic failure", has("app/api/passenger/login/password/route.ts", "Phone number, email, or password is incorrect."));
+check("returning login canonical session", has("app/api/passenger/login/password/route.ts", "createPassengerSession"));
+check("returning login UI has mobile/email", has("app/passenger/login/page.tsx", "phoneOrEmail"));
+check("returning login UI has no OTP mode", no("app/passenger/login/page.tsx", "/api/passenger/login/otp"));
+check("login rate limit remains", has("app/api/passenger/login/password/route.ts", "passengerLoginPassword"));
+check("email reset route exists", exists("app/api/passenger/password-reset/email/route.ts"));
+check("email reset is enumeration safe", has("app/api/passenger/password-reset/email/route.ts", "If an account exists for this email"));
+check("legacy phone reset is deprecated", has("app/api/passenger/password-reset/send/route.ts", "email-only"));
+check("reset completion has email purpose", has("app/api/passenger/password-reset/complete/route.ts", "PASSENGER_PASSWORD_RESET_EMAIL"));
+check("reset proof is atomically consumed", has("app/api/passenger/password-reset/complete/route.ts", "consumeVerificationProofById"));
+check("reset hashes password", has("app/api/passenger/password-reset/complete/route.ts", "bcrypt.hash"));
+check("reset revokes sessions", has("app/api/passenger/password-reset/complete/route.ts", "revokePassengerSessions"));
+check("reset increments authVersion", has("app/api/passenger/password-reset/complete/route.ts", "authVersion: { increment: 1 }"));
+check("reset UI has no phone field", no("app/passenger/reset/page.tsx", "otpCode") && no("app/passenger/reset/page.tsx", "phone"));
+check("reset request is rate limited", has("app/api/passenger/password-reset/email/route.ts", "passengerPasswordResetEmailSend"));
+check("no raw sensitive-value logging in changed paths", ["app/api/otp/send/route.ts", "app/api/otp/verify/route.ts", "app/api/passenger/password-reset/email/route.ts", "app/api/passenger/password-reset/complete/route.ts"].every((file) => no(file, "console.log") && no(file, "console.error(data.password")));
+check("Twilio secrets not public", !treeText("app").includes("NEXT_PUBLIC_TWILIO") && !treeText("components").includes("TWILIO_AUTH_TOKEN"));
+check("Phase 3I email flow remains", has("lib/email.ts", "PASSWORD_RESET_EMAIL"));
+check("booking/pricing untouched by new flow", has("lib/booking-quote.ts", "calculateAuthoritativeBookingQuote") && has("lib/pricing.ts", "pickup"));
+check("checklist exists", exists("PHASE_3J_CHECKLIST.md"));
+check("architecture audit preserved", exists("PHASE_3J_TWILIO_WHATSAPP_OTP_ARCHITECTURE.md"));
+
+for (const item of checks) console.log(`${item.ok ? "PASS" : "FAIL"} ${item.name}`);
+const failures = checks.filter((item) => !item.ok);
+console.log(`PHASE3J_CHECK_COUNT=${checks.length}`);
+if (failures.length) { console.error(`Phase 3J checks failed: ${failures.length}`); process.exit(1); }
+console.log("Phase 3J static/source checks passed.");

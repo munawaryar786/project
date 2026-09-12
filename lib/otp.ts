@@ -1,98 +1,32 @@
-import { prisma } from "./prisma";
-import { generateOTP, maskPhone } from "./utils";
-import { sendOTPWithFallback } from "./twilio";
+﻿import { prisma } from "./prisma";
+import { checkWhatsAppVerification, sendWhatsAppVerification } from "./twilio";
+import { isValidE164Phone, normalizePassengerPhone } from "./passenger-auth";
 
-/**
- * Create and store OTP for a booking
- * Production: Sends via WhatsApp with SMS fallback using Twilio
- * Development: Logs to console for testing
- */
+/** Compatibility helper for booking callers; Twilio Verify owns the code. */
 export async function sendOTP(bookingId: string, phone: string) {
-  const otpCode = generateOTP();
-  
-  // Set expiration to 5 minutes from now
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-
-  // Store OTP in OTP table
-  await prisma.oTP.create({
-    data: {
-      code: otpCode,
-      phone,
-      expiresAt,
-      bookingId,
-    },
-  });
-
-  // Production: Send via Twilio
-  if (process.env.TWILIO_ACCOUNT_SID && process.env.NODE_ENV === "production") {
-    const result = await sendOTPWithFallback(phone, otpCode);
-    
-    if (!result.success) {
-      console.error("❌ OTP delivery failed:", result.error);
-      return { success: false, error: result.error, method: result.method };
-    }
-    
-    console.log(`✅ OTP sent via ${result.method} to ${maskPhone(phone)}`);
-    return result;
-  }
-
-  // Development delivery is disabled when no provider is configured.
-  return { success: true, method: "console" };
+  const normalizedPhone = normalizePassengerPhone(phone);
+  if (!isValidE164Phone(normalizedPhone)) return { success: false, error: "Invalid phone number.", method: "whatsapp" };
+  const result = await sendWhatsAppVerification(normalizedPhone);
+  if (!result.success) return { success: false, error: result.error, method: "whatsapp" };
+  await prisma.oTP.updateMany({ where: { bookingId, phone: normalizedPhone, used: false }, data: { used: true } });
+  await prisma.oTP.create({ data: { code: "TWILIO_VERIFY", phone: normalizedPhone, expiresAt: new Date(Date.now() + 10 * 60 * 1000), bookingId } });
+  return { success: true, method: "whatsapp" };
 }
 
-/**
- * Verify OTP for a booking
- */
 export async function verifyOTP(bookingId: string, userOTP: string) {
-  const booking = await prisma.booking.findUnique({
-    where: { id: bookingId },
-  });
-
-  if (!booking) {
-    return { success: false, error: "Booking not found" };
+  const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+  if (!booking) return { success: false, error: "Booking not found" };
+  if (booking.phoneVerified) return { success: false, error: "Phone already verified" };
+  const phone = booking.normalizedPhone || normalizePassengerPhone(`${booking.customerPhoneCode}${booking.customerPhone}`, booking.customerPhoneCode);
+  const otpRecord = await prisma.oTP.findFirst({ where: { bookingId, phone, used: false, expiresAt: { gt: new Date() }, attempts: { lt: 5 } }, orderBy: { createdAt: "desc" } });
+  if (!otpRecord) return { success: false, error: "No OTP found or already used" };
+  const result = await checkWhatsAppVerification(phone, userOTP);
+  if (!result.success) {
+    await prisma.oTP.updateMany({ where: { id: otpRecord.id, used: false }, data: { attempts: { increment: 1 } } });
+    return { success: false, error: result.error };
   }
-
-  if (booking.phoneVerified) {
-    return { success: false, error: "Phone already verified" };
-  }
-
-  // Find the latest valid OTP for this booking
-  const otpRecord = await prisma.oTP.findFirst({
-    where: { 
-      bookingId,
-      used: false 
-    },
-    orderBy: { createdAt: 'desc' }
-  });
-
-  if (!otpRecord) {
-    return { success: false, error: "No OTP found or already used" };
-  }
-
-  // Check expiry
-  if (new Date() > otpRecord.expiresAt) {
-    return { success: false, error: "OTP expired. Please request a new one." };
-  }
-
-  // Check match
-  if (otpRecord.code !== userOTP) {
-    return { success: false, error: "Invalid OTP code" };
-  }
-
-  // Mark OTP as used and update booking status
-  await prisma.$transaction([
-    prisma.oTP.update({
-      where: { id: otpRecord.id },
-      data: { used: true },
-    }),
-    prisma.booking.update({
-      where: { id: bookingId },
-      data: {
-        phoneVerified: true,
-        status: "VERIFIED",
-      },
-    })
-  ]);
-
+  const claimed = await prisma.oTP.updateMany({ where: { id: otpRecord.id, used: false, expiresAt: { gt: new Date() }, attempts: { lt: 5 } }, data: { used: true } });
+  if (claimed.count !== 1) return { success: false, error: "Verification could not be completed" };
+  await prisma.booking.update({ where: { id: bookingId }, data: { phoneVerified: true, status: "VERIFIED" } });
   return { success: true };
 }

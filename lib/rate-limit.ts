@@ -14,6 +14,18 @@ interface RateLimitOptions {
  * Rate limiting middleware for Next.js API routes
  * Usage: Wrap your handler with this function
  */
+export function consumeRateLimit(key: string, options: RateLimitOptions) {
+  const now = Date.now();
+  const record = rateLimitStore.get(key);
+  if (record && now > record.resetTime) rateLimitStore.delete(key);
+  const current = rateLimitStore.get(key) || { count: 0, resetTime: now + options.windowMs };
+  current.count += 1;
+  rateLimitStore.set(key, current);
+  return {
+    allowed: current.count <= options.max,
+    retryAfter: Math.max(1, Math.ceil((current.resetTime - now) / 1000)),
+  };
+}
 export function withRateLimit(
   handler: (request: NextRequest) => Promise<NextResponse>,
   options: RateLimitOptions = { max: 100, windowMs: 15 * 60 * 1000 } // Default: 100 requests per 15 minutes
@@ -90,6 +102,12 @@ export const rateLimits = {
     message: "Too many OTP requests. Please wait before requesting another OTP."
   },
 
+  passengerRegistrationOtpPhone: {
+    scope: "registration_otp_phone",
+    max: 3,
+    windowMs: 5 * 60 * 1000,
+    message: "Too many OTP requests. Please wait before requesting another OTP."
+  },
   passengerRegistrationOtpVerify: {
     scope: "registration_otp_verify",
     max: 5,
