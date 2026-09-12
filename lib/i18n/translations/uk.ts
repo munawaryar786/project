@@ -684,6 +684,15 @@ const uk = {
   "driverPortal.claiming": "Vziattia...",
   "driverPortal.claimedScheduledRides": "Vashi nastupni zaplanovani poizdky",
   "driverPortal.pickupIn": "Do poizdky",
-  "driverPortal.pickupNow": "Poizdka skoro",};
+  "driverPortal.pickupNow": "Poizdka skoro",
+  "driverPortal.earningsTitle": "Zarobitky",
+  "driverPortal.earningsLedgerHelp": "Narakhuvannia za zaversheni poizdky",
+  "driverPortal.recentEarnings": "Ostanni zarobitky",
+  "driverPortal.noEarnings": "Zarobitkiv shche nemaie.",
+  "driverPortal.completedTrip": "Zavershena poizdka",
+  "driverPortal.today": "Sohodni",
+  "driverPortal.thisWeek": "Tsei tyzhden",
+  "driverPortal.thisMonth": "Tsei misyats",
+};
 
 export default uk;

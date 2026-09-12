@@ -1,0 +1,26 @@
+# DRIVO Phase 3G Earnings Ledger Checklist
+
+- [x] Baseline branch, parent commit, and clean worktree verified
+- [x] Existing earnings fields/models/calculations audited
+- [x] Booking completion transaction audited
+- [x] Fare/payment/commission authority audited
+- [x] Driver earnings/balance/payout fields audited
+- [x] Admin earnings/adjustment functionality audited
+- [x] Currency and monetary unit conventions audited
+- [x] Outbox/notification integration audited
+- [x] Historical completed booking migration risk audited
+- [x] Phase 3G architecture documented
+- [x] Immutable ledger schema implemented
+- [x] Minor-unit and currency invariants centralized
+- [x] Exactly-once completion posting implemented
+- [x] Completion transaction/reconciliation behavior verified
+- [x] Adjustments/reversals policy implemented or explicitly deferred
+- [x] Driver earnings APIs implemented with ownership/pagination
+- [x] Driver earnings UI implemented with translations/accessibility
+- [x] Fare authority and legacy earning compatibility preserved
+- [x] Reconciliation and production read-only plan prepared
+- [x] Phase 3G tests added and honest test classes documented
+- [x] Phase 3F through UX1 regressions pass
+- [x] Prisma/typecheck/lint/build/diff checks pass
+- [x] No payout/wallet/bank/fleet/Phase 3H work added
+- [x] No production writes, migration, db push, seed, commit, or push performed

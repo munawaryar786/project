@@ -702,6 +702,15 @@ const sk = {
   "driverPortal.claiming": "Preberam...",
   "driverPortal.claimedScheduledRides": "Vase nadchadzajuce planovane jazdy",
   "driverPortal.pickupIn": "Odchod o",
-  "driverPortal.pickupNow": "Jazda coskoro",};
+  "driverPortal.pickupNow": "Jazda coskoro",
+  "driverPortal.earningsTitle": "Zarobky",
+  "driverPortal.earningsLedgerHelp": "Zaúctované zárobky za dokončené jazdy",
+  "driverPortal.recentEarnings": "Nedávne zárobky",
+  "driverPortal.noEarnings": "Zatiaľ žiadne zaúčtované zárobky.",
+  "driverPortal.completedTrip": "Dokončená jazda",
+  "driverPortal.today": "Dnes",
+  "driverPortal.thisWeek": "Tento týždeň",
+  "driverPortal.thisMonth": "Tento mesiac",
+};
 
 export default sk;

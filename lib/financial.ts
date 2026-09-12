@@ -1,12 +1,14 @@
 import { prisma } from "@/lib/prisma";
-import { calculateBookingFinancialBreakdown } from "@/lib/commission-engine";
+import { fromMinorUnits, summarizeDriverLedger } from "@/lib/earnings-ledger";
 
 export interface DriverFinancialSummary {
   driverId: string;
+  currency: string;
   dailyEarnings: number;
   weeklyEarnings: number;
   monthlyEarnings: number;
   totalEarnings: number;
+  currencyTotals: Record<string, { today: number; week: number; month: number; total: number }>;
   performanceScore: number;
   averageRating: number | null;
   feedbackCount: number;
@@ -14,147 +16,21 @@ export interface DriverFinancialSummary {
   rideCount: number;
 }
 
-function startOfDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function startOfWeek(date: Date) {
-  const day = date.getDay();
-  const diff = day === 0 ? 6 : day - 1;
-  const start = startOfDay(date);
-  start.setDate(start.getDate() - diff);
-  return start;
-}
-
-function startOfMonth(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
-function toDateFromBooking(value: string | Date | null | undefined) {
-  if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function roundMoney(value: number) {
-  return Number(value.toFixed(2));
-}
-
-export async function getDriverFinancialSummary(
-  driverId: string,
-  now = new Date()
-): Promise<DriverFinancialSummary> {
-  const [earnings, completedBookings, assignedCount, cancelledCount] =
-    await Promise.all([
-      prisma.driverEarning.findMany({
-        where: { driverId },
-        orderBy: { completedAt: "desc" },
-      }),
-      prisma.booking.findMany({
-        where: {
-          driverId,
-          status: "COMPLETED",
-        },
-        select: {
-          id: true,
-          scheduledDate: true,
-          estimatedPrice: true,
-          fareTotalFare: true,
-          serviceType: true,
-          driverId: true,
-          earning: true,
-        },
-      }),
-      prisma.booking.count({ where: { driverId } }),
-      prisma.booking.count({ where: { driverId, status: "CANCELLED" } }),
-    ]);
-
-  const earningByBooking = new Set(earnings.map((earning) => earning.bookingId));
-  const fallbackEarnings = await Promise.all(
-    completedBookings
-      .filter((booking) => !earningByBooking.has(booking.id))
-      .map(async (booking) => {
-        const financial = await calculateBookingFinancialBreakdown({
-          driverId: booking.driverId,
-          serviceType: booking.serviceType,
-          fareTotalFare: booking.fareTotalFare,
-          estimatedPrice: booking.estimatedPrice,
-        });
-
-        return {
-          amount: financial.driverEarnings,
-          completedAt: toDateFromBooking(booking.scheduledDate) || now,
-        };
-      })
-  );
-
-  const rows = [
-    ...earnings.map((earning) => ({
-      amount: Number(earning.driverAmount || 0),
-      completedAt: earning.completedAt,
-    })),
-    ...fallbackEarnings,
-  ];
-
-  const today = startOfDay(now);
-  const week = startOfWeek(now);
-  const month = startOfMonth(now);
-
-  const sumSince = (date: Date) =>
-    rows.reduce((sum, row) => {
-      return row.completedAt >= date ? sum + row.amount : sum;
-    }, 0);
-
-  const completedCount = completedBookings.length;
-  const performanceScore =
-    assignedCount > 0
-      ? Math.max(
-          0,
-          Math.min(
-            100,
-            Math.round(
-              (completedCount / assignedCount) * 85 +
-                ((assignedCount - cancelledCount) / assignedCount) * 15
-            )
-          )
-        )
-      : 0;
-
-  return {
-    driverId,
-    dailyEarnings: roundMoney(sumSince(today)),
-    weeklyEarnings: roundMoney(sumSince(week)),
-    monthlyEarnings: roundMoney(sumSince(month)),
-    totalEarnings: roundMoney(rows.reduce((sum, row) => sum + row.amount, 0)),
-    performanceScore,
-    averageRating: null,
-    feedbackCount: 0,
-    feedbackSummary: "No passenger feedback records available yet.",
-    rideCount: completedCount,
-  };
+export async function getDriverFinancialSummary(driverId: string, now = new Date()): Promise<DriverFinancialSummary> {
+  const [summary, completedCount, assignedCount, cancelledCount] = await Promise.all([
+    summarizeDriverLedger(driverId, now),
+    prisma.booking.count({ where: { driverId, status: "COMPLETED" } }),
+    prisma.booking.count({ where: { driverId } }),
+    prisma.booking.count({ where: { driverId, status: "CANCELLED" } }),
+  ]);
+  const currencies = new Set([...Object.keys(summary.all), ...Object.keys(summary.today), ...Object.keys(summary.week), ...Object.keys(summary.month)]);
+  const currencyTotals = Object.fromEntries([...currencies].map((currency) => [currency, { today: fromMinorUnits(summary.today[currency]?.netAmountMinor), week: fromMinorUnits(summary.week[currency]?.netAmountMinor), month: fromMinorUnits(summary.month[currency]?.netAmountMinor), total: fromMinorUnits(summary.all[currency]?.netAmountMinor) }]));
+  const eur = currencyTotals.EUR || { today: 0, week: 0, month: 0, total: 0 };
+  const performanceScore = assignedCount > 0 ? Math.max(0, Math.min(100, Math.round((completedCount / assignedCount) * 85 + ((assignedCount - cancelledCount) / assignedCount) * 15))) : 0;
+  return { driverId, currency: "EUR", dailyEarnings: eur.today, weeklyEarnings: eur.week, monthlyEarnings: eur.month, totalEarnings: eur.total, currencyTotals, performanceScore, averageRating: null, feedbackCount: 0, feedbackSummary: "No passenger feedback records available yet.", rideCount: completedCount };
 }
 
 export async function getAllDriverFinancialSummaries() {
-  const drivers = await prisma.driver.findMany({
-    orderBy: { fullName: "asc" },
-    include: {
-      vehicle: true,
-      bookings: {
-        take: 5,
-        orderBy: { createdAt: "desc" },
-      },
-    },
-  });
-
-  const summaries = await Promise.all(
-    drivers.map(async (driver) => {
-      const { passwordHash, ...safeDriver } = driver as any;
-      return {
-        driver: safeDriver,
-        financial: await getDriverFinancialSummary(driver.id),
-      };
-    })
-  );
-
-  return summaries;
+  const drivers = await prisma.driver.findMany({ orderBy: { fullName: "asc" }, include: { vehicle: true, bookings: { take: 5, orderBy: { createdAt: "desc" } } } });
+  return Promise.all(drivers.map(async (driver) => { const { passwordHash, ...safeDriver } = driver as any; return { driver: safeDriver, financial: await getDriverFinancialSummary(driver.id) }; }));
 }

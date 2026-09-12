@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { writeOutboxEvent } from "@/lib/outbox";
 import { createOrUpdateDriverEarningForBooking } from "@/lib/commission-engine";
+import { postTripEarningLedger } from "@/lib/earnings-ledger";
 import { ACTIVE_TRIP_STATUSES, canTransitionTrip, DRIVER_ERROR_CODES, evaluateDriverPresence, isLocationFresh } from "@/lib/driver-state";
 import { driverCompatibility } from "@/lib/dispatch-matching";
 import { getDispatchConfig } from "@/lib/dispatch-config";
@@ -172,6 +173,10 @@ export async function transitionDriverBooking(input: {
       if (input.command === "COMPLETE") {
         // Financial failure must roll back completion, busy release and event together.
         await createOrUpdateDriverEarningForBooking(input.bookingId, tx);
+        if ("driverLedgerEntry" in tx) {
+          const ledger = await postTripEarningLedger(input.bookingId, tx);
+          if (!ledger.ok) throw new DriverConflict("LEDGER_POST_FAILED");
+        }
         const conflict = await findConflictingActiveTrip(input.driverId, input.bookingId, tx);
         await tx.driver.update({ where: { id: input.driverId }, data: { isOnTrip: Boolean(conflict) } });
         await tx.rideRequest.updateMany({ where: { bookingId: input.bookingId, status: "PENDING" },

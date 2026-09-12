@@ -1,0 +1,16 @@
+"use client";
+import { useEffect, useState } from "react";
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
+
+function money(value: number, currency = "EUR") { return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(value || 0); }
+export function DriverEarningsPanel() {
+  const { t } = useLanguage(); const [data, setData] = useState<any>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
+  const load = async () => { try { const res = await csrfFetch("driver", "/api/driver/earnings?limit=10", { cache: "no-store" }); const body = await res.json(); if (!res.ok) throw new Error(body.error || "Earnings unavailable"); setData(body); } catch (e: any) { setError(e?.message || "Earnings unavailable"); } finally { setLoading(false); } };
+  useEffect(() => { void load(); }, []);
+  const eur = (period: string) => Number(data?.summary?.[period]?.EUR?.net || 0);
+  return <section aria-labelledby="driver-earnings-heading" className="mb-6 rounded-3xl border border-emerald-100 bg-emerald-50/60 p-5">
+    <div className="flex items-center justify-between gap-3"><div><h2 id="driver-earnings-heading" className="text-base font-black text-gray-900">{t("driverPortal.earningsTitle", "Earnings")}</h2><p className="mt-1 text-xs text-gray-600">{t("driverPortal.earningsLedgerHelp", "Posted completed-trip earnings")}</p></div><button type="button" onClick={() => void load()} className="min-h-11 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-emerald-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700">{t("driverPortal.refresh", "Refresh")}</button></div>
+    {loading ? <p className="mt-4 rounded-2xl bg-white p-4 text-sm text-gray-600">{t("common.loading", "Loading...")}</p> : error ? <p role="alert" className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p> : <><div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">{[["today", t("driverPortal.today", "Today")], ["week", t("driverPortal.thisWeek", "This week")], ["month", t("driverPortal.thisMonth", "This month")], ["all", t("driverPortal.totalEarnings", "Total")]].map(([key, label]) => <div key={key} className="rounded-2xl bg-white p-3"><div className="text-xs font-bold text-gray-500">{label}</div><div className="mt-1 text-lg font-black text-emerald-800">{money(eur(key))}</div></div>)}</div><div className="mt-5"><h3 className="text-sm font-black text-gray-900">{t("driverPortal.recentEarnings", "Recent earnings")}</h3>{data.entries.length === 0 ? <p className="mt-2 rounded-2xl bg-white p-4 text-sm text-gray-600">{t("driverPortal.noEarnings", "No posted earnings yet.")}</p> : <div className="mt-2 space-y-2">{data.entries.map((entry: any) => <div key={entry.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white p-4 text-sm"><div><div className="font-bold text-gray-900">{t("driverPortal.completedTrip", "Completed trip")}</div><div className="text-xs text-gray-500">{new Date(entry.effectiveAt).toLocaleString()}</div></div><div className="font-black text-emerald-800">{money(entry.net, entry.currency)}</div></div>)}</div>}</div></>}
+  </section>;
+}

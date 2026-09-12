@@ -129,6 +129,7 @@ model Booking {
 
   otps    OTP[]
   earning DriverEarning?
+  ledgerEntries DriverLedgerEntry[]
 
   @@index([status])
   @@index([passengerId])
@@ -310,6 +311,7 @@ model Driver {
   bookings        Booking[]
   locationHistory DriverLocation[]
   earnings        DriverEarning[]
+  ledgerEntries   DriverLedgerEntry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -361,6 +363,37 @@ model DriverEarning {
 }
 
 // ============================================
+// ============================================
+// IMMUTABLE DRIVER EARNINGS LEDGER
+// ============================================
+model DriverLedgerEntry {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  driverId  String @db.ObjectId
+  bookingId String? @db.ObjectId
+  driver    Driver  @relation(fields: [driverId], references: [id])
+  booking   Booking? @relation(fields: [bookingId], references: [id])
+
+  entryType             String
+  currency              String
+  grossAmountMinor      Int?
+  commissionAmountMinor Int?
+  netAmountMinor        Int
+  referenceType         String
+  referenceId           String?
+  idempotencyKey        String @unique
+  descriptionCode       String?
+  metadata              Json?
+  effectiveAt           DateTime
+  createdAt             DateTime @default(now())
+
+  @@index([driverId, effectiveAt])
+  @@index([bookingId])
+  @@index([referenceId])
+  @@index([entryType])
+  @@map("driver_ledger_entries")
+}
+
 // DRIVER LOCATION HISTORY
 // ============================================
 model DriverLocation {

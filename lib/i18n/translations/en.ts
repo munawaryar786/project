@@ -701,6 +701,15 @@ const en = {
   "driverPortal.claiming": "Claiming...",
   "driverPortal.claimedScheduledRides": "Your upcoming scheduled rides",
   "driverPortal.pickupIn": "Pickup in",
-  "driverPortal.pickupNow": "Pickup soon",};
+  "driverPortal.pickupNow": "Pickup soon",
+  "driverPortal.earningsTitle": "Earnings",
+  "driverPortal.earningsLedgerHelp": "Posted completed-trip earnings",
+  "driverPortal.recentEarnings": "Recent earnings",
+  "driverPortal.noEarnings": "No posted earnings yet.",
+  "driverPortal.completedTrip": "Completed trip",
+  "driverPortal.today": "Today",
+  "driverPortal.thisWeek": "This week",
+  "driverPortal.thisMonth": "This month",
+};
 
 export default en;

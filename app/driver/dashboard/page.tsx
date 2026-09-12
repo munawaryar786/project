@@ -8,6 +8,7 @@ import { ACTIVE_TRIP_STATUSES } from "@/lib/driver-state";
 import { csrfFetch } from "@/lib/client/csrf-fetch";
 import { io } from "socket.io-client";
 import { DriverNavigationPanel } from "@/components/driver/DriverNavigation";
+import { DriverEarningsPanel } from "@/components/driver/DriverEarningsPanel";
 import { ScheduledMarketplace } from "@/components/driver/ScheduledMarketplace";
 
 interface Booking {
@@ -615,6 +616,8 @@ export default function DriverDashboard() {
           </div>
         </div>
       </div>
+
+      <DriverEarningsPanel />
 
       {refreshError && (
         <div role="alert" className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-700">

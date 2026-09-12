@@ -1,0 +1,67 @@
+# DRIVO Phase 3G Final Release Checklist
+
+Scope: phase-3g-driver-earnings-ledger, uncommitted Phase 3G changes only. No commit, push, deploy, production write, migration, Prisma db push, seed, Redis production access, or historical backfill.
+
+- [x] 1 Baseline/scope: branch, parent 5da3df2, status, diff stat, log, and no Phase 3H/payout/wallet work verified.
+- [x] 2 Complete file inventory: every changed file has a Phase 3G purpose in the final report.
+- [x] 3 Prisma schema diff: relations, DriverLedgerEntry fields, Mongo mapping, unique key, and indexes captured; no sync.
+- [x] 4 Canonical accounting: Booking final fare and existing commission engine feed one shared breakdown; ledger is new authority and DriverEarning is compatibility data.
+- [x] 5 Fare safety: no fare formula, tier, distance, waiting/assistance, price MAC, Stripe amount, or payment state changed; 136000m -> 136 km -> EUR 125.60 retained.
+- [x] 6 Commission: existing CommissionConfig/pricing authority and calculation are reused; no new rate; invalid arithmetic fails closed.
+- [x] 7 Money: immutable ledger accounting values are integer minor units.
+- [x] 8 Rounding: one deterministic toMinorUnits boundary; non-finite/unsafe values fail closed.
+- [x] 9 Invariants: completed booking, driver, currency, safe non-negative integers, and gross minus commission equals net enforced.
+- [x] 10 Exactly once: trip-earning:<bookingId> is database-unique.
+- [x] 11 Concurrent COMPLETE: conditional state update, transaction, unique ledger/outbox/legacy keys; real Mongo race documented for staging.
+- [x] 12 Atomicity: driver completion, legacy cache, ledger, outbox, busy release, offer expiry, and trip event share one transaction; admin split path documented.
+- [x] 13 Transaction retry: unique booking, ledger, and outbox keys protect callback retries.
+- [x] 14 Completed without ledger: driver transaction rolls back; admin anomaly is reconciliation-detectable.
+- [x] 15 Ledger without completion: posting requires COMPLETED and an assigned driver.
+- [x] 16 Legacy consistency: existing readers remain; new summary/API/UI use ledger only.
+- [x] 17 Legacy Float: compatibility values use the same finalized two-decimal authority.
+- [x] 18 Currency: explicit normalized EUR on every posting; no implicit mixed sum.
+- [x] 19 Multi-currency: each period groups and returns separate currency buckets.
+- [x] 20 UTC/timezone/DST: UTC timestamps and Europe/Bratislava DST-safe helpers.
+- [x] 21 Period semantics: local today, Monday week, and calendar month boundaries documented.
+- [x] 22 Custom range: strict dates, order, 93-day bound, timezone parsing, sanitized error.
+- [x] 23 API auth: canonical driver session actor; no client driverId.
+- [x] 24 Pagination: 1-100 bound, stable effectiveAt/id ordering, deterministic cursor.
+- [x] 25 Privacy: API projection excludes passenger, child/guardian, medical, coordinates, card, Stripe, and admin data.
+- [x] 26 Immutability: no ledger PATCH/PUT/DELETE/update/delete path.
+- [x] 27 Adjustments/reversals: schema types only; no public mutation or fake UI.
+- [x] 28 No wallet/payout claim: no new withdrawal, cash-out, bank, Connect, or SEPA implementation/copy.
+- [x] 29 Outbox: DRIVER_LEDGER_ENTRY_POSTED is transactional and ledger-posted:<bookingId> is deterministic.
+- [x] 30 Realtime: signals only; REST ledger is authoritative.
+- [x] 31 UI authority: API values displayed; no client commission/gross/net math.
+- [x] 32 Formatting: minor units converted server-side and locale currency formatting used.
+- [x] 33 Accessibility: headings, keyboard button, focus, loading/empty/error, mobile sizing; browser viewport tests are staging prerequisites.
+- [x] 34 Translations: EN, SK, DE, UK catalogs contain new strings.
+- [x] 35 Indexes: driver/effectiveAt, booking, reference, entry type justified; no redundant index.
+- [x] 36 Unique preflight: read-only duplicate candidate plan documented, not executed.
+- [x] 37 Collection impact: additive collection/index synchronization and nullable historical links documented.
+- [x] 38 Historical rides: ledger-era totals are not presented as complete old lifetime totals.
+- [x] 39 Backfill: backup, audit, compare, candidate, dry run, anomaly, owner approval, bounded idempotent write, reconcile, rollback documented.
+- [x] 40 Reconciliation: missing, duplicate, orphan, wrong-driver, non-completed, mismatch, currency, malformed checks read-only.
+- [x] 41 Cancelled/failed: no normal trip earning or compensation.
+- [x] 42 Zero-value: explicit zero can post; malformed monetary input fails closed.
+- [x] 43 Assisted/WAV/Children: same canonical path; no sensitive metadata.
+- [x] 44 Airport/Tourism: same canonical path and commission authority.
+- [x] 45 Waiting/assistance: consumed from Booking final fare; no recalculation.
+- [x] 46 Stripe/payment: no checkout, PaymentIntent, status, MAC, or charge mutation.
+- [x] 47 Admin compatibility: existing admin paths remain; no Phase 3H finance console.
+- [x] 48 Phase 3F regression PASS 96/96.
+- [x] 49 Phase 3E regression PASS 61.
+- [x] 50 Phase 3D regression PASS 62.
+- [x] 51 Phase 3C regression PASS 59.
+- [x] 52 Phase 3B regression PASS 67 static + 45 isolated behavioral.
+- [x] 53 Phase 3A security PASS static/runtime.
+- [x] 54 UX1 regression PASS with 136000m -> 136 km -> EUR 125.60.
+- [x] 55 Phase 3G quality PASS 109/109 static/source assertions; no real integration claim.
+- [x] 56 Full static/build gate PASS; existing middleware deprecation warning only.
+- [x] 57 Real Mongo race, HTTP retry, transaction retry, and network retry staging plan prepared.
+- [x] 58 Financial reconciliation comparison plan prepared; no mutation.
+- [x] 59 Production read-only plan reviewed; no PII and not executed.
+- [x] 60 Full staging E2E scenarios A-E documented.
+- [x] 61 UX1 through Phase 3G production prerequisites consolidated; no deployment.
+- [x] 62 No payout, bank, tax, invoice, fleet settlement, or Phase 3H implementation.
+- [x] 63 Exact final report A-AP, single final gate phrase, and owner-review ending created.

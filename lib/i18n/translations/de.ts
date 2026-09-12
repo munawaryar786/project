@@ -684,6 +684,15 @@ const de = {
   "driverPortal.claiming": "Wird ubernommen...",
   "driverPortal.claimedScheduledRides": "Ihre kommenden geplanten Fahrten",
   "driverPortal.pickupIn": "Abholung in",
-  "driverPortal.pickupNow": "Abholung bald",};
+  "driverPortal.pickupNow": "Abholung bald",
+  "driverPortal.earningsTitle": "Einnahmen",
+  "driverPortal.earningsLedgerHelp": "Gebuchte Einnahmen aus abgeschlossenen Fahrten",
+  "driverPortal.recentEarnings": "Letzte Einnahmen",
+  "driverPortal.noEarnings": "Noch keine gebuchten Einnahmen.",
+  "driverPortal.completedTrip": "Abgeschlossene Fahrt",
+  "driverPortal.today": "Heute",
+  "driverPortal.thisWeek": "Diese Woche",
+  "driverPortal.thisMonth": "Dieser Monat",
+};
 
 export default de;

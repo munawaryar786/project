@@ -1,3 +1,4 @@
+import { postTripEarningLedger } from "@/lib/earnings-ledger";
 import { authorizeAdmin } from "@/lib/security/authorization";
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
@@ -233,6 +234,7 @@ export async function PATCH(request: NextRequest) {
 
     if (status === "COMPLETED" && updatedBooking.driverId) {
       await createOrUpdateDriverEarningForBooking(updatedBooking.id);
+      await postTripEarningLedger(updatedBooking.id);
     }
 
     const bookingWithFinancials = await prisma.booking.findUnique({
