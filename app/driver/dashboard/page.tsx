@@ -7,6 +7,7 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { ACTIVE_TRIP_STATUSES } from "@/lib/driver-state";
 import { csrfFetch } from "@/lib/client/csrf-fetch";
 import { io } from "socket.io-client";
+import { DriverNavigationPanel } from "@/components/driver/DriverNavigation";
 
 interface Booking {
   id: string;
@@ -372,7 +373,7 @@ export default function DriverDashboard() {
       const data: any = await safeJson(res);
 
       if (!res.ok) {
-        alert(data.error || "Nepodarilo sa zmeniť dostupnosť.");
+        alert(data.error || "Nepodarilo sa zmeniÅ¥ dostupnosÅ¥.");
         return;
       }
 
@@ -383,7 +384,7 @@ export default function DriverDashboard() {
       setPresenceState(data.presence || "OFFLINE");
     } catch (err) {
       console.error("Availability update failed:", err);
-      alert("Nepodarilo sa zmeniť dostupnosť.");
+      alert("Nepodarilo sa zmeniÅ¥ dostupnosÅ¥.");
     } finally {
       setAvailabilityUpdating(false);
     }
@@ -410,7 +411,7 @@ export default function DriverDashboard() {
       const data: any = await safeJson(res);
 
       if (!res.ok) {
-        alert(data.error || "Nepodarilo sa odpovedať na požiadavku.");
+        alert(data.error || "Nepodarilo sa odpovedaÅ¥ na poÅ¾iadavku.");
         return;
       }
 
@@ -418,7 +419,7 @@ export default function DriverDashboard() {
       await fetchBookings(driver.id);
     } catch (err) {
       console.error("Ride request response failed:", err);
-      alert("Nepodarilo sa odpovedať na požiadavku.");
+      alert("Nepodarilo sa odpovedaÅ¥ na poÅ¾iadavku.");
     } finally {
       setRequestUpdating(null);
     }
@@ -449,7 +450,7 @@ export default function DriverDashboard() {
       const data: any = await safeJson(res);
 
       if (!res.ok) {
-        alert(data.error || "Nepodarilo sa zmeniť stav jazdy.");
+        alert(data.error || "Nepodarilo sa zmeniÅ¥ stav jazdy.");
         return;
       }
 
@@ -457,7 +458,7 @@ export default function DriverDashboard() {
       setShowCashModal(null);
     } catch (err) {
       console.error("Status update failed:", err);
-      alert("Nepodarilo sa zmeniť stav jazdy.");
+      alert("Nepodarilo sa zmeniÅ¥ stav jazdy.");
     } finally {
       setUpdating(null);
     }
@@ -480,8 +481,8 @@ export default function DriverDashboard() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
-          <div className="text-5xl animate-pulse mb-3">🚗</div>
-          <p className="text-gray-500">Načítavam jazdy...</p>
+          <div className="text-5xl animate-pulse mb-3">ðŸš—</div>
+          <p className="text-gray-500">NaÄÃ­tavam jazdy...</p>
         </div>
       </div>
     );
@@ -495,17 +496,17 @@ export default function DriverDashboard() {
             <BrandLogo className="h-12 w-36 shrink-0" />
             <div>
               <p className="text-xs uppercase tracking-wide text-gray-400 font-bold">
-                Panel vodiča
+                Panel vodiÄa
               </p>
               <h1 className="text-2xl font-black text-gray-900">
-                Dobrý deň, {driver?.fullName} 👋
+                DobrÃ½ deÅˆ, {driver?.fullName} ðŸ‘‹
               </h1>
               <p className="text-sm text-gray-500 mt-1">
                 {activeTrip
-                  ? `Aktívna jazda: ${activeTrip.bookingRef}`
+                  ? `AktÃ­vna jazda: ${activeTrip.bookingRef}`
                   : allActive.length > 0
-                  ? `Máte ${allActive.length} aktívnych jázd`
-                  : "Zatiaľ žiadne priradené jazdy"}
+                  ? `MÃ¡te ${allActive.length} aktÃ­vnych jÃ¡zd`
+                  : "ZatiaÄ¾ Å¾iadne priradenÃ© jazdy"}
               </p>
             </div>
           </div>
@@ -522,10 +523,10 @@ export default function DriverDashboard() {
             } disabled:opacity-50`}
           >
             {availabilityUpdating
-              ? "⏳ Aktualizujem..."
+              ? "â³ Aktualizujem..."
               : isOnline
-              ? "🟢 Online"
-              : "⚫ Ísť online"}
+              ? "ðŸŸ¢ Online"
+              : "âš« ÃsÅ¥ online"}
           </button>
           <button
             onClick={() => void logout()}
@@ -571,21 +572,30 @@ export default function DriverDashboard() {
       {activeTrip && (
         <div className="mb-6">
           <h2 className="text-base font-black text-gray-900 mb-3">
-            🚦 Aktívna jazda
+            ðŸš¦ AktÃ­vna jazda
           </h2>
+          <DriverNavigationPanel
+            booking={activeTrip}
+            realtimeStatus={realtimeStatus}
+            locationStatus={locationStatus}
+            updating={updating === activeTrip.id}
+            onStatusUpdate={(id, status) => updateStatus(id, status)}
+            onCashConfirm={() => setShowCashModal(activeTrip.id)}
+          />
           <ActiveTripCard
             booking={activeTrip}
             updating={updating === activeTrip.id}
             onStatusUpdate={updateStatus}
             onCashConfirm={() => setShowCashModal(activeTrip.id)}
+            showTripControls={false}
           />
         </div>
       )}
 
       <div className="grid grid-cols-3 gap-3 mb-6">
         <StatCard label="Dnes" value={todayBookings.length} tone="amber" />
-        <StatCard label="Budúce" value={upcomingBookings.length} tone="blue" />
-        <StatCard label="Hotové" value={completedBookings.length} tone="green" />
+        <StatCard label="BudÃºce" value={upcomingBookings.length} tone="blue" />
+        <StatCard label="HotovÃ©" value={completedBookings.length} tone="green" />
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -626,17 +636,17 @@ export default function DriverDashboard() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div ref={cashDialogRef} role="dialog" aria-modal="true" aria-labelledby="cash-confirmation-title" className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl">
             <div className="text-center">
-              <div className="text-5xl mb-3">💵</div>
+              <div className="text-5xl mb-3">ðŸ’µ</div>
               <h3 id="cash-confirmation-title" className="text-xl font-black text-gray-900 mb-2">
                 Potvrdenie hotovosti
               </h3>
               <p className="text-sm text-gray-600 mb-4">
-                Prijali ste hotovosť od zákazníka{" "}
-                <strong>PRED začiatkom jazdy</strong>?
+                Prijali ste hotovosÅ¥ od zÃ¡kaznÃ­ka{" "}
+                <strong>PRED zaÄiatkom jazdy</strong>?
               </p>
 
               <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 p-3 rounded-2xl mb-4">
-                ⚠️ Jazda nemôže začať bez potvrdenia platby.
+                âš ï¸ Jazda nemÃ´Å¾e zaÄaÅ¥ bez potvrdenia platby.
               </p>
 
               <div className="flex gap-3">
@@ -644,7 +654,7 @@ export default function DriverDashboard() {
                   onClick={() => setShowCashModal(null)}
                   className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-2xl text-sm font-black hover:bg-gray-200"
                 >
-                  ❌ Nie
+                  âŒ Nie
                 </button>
 
                 <button
@@ -654,7 +664,7 @@ export default function DriverDashboard() {
                   disabled={updating === showCashModal}
                   className="flex-1 py-3 bg-green-700 text-white rounded-2xl text-sm font-black hover:bg-green-800 disabled:opacity-50"
                 >
-                  {updating === showCashModal ? "⏳..." : "✅ Áno"}
+                  {updating === showCashModal ? "â³..." : "âœ… Ãno"}
                 </button>
               </div>
             </div>
@@ -664,7 +674,7 @@ export default function DriverDashboard() {
 
       {todayBookings.length > 0 && (
         <BookingSection
-          title="📅 Dnes"
+          title="ðŸ“… Dnes"
           bookings={todayBookings}
           expandedBooking={expandedBooking}
           setExpandedBooking={setExpandedBooking}
@@ -676,7 +686,7 @@ export default function DriverDashboard() {
 
       {upcomingBookings.length > 0 && (
         <BookingSection
-          title="📆 Nadchádzajúce"
+          title="ðŸ“† NadchÃ¡dzajÃºce"
           bookings={upcomingBookings}
           expandedBooking={expandedBooking}
           setExpandedBooking={setExpandedBooking}
@@ -689,7 +699,7 @@ export default function DriverDashboard() {
       {completedBookings.length > 0 && (
         <div className="mb-6">
           <h2 className="text-base font-black text-gray-900 mb-3">
-            ✅ Dokončené
+            âœ… DokonÄenÃ©
           </h2>
 
           <div className="space-y-3">
@@ -704,14 +714,14 @@ export default function DriverDashboard() {
                       {booking.bookingRef}
                     </span>
                     <p className="text-sm font-semibold text-gray-700">
-                      {booking.pickupAddress} → {booking.dropoffAddress}
+                      {booking.pickupAddress} â†’ {booking.dropoffAddress}
                     </p>
                     <p className="mt-1 text-xs font-bold text-green-700">
                       Your earnings: {formatDriverMoney(getDriverEarningAmount(booking))}
                     </p>
                   </div>
                   <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold">
-                    ✅ DOKONČENÉ
+                    âœ… DOKONÄŒENÃ‰
                   </span>
                 </div>
               </div>
@@ -722,12 +732,12 @@ export default function DriverDashboard() {
 
       {!hasBookings && rideRequests.length === 0 && (
         <div className="bg-white rounded-3xl border border-gray-200 p-12 text-center">
-          <div className="text-6xl mb-4">🚗</div>
+          <div className="text-6xl mb-4">ðŸš—</div>
           <h3 className="text-lg font-black text-gray-900 mb-2">
-            Žiadne priradené jazdy
+            Å½iadne priradenÃ© jazdy
           </h3>
           <p className="text-gray-500 text-sm">
-            Keď vám admin priradí jazdu alebo systém pošle request, zobrazí sa
+            KeÄ vÃ¡m admin priradÃ­ jazdu alebo systÃ©m poÅ¡le request, zobrazÃ­ sa
             tu.
           </p>
         </div>
@@ -748,20 +758,20 @@ function LocationStatusCard({
   if (!isOnline) {
     return (
       <div className="mt-3 bg-gray-50 border border-gray-200 text-gray-600 rounded-2xl px-4 py-3 text-xs font-bold">
-        📍 GPS sledovanie je vypnuté, pretože vodič je offline.
+        ðŸ“ GPS sledovanie je vypnutÃ©, pretoÅ¾e vodiÄ je offline.
       </div>
     );
   }
 
   const content: Record<string, string> = {
-    idle: "📍 GPS pripravené. Poloha sa začne odosielať po povolení prehliadača.",
-    tracking: `🛰️ GPS aktívne. Posledná aktualizácia: ${
-      lastGpsUpdate || "práve teraz"
+    idle: "ðŸ“ GPS pripravenÃ©. Poloha sa zaÄne odosielaÅ¥ po povolenÃ­ prehliadaÄa.",
+    tracking: `ðŸ›°ï¸ GPS aktÃ­vne. PoslednÃ¡ aktualizÃ¡cia: ${
+      lastGpsUpdate || "prÃ¡ve teraz"
     }`,
     blocked:
-      "🚫 GPS poloha je zablokovaná. Povoľte Location v prehliadači pre live tracking.",
-    unsupported: "⚠️ Tento prehliadač nepodporuje GPS polohu.",
-    error: "⚠️ Nepodarilo sa odoslať GPS polohu. Skontrolujte povolenia.",
+      "ðŸš« GPS poloha je zablokovanÃ¡. PovoÄ¾te Location v prehliadaÄi pre live tracking.",
+    unsupported: "âš ï¸ Tento prehliadaÄ nepodporuje GPS polohu.",
+    error: "âš ï¸ Nepodarilo sa odoslaÅ¥ GPS polohu. Skontrolujte povolenia.",
   };
 
   const styles: Record<string, string> = {
@@ -815,16 +825,16 @@ function IncomingRideRequestCard({
       <div className="flex items-center justify-between mb-4">
         <div>
           <p className="text-xs uppercase tracking-wider opacity-80 font-bold">
-            Nová požiadavka
+            NovÃ¡ poÅ¾iadavka
           </p>
           <h2 className="text-2xl font-black mt-1">
-            🚕 {request.booking?.bookingRef}
+            ðŸš• {request.booking?.bookingRef}
           </h2>
         </div>
 
         <div className="bg-white/20 rounded-2xl px-4 py-3 text-center">
           <div className="text-2xl font-black" aria-live="polite" aria-label={"Offer expires in " + secondsLeft + " seconds"}>{secondsLeft}s</div>
-          <div className="text-[10px] uppercase font-bold">Čas</div>
+          <div className="text-[10px] uppercase font-bold">ÄŒas</div>
         </div>
       </div>
 
@@ -849,7 +859,7 @@ function IncomingRideRequestCard({
           aria-label={"Decline offer " + request.booking?.bookingRef}
           className="py-4 rounded-3xl bg-red-500 hover:bg-red-600 text-white font-black disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         >
-          {updating ? "⏳..." : "❌ Odmietnuť"}
+          {updating ? "â³..." : "âŒ OdmietnuÅ¥"}
         </button>
 
         <button
@@ -858,7 +868,7 @@ function IncomingRideRequestCard({
           aria-label={"Accept offer " + request.booking?.bookingRef}
           className="py-4 rounded-3xl bg-white text-green-700 hover:bg-green-50 font-black disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         >
-          {updating ? "⏳..." : "✅ Prijať"}
+          {updating ? "â³..." : "âœ… PrijaÅ¥"}
         </button>
       </div>
     </div>
@@ -870,11 +880,13 @@ function ActiveTripCard({
   updating,
   onStatusUpdate,
   onCashConfirm,
+  showTripControls = true,
 }: {
   booking: Booking;
   updating: boolean;
   onStatusUpdate: (id: string, status: string, cash?: boolean) => void;
   onCashConfirm: () => void;
+  showTripControls?: boolean;
 }) {
   const nextAction = getNextAction(booking);
 
@@ -900,12 +912,12 @@ function ActiveTripCard({
           <p className="text-[11px] text-gray-400 uppercase font-bold">
             Vyzdvihnutie
           </p>
-          <p className="font-bold">📍 {booking.pickupAddress}</p>
+          <p className="font-bold">ðŸ“ {booking.pickupAddress}</p>
         </div>
 
         <div>
-          <p className="text-[11px] text-gray-400 uppercase font-bold">Cieľ</p>
-          <p className="font-bold">🏁 {booking.dropoffAddress}</p>
+          <p className="text-[11px] text-gray-400 uppercase font-bold">CieÄ¾</p>
+          <p className="font-bold">ðŸ {booking.dropoffAddress}</p>
         </div>
       </div>
 
@@ -917,29 +929,29 @@ function ActiveTripCard({
           href={`tel:${booking.customerPhoneCode}${booking.customerPhone}`}
           className="text-center py-3 bg-blue-600 rounded-2xl font-black"
         >
-          📞 Zavolať
+          ðŸ“ž ZavolaÅ¥
         </a>
 
-        <a
+        {showTripControls && <a
           href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(booking.pickupAddress || "")}`}
           target="_blank"
           rel="noopener noreferrer"
           className="text-center py-3 bg-white text-gray-950 rounded-2xl font-black"
         >
-          🗺️ Navigovať
-        </a>
+          ðŸ—ºï¸ NavigovaÅ¥
+        </a>}
       </div>
 
       {booking.paymentMethod === "CASH" &&
         booking.status === "DRIVER_ENROUTE" && (
           <div className="p-3 bg-amber-100 text-amber-900 rounded-2xl mb-4">
             <p className="text-sm font-black">
-              ⚠️ Hotovosť musí byť prijatá pred začiatkom jazdy
+              âš ï¸ HotovosÅ¥ musÃ­ byÅ¥ prijatÃ¡ pred zaÄiatkom jazdy
             </p>
           </div>
         )}
 
-      {nextAction && (
+      {showTripControls && nextAction && (
         <button
           onClick={() => {
             if (nextAction.nextStatus === "CASH_CONFIRM") {
@@ -951,7 +963,7 @@ function ActiveTripCard({
           disabled={updating}
           className="w-full py-4 bg-green-600 hover:bg-green-700 text-white font-black rounded-3xl disabled:opacity-50"
         >
-          {updating ? "⏳ Aktualizujem..." : nextAction.label}
+          {updating ? "â³ Aktualizujem..." : nextAction.label}
         </button>
       )}
     </div>
@@ -1033,32 +1045,32 @@ function BookingCard({
 
         <div className="space-y-1">
           <p className="text-sm font-bold text-gray-900 truncate">
-            📍 {booking.pickupAddress}
+            ðŸ“ {booking.pickupAddress}
           </p>
           <p className="text-sm font-bold text-gray-900 truncate">
-            🏁 {booking.dropoffAddress}
+            ðŸ {booking.dropoffAddress}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-gray-500">
-          <span>📅 {booking.scheduledDate}</span>
-          <span>⏰ {booking.scheduledTime}</span>
-          <span>👥 {booking.passengerCount}</span>
-          {booking.wheelchairNeeded && <span>♿</span>}
+          <span>ðŸ“… {booking.scheduledDate}</span>
+          <span>â° {booking.scheduledTime}</span>
+          <span>ðŸ‘¥ {booking.passengerCount}</span>
+          {booking.wheelchairNeeded && <span>â™¿</span>}
           {booking.paymentMethod === "CASH" && (
-            <span className="text-amber-600 font-bold">💵 CASH</span>
+            <span className="text-amber-600 font-bold">ðŸ’µ CASH</span>
           )}
         </div>
 
         <div className="text-xs text-gray-400 mt-2">
-          {expanded ? "▲ Menej" : "▼ Viac detailov"}
+          {expanded ? "â–² Menej" : "â–¼ Viac detailov"}
         </div>
       </button>
 
       {expanded && (
         <div className="px-4 pb-4 border-t border-gray-100 pt-3 space-y-3">
           <div className="bg-gray-50 rounded-2xl p-3">
-            <p className="text-xs font-bold text-gray-500 mb-1">ZÁKAZNÍK</p>
+            <p className="text-xs font-bold text-gray-500 mb-1">ZÃKAZNÃK</p>
             <p className="text-sm font-bold">{booking.customerName}</p>
 
             <div className="flex gap-2 mt-2">
@@ -1066,7 +1078,7 @@ function BookingCard({
                 href={`tel:${booking.customerPhoneCode}${booking.customerPhone}`}
                 className="flex-1 text-center py-2 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold"
               >
-                📞 Zavolať
+                ðŸ“ž ZavolaÅ¥
               </a>
 
               <a
@@ -1078,30 +1090,30 @@ function BookingCard({
                 rel="noopener noreferrer"
                 className="flex-1 text-center py-2 bg-green-50 text-green-700 rounded-xl text-xs font-bold"
               >
-                💬 WhatsApp
+                ðŸ’¬ WhatsApp
               </a>
             </div>
           </div>
 
           <div className="text-xs space-y-1 text-gray-600">
-            <InfoRow label="Batožina" value={booking.luggageType} />
-            <InfoRow label="Malá / veľká batožina" value={`${booking.smallBags || 0} / ${booking.largeBags || 0}`} />
+            <InfoRow label="BatoÅ¾ina" value={booking.luggageType} />
+            <InfoRow label="MalÃ¡ / veÄ¾kÃ¡ batoÅ¾ina" value={`${booking.smallBags || 0} / ${booking.largeBags || 0}`} />
             <InfoRow label="Platba" value={booking.paymentMethod} />
             {booking.earning && (
               <InfoRow
-                label="Vaše zárobky"
+                label="VaÅ¡e zÃ¡robky"
                 value={formatDriverMoney(booking.earning.driverAmount)}
               />
             )}
             {booking.flightNumber && (
-              <InfoRow label="Let" value={`✈️ ${booking.flightNumber}`} />
+              <InfoRow label="Let" value={`âœˆï¸ ${booking.flightNumber}`} />
             )}
             {booking.waitAndGreet && (
-              <InfoRow label="Wait & Greet" value="✅ Áno" />
+              <InfoRow label="Wait & Greet" value="âœ… Ãno" />
             )}
             {booking.specialNotes && (
               <div className="mt-2 p-2 bg-amber-50 rounded-xl">
-                <span className="font-bold">📝 Poznámky: </span>
+                <span className="font-bold">ðŸ“ PoznÃ¡mky: </span>
                 {booking.specialNotes}
               </div>
             )}
@@ -1122,7 +1134,7 @@ function BookingCard({
               disabled={updating}
               className="w-full py-3 bg-green-700 hover:bg-green-800 text-white font-black rounded-2xl text-sm disabled:opacity-50"
             >
-              {updating ? "⏳ Aktualizujem..." : nextAction.label}
+              {updating ? "â³ Aktualizujem..." : nextAction.label}
             </button>
           )}
 
@@ -1132,7 +1144,7 @@ function BookingCard({
             rel="noopener noreferrer"
             className="block w-full py-3 bg-blue-50 text-blue-700 font-bold rounded-2xl text-sm text-center hover:bg-blue-100"
           >
-            🗺️ Navigovať k zákazníkovi
+            ðŸ—ºï¸ NavigovaÅ¥ k zÃ¡kaznÃ­kovi
           </a>
         </div>
       )}
@@ -1304,7 +1316,7 @@ function AssistanceSummary({
     booking.ztpCardHolder && ["ZTP Passenger", "Yes"],
     (booking.wheelchairUser || booking.wheelchairNeeded) && [
       "Wheelchair",
-      `${formatEnum(booking.wheelchairType)} · transfer: ${
+      `${formatEnum(booking.wheelchairType)} Â· transfer: ${
         booking.canTransferToSeat === null || booking.canTransferToSeat === undefined
           ? "N/A"
           : booking.canTransferToSeat
@@ -1364,7 +1376,7 @@ function getNextAction(booking: Booking) {
     case "ASSIGNED":
     case "CONFIRMED":
       return {
-        label: "🚗 Som na ceste",
+        label: "ðŸš— Som na ceste",
         nextStatus: "DRIVER_ENROUTE",
       };
     case "DRIVER_ENROUTE":
@@ -1375,17 +1387,17 @@ function getNextAction(booking: Booking) {
     case "ARRIVED":
       if (booking.paymentMethod === "CASH") {
         return {
-          label: "💵 Potvrdiť hotovosť + začať",
+          label: "ðŸ’µ PotvrdiÅ¥ hotovosÅ¥ + zaÄaÅ¥",
           nextStatus: "CASH_CONFIRM",
         };
       }
       return {
-        label: "🚕 Začať jazdu",
+        label: "ðŸš• ZaÄaÅ¥ jazdu",
         nextStatus: "IN_PROGRESS",
       };
     case "IN_PROGRESS":
       return {
-        label: "✅ Dokončiť jazdu",
+        label: "âœ… DokonÄiÅ¥ jazdu",
         nextStatus: "COMPLETED",
       };
     default:
@@ -1395,37 +1407,37 @@ function getNextAction(booking: Booking) {
 
 function getServiceIcon(type: string) {
   const icons: Record<string, string> = {
-    STANDARD: "🚕",
-    ACCESSIBLE: "♿",
-    SENIOR: "👴",
-    CHILDREN: "👶",
-    AIRPORT: "✈️",
+    STANDARD: "ðŸš•",
+    ACCESSIBLE: "â™¿",
+    SENIOR: "ðŸ‘´",
+    CHILDREN: "ðŸ‘¶",
+    AIRPORT: "âœˆï¸",
   };
 
-  return icons[type] || "🚗";
+  return icons[type] || "ðŸš—";
 }
 
 function getStatusEmoji(status: string) {
   const icons: Record<string, string> = {
-    ASSIGNED: "📌",
-    CONFIRMED: "✅",
-    DRIVER_ENROUTE: "🚗",
-    IN_PROGRESS: "🚕",
-    COMPLETED: "🏁",
+    ASSIGNED: "ðŸ“Œ",
+    CONFIRMED: "âœ…",
+    DRIVER_ENROUTE: "ðŸš—",
+    IN_PROGRESS: "ðŸš•",
+    COMPLETED: "ðŸ",
   };
 
-  return icons[status] || "🚗";
+  return icons[status] || "ðŸš—";
 }
 
 function formatStatus(status: string) {
   const labels: Record<string, string> = {
-    ASSIGNED: "Priradené",
-    CONFIRMED: "Potvrdené",
+    ASSIGNED: "PriradenÃ©",
+    CONFIRMED: "PotvrdenÃ©",
     DRIVER_ENROUTE: "Na ceste",
     IN_PROGRESS: "Prebieha",
-    COMPLETED: "Dokončené",
-    PENDING: "Čaká",
-    CANCELLED: "Zrušené",
+    COMPLETED: "DokonÄenÃ©",
+    PENDING: "ÄŒakÃ¡",
+    CANCELLED: "ZruÅ¡enÃ©",
   };
 
   return labels[status] || status.replaceAll("_", " ");
