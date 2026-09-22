@@ -13,11 +13,13 @@ import {
 type LanguageSwitcherProps = {
   tone?: "light" | "dark";
   className?: string;
+  ariaLabel?: string;
 };
 
 export default function LanguageSwitcher({
   tone = "dark",
   className = "",
+  ariaLabel = "Change language",
 }: LanguageSwitcherProps) {
   const { locale, setLocale } = useLanguage();
   const [open, setOpen] = useState(false);
@@ -45,7 +47,7 @@ export default function LanguageSwitcher({
         type="button"
         onClick={() => setOpen((value) => !value)}
         className={`h-11 rounded-xl border px-3 text-[13px] font-semibold transition-colors flex items-center gap-2 ${triggerClass}`}
-        aria-label="Change language"
+        aria-label={ariaLabel}
         aria-expanded={open}
       >
         <span className="text-base leading-none">{localeFlags[locale]}</span>

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import BrandLogo from "@/components/shared/BrandLogo";
+import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { ACTIVE_TRIP_STATUSES } from "@/lib/driver-state";
 import { csrfFetch } from "@/lib/client/csrf-fetch";
@@ -103,7 +104,7 @@ interface RideRequest {
 
 export default function DriverDashboard() {
   const router = useRouter();
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
 
   const [driver, setDriver] = useState<any>(null);
   const [isOnline, setIsOnline] = useState(false);
@@ -155,7 +156,7 @@ export default function DriverDashboard() {
   const [locationStatus, setLocationStatus] = useState<
     "idle" | "tracking" | "blocked" | "unsupported" | "error"
   >("idle");
-  const [lastGpsUpdate, setLastGpsUpdate] = useState<string>("");
+  const [lastGpsUpdate, setLastGpsUpdate] = useState<Date | null>(null);
 
   async function logout() {
     await csrfFetch("driver", "/api/driver/logout", { method: "POST" }).catch(() => null);
@@ -230,7 +231,7 @@ export default function DriverDashboard() {
             return;
           }
 
-          setLastGpsUpdate(new Date().toLocaleTimeString("sk-SK"));
+          setLastGpsUpdate(new Date());
         } catch (err) {
           console.error("Location update failed:", err);
           setLocationStatus("error");
@@ -258,7 +259,7 @@ export default function DriverDashboard() {
   useEffect(() => {
     if (!driver) return;
     const timer = setInterval(() => {
-      void csrfFetch("driver", "/api/driver/heartbeat", { method: "POST" }).catch(() => setRefreshError("Connection interrupted. Refresh the dashboard."));
+      void csrfFetch("driver", "/api/driver/heartbeat", { method: "POST" }).catch(() => setRefreshError("driverPortal.connectionInterrupted"));
     }, 20000);
     return () => clearInterval(timer);
   }, [driver]);
@@ -291,12 +292,12 @@ export default function DriverDashboard() {
       });
       const data: any = await safeJson(res);
 
-      if (!res.ok) throw new Error(data.error || "Bookings could not be refreshed");
+      if (!res.ok) throw new Error("driverPortal.bookingsRefreshFailed");
       setTodayBookings(data.todayBookings || []);
       setUpcomingBookings(data.upcomingBookings || []);
       setCompletedBookings(data.completedBookings || []);
     } catch (err) {
-      setRefreshError("Bookings could not be refreshed. Please retry.");
+      setRefreshError("driverPortal.bookingsRefreshFailed");
     } finally {
       setLoading(false);
     }
@@ -315,11 +316,11 @@ export default function DriverDashboard() {
         setIsOnline(Boolean(data.driver?.isOnline));
       } else {
         setRideRequests([]);
-        throw new Error(data.error || "Offers could not be refreshed");
+        throw new Error("driverPortal.offersRefreshFailed");
       }
     } catch (err) {
       setRideRequests([]);
-      setRefreshError("Offers could not be refreshed. Please retry.");
+      setRefreshError("driverPortal.offersRefreshFailed");
     }
   };
 
@@ -330,7 +331,7 @@ export default function DriverDashboard() {
     const data: any = await safeJson(res);
 
     if (!res.ok) {
-      throw new Error(data.error || t("driverPortal.refreshFailed"));
+      throw new Error("driverPortal.refreshFailed");
     }
 
     setFinancial(data.financial || financial);
@@ -349,9 +350,9 @@ export default function DriverDashboard() {
         fetchFinancial(driverId),
       ]);
     } catch (err: any) {
-      const message = err?.message || t("driverPortal.refreshFailed");
+      const message = "driverPortal.refreshFailed";
       setRefreshError(message);
-      if (!silent) alert(message);
+      if (!silent) alert(t(message));
     } finally {
       if (!silent) setRefreshing(false);
     }
@@ -375,7 +376,7 @@ export default function DriverDashboard() {
       const data: any = await safeJson(res);
 
       if (!res.ok) {
-        alert(data.error || "Nepodarilo sa zmeniÅ¥ dostupnosÅ¥.");
+        alert(t(driverErrorKey(data.code, "driverPortal.availabilityFailed")));
         return;
       }
 
@@ -386,7 +387,7 @@ export default function DriverDashboard() {
       setPresenceState(data.presence || "OFFLINE");
     } catch (err) {
       console.error("Availability update failed:", err);
-      alert("Nepodarilo sa zmeniÅ¥ dostupnosÅ¥.");
+      alert(t("driverPortal.availabilityFailed"));
     } finally {
       setAvailabilityUpdating(false);
     }
@@ -413,7 +414,7 @@ export default function DriverDashboard() {
       const data: any = await safeJson(res);
 
       if (!res.ok) {
-        alert(data.error || "Nepodarilo sa odpovedaÅ¥ na poÅ¾iadavku.");
+        alert(t(driverErrorKey(data.code, "driverPortal.offerResponseFailed")));
         return;
       }
 
@@ -421,7 +422,7 @@ export default function DriverDashboard() {
       await fetchBookings(driver.id);
     } catch (err) {
       console.error("Ride request response failed:", err);
-      alert("Nepodarilo sa odpovedaÅ¥ na poÅ¾iadavku.");
+      alert(t("driverPortal.offerResponseFailed"));
     } finally {
       setRequestUpdating(null);
     }
@@ -452,7 +453,7 @@ export default function DriverDashboard() {
       const data: any = await safeJson(res);
 
       if (!res.ok) {
-        alert(data.error || "Nepodarilo sa zmeniÅ¥ stav jazdy.");
+        alert(t(driverErrorKey(data.code, "driverPortal.statusUpdateFailed")));
         return;
       }
 
@@ -460,7 +461,7 @@ export default function DriverDashboard() {
       setShowCashModal(null);
     } catch (err) {
       console.error("Status update failed:", err);
-      alert("Nepodarilo sa zmeniÅ¥ stav jazdy.");
+      alert(t("driverPortal.statusUpdateFailed"));
     } finally {
       setUpdating(null);
     }
@@ -483,8 +484,8 @@ export default function DriverDashboard() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
-          <div className="text-5xl animate-pulse mb-3">ðŸš—</div>
-          <p className="text-gray-500">NaÄÃ­tavam jazdy...</p>
+          <div className="text-5xl animate-pulse mb-3">🚗</div>
+          <p className="text-gray-500">{t("driverPortal.loadingRides")}</p>
         </div>
       </div>
     );
@@ -498,26 +499,28 @@ export default function DriverDashboard() {
             <BrandLogo className="h-12 w-36 shrink-0" />
             <div>
               <p className="text-xs uppercase tracking-wide text-gray-400 font-bold">
-                Panel vodiÄa
+                {t("driverPortal.heading")}
               </p>
               <h1 className="text-2xl font-black text-gray-900">
-                DobrÃ½ deÅˆ, {driver?.fullName} ðŸ‘‹
+                {t("driverPortal.greeting").replace("{name}", driver?.fullName || "")} 👋
               </h1>
               <p className="text-sm text-gray-500 mt-1">
                 {activeTrip
-                  ? `AktÃ­vna jazda: ${activeTrip.bookingRef}`
+                  ? t("driverPortal.activeRideReference").replace("{reference}", activeTrip.bookingRef)
                   : allActive.length > 0
-                  ? `MÃ¡te ${allActive.length} aktÃ­vnych jÃ¡zd`
-                  : "ZatiaÄ¾ Å¾iadne priradenÃ© jazdy"}
+                  ? t("driverPortal.assignedRidesCount").replace("{count}", String(allActive.length))
+                  : t("driverPortal.noAssignedRides")}
               </p>
             </div>
           </div>
-          <p aria-live="polite" className="text-xs text-gray-500">Realtime: {realtimeStatus === "connected" ? "connected" : realtimeStatus === "connecting" ? "connecting" : "temporarily unavailable; polling continues"}</p>
+          <p aria-live="polite" className="text-xs text-gray-500">{t("driverPortal.realtime")}: {realtimeStatus === "connected" ? t("driverPortal.connected") : realtimeStatus === "connecting" ? t("driverPortal.connecting") : t("driverPortal.realtimePolling")}</p>
+
+          <LanguageSwitcher tone="dark" ariaLabel={t("driverPortal.changeLanguage")} />
 
           <button
             onClick={toggleAvailability}
             disabled={availabilityUpdating}
-            aria-label={isOnline ? "Set driver offline" : "Set driver online"}
+            aria-label={isOnline ? t("driverPortal.setOffline") : t("driverPortal.setOnline")}
             className={`px-6 py-3 rounded-2xl font-black text-sm transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 ${
               isOnline
                 ? "bg-green-700 text-white hover:bg-green-800"
@@ -525,17 +528,17 @@ export default function DriverDashboard() {
             } disabled:opacity-50`}
           >
             {availabilityUpdating
-              ? "â³ Aktualizujem..."
+              ? t("driverPortal.updating")
               : isOnline
-              ? "ðŸŸ¢ Online"
-              : "âš« ÃsÅ¥ online"}
+              ? t("driverPortal.online")
+              : t("driverPortal.goOnline")}
           </button>
           <button
             onClick={() => void logout()}
-            aria-label="Log out of driver dashboard"
+            aria-label={t("driverPortal.logoutLabel")}
             className="px-4 py-3 rounded-2xl border border-gray-300 font-black text-sm text-gray-700 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
           >
-            Log out
+            {t("driverPortal.logout")}
           </button>
         </div>
 
@@ -547,13 +550,13 @@ export default function DriverDashboard() {
               : "bg-gray-50 text-gray-600 border border-gray-200"
           }`}
         >
-          {presenceState.replaceAll("_", " ")}
+          {t(`driverPortal.presence.${presenceState}`, t("driverPortal.unavailable"))}
         </div>
 
         <LocationStatusCard
           status={locationStatus}
           isOnline={isOnline}
-          lastGpsUpdate={lastGpsUpdate}
+          lastGpsUpdate={lastGpsUpdate?.toLocaleTimeString(locale) || ""}
         />
       </div>
 
@@ -574,7 +577,7 @@ export default function DriverDashboard() {
       {activeTrip && (
         <div className="mb-6">
           <h2 className="text-base font-black text-gray-900 mb-3">
-            ðŸš¦ AktÃ­vna jazda
+            {t("driverPortal.activeRide")}
           </h2>
           <DriverNavigationPanel
             booking={activeTrip}
@@ -597,9 +600,9 @@ export default function DriverDashboard() {
       <ScheduledMarketplace />
 
       <div className="grid grid-cols-3 gap-3 mb-6">
-        <StatCard label="Dnes" value={todayBookings.length} tone="amber" />
-        <StatCard label="BudÃºce" value={upcomingBookings.length} tone="blue" />
-        <StatCard label="HotovÃ©" value={completedBookings.length} tone="green" />
+        <StatCard label={t("driverPortal.today")} value={todayBookings.length} tone="amber" />
+        <StatCard label={t("driverPortal.upcoming")} value={upcomingBookings.length} tone="blue" />
+        <StatCard label={t("driverPortal.completed")} value={completedBookings.length} tone="green" />
       </div>
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -621,7 +624,7 @@ export default function DriverDashboard() {
 
       {refreshError && (
         <div role="alert" className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-700">
-          {refreshError}
+          {t(refreshError)}
         </div>
       )}
 
@@ -632,7 +635,7 @@ export default function DriverDashboard() {
           }
         }}
         disabled={refreshing}
-        aria-label="Refresh driver dashboard"
+        aria-label={t("driverPortal.refreshLabel")}
         className="w-full mb-6 py-3 bg-white border border-gray-200 rounded-2xl text-sm font-bold text-gray-600 hover:bg-gray-50 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
       >
         {refreshing ? t("driverPortal.refreshing") : t("driverPortal.refresh")}
@@ -642,17 +645,16 @@ export default function DriverDashboard() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div ref={cashDialogRef} role="dialog" aria-modal="true" aria-labelledby="cash-confirmation-title" className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl">
             <div className="text-center">
-              <div className="text-5xl mb-3">ðŸ’µ</div>
+              <div className="text-5xl mb-3">💵</div>
               <h3 id="cash-confirmation-title" className="text-xl font-black text-gray-900 mb-2">
-                Potvrdenie hotovosti
+                {t("driverPortal.cashConfirmation")}
               </h3>
               <p className="text-sm text-gray-600 mb-4">
-                Prijali ste hotovosÅ¥ od zÃ¡kaznÃ­ka{" "}
-                <strong>PRED zaÄiatkom jazdy</strong>?
+                {t("driverPortal.cashQuestion")}
               </p>
 
               <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 p-3 rounded-2xl mb-4">
-                âš ï¸ Jazda nemÃ´Å¾e zaÄaÅ¥ bez potvrdenia platby.
+                {t("driverPortal.cashRequired")}
               </p>
 
               <div className="flex gap-3">
@@ -660,7 +662,7 @@ export default function DriverDashboard() {
                   onClick={() => setShowCashModal(null)}
                   className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-2xl text-sm font-black hover:bg-gray-200"
                 >
-                  âŒ Nie
+                  {t("driverPortal.no")}
                 </button>
 
                 <button
@@ -670,7 +672,7 @@ export default function DriverDashboard() {
                   disabled={updating === showCashModal}
                   className="flex-1 py-3 bg-green-700 text-white rounded-2xl text-sm font-black hover:bg-green-800 disabled:opacity-50"
                 >
-                  {updating === showCashModal ? "â³..." : "âœ… Ãno"}
+                  {updating === showCashModal ? t("driverPortal.updating") : t("driverPortal.yes")}
                 </button>
               </div>
             </div>
@@ -680,7 +682,7 @@ export default function DriverDashboard() {
 
       {todayBookings.length > 0 && (
         <BookingSection
-          title="ðŸ“… Dnes"
+          title={t("driverPortal.today")}
           bookings={todayBookings}
           expandedBooking={expandedBooking}
           setExpandedBooking={setExpandedBooking}
@@ -692,7 +694,7 @@ export default function DriverDashboard() {
 
       {upcomingBookings.length > 0 && (
         <BookingSection
-          title="ðŸ“† NadchÃ¡dzajÃºce"
+          title={t("driverPortal.upcoming")}
           bookings={upcomingBookings}
           expandedBooking={expandedBooking}
           setExpandedBooking={setExpandedBooking}
@@ -705,7 +707,7 @@ export default function DriverDashboard() {
       {completedBookings.length > 0 && (
         <div className="mb-6">
           <h2 className="text-base font-black text-gray-900 mb-3">
-            âœ… DokonÄenÃ©
+            {t("driverPortal.completed")}
           </h2>
 
           <div className="space-y-3">
@@ -720,14 +722,14 @@ export default function DriverDashboard() {
                       {booking.bookingRef}
                     </span>
                     <p className="text-sm font-semibold text-gray-700">
-                      {booking.pickupAddress} â†’ {booking.dropoffAddress}
+                      {booking.pickupAddress} → {booking.dropoffAddress}
                     </p>
                     <p className="mt-1 text-xs font-bold text-green-700">
-                      Your earnings: {formatDriverMoney(getDriverEarningAmount(booking))}
+                      {t("driverPortal.yourEarnings")}: {formatDriverMoney(getDriverEarningAmount(booking), locale)}
                     </p>
                   </div>
                   <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold">
-                    âœ… DOKONÄŒENÃ‰
+                    {t("driverPortal.completed")}
                   </span>
                 </div>
               </div>
@@ -738,13 +740,12 @@ export default function DriverDashboard() {
 
       {!hasBookings && rideRequests.length === 0 && (
         <div className="bg-white rounded-3xl border border-gray-200 p-12 text-center">
-          <div className="text-6xl mb-4">ðŸš—</div>
+          <div className="text-6xl mb-4">🚗</div>
           <h3 className="text-lg font-black text-gray-900 mb-2">
-            Å½iadne priradenÃ© jazdy
+            {t("driverPortal.noAssignedRides")}
           </h3>
           <p className="text-gray-500 text-sm">
-            KeÄ vÃ¡m admin priradÃ­ jazdu alebo systÃ©m poÅ¡le request, zobrazÃ­ sa
-            tu.
+            {t("driverPortal.noAssignedRidesHelp")}
           </p>
         </div>
       )}
@@ -761,23 +762,21 @@ function LocationStatusCard({
   isOnline: boolean;
   lastGpsUpdate: string;
 }) {
+  const { t } = useLanguage();
   if (!isOnline) {
     return (
       <div className="mt-3 bg-gray-50 border border-gray-200 text-gray-600 rounded-2xl px-4 py-3 text-xs font-bold">
-        ðŸ“ GPS sledovanie je vypnutÃ©, pretoÅ¾e vodiÄ je offline.
+        {t("driverPortal.gpsOffline")}
       </div>
     );
   }
 
   const content: Record<string, string> = {
-    idle: "ðŸ“ GPS pripravenÃ©. Poloha sa zaÄne odosielaÅ¥ po povolenÃ­ prehliadaÄa.",
-    tracking: `ðŸ›°ï¸ GPS aktÃ­vne. PoslednÃ¡ aktualizÃ¡cia: ${
-      lastGpsUpdate || "prÃ¡ve teraz"
-    }`,
-    blocked:
-      "ðŸš« GPS poloha je zablokovanÃ¡. PovoÄ¾te Location v prehliadaÄi pre live tracking.",
-    unsupported: "âš ï¸ Tento prehliadaÄ nepodporuje GPS polohu.",
-    error: "âš ï¸ Nepodarilo sa odoslaÅ¥ GPS polohu. Skontrolujte povolenia.",
+    idle: t("driverPortal.gpsReady"),
+    tracking: t("driverPortal.gpsTracking").replace("{time}", lastGpsUpdate || t("driverPortal.justNow")),
+    blocked: t("driverPortal.gpsBlocked"),
+    unsupported: t("driverPortal.gpsUnsupported"),
+    error: t("driverPortal.gpsError"),
   };
 
   const styles: Record<string, string> = {
@@ -810,6 +809,7 @@ function IncomingRideRequestCard({
   onAccept: () => void;
   onReject: () => void;
 }) {
+  const { t, locale } = useLanguage();
   const [secondsLeft, setSecondsLeft] = useState(30);
 
   useEffect(() => {
@@ -831,50 +831,50 @@ function IncomingRideRequestCard({
       <div className="flex items-center justify-between mb-4">
         <div>
           <p className="text-xs uppercase tracking-wider opacity-80 font-bold">
-            NovÃ¡ poÅ¾iadavka
+            {t("driverPortal.newOffer")}
           </p>
           <h2 className="text-2xl font-black mt-1">
-            ðŸš• {request.booking?.bookingRef}
+            🚕 {request.booking?.bookingRef}
           </h2>
         </div>
 
         <div className="bg-white/20 rounded-2xl px-4 py-3 text-center">
-          <div className="text-2xl font-black" aria-live="polite" aria-label={"Offer expires in " + secondsLeft + " seconds"}>{secondsLeft}s</div>
-          <div className="text-[10px] uppercase font-bold">ÄŒas</div>
+          <div className="text-2xl font-black" aria-live="polite" aria-label={t("driverPortal.offerExpires").replace("{seconds}", String(secondsLeft))}>{secondsLeft} {t("driverPortal.secondsShort")}</div>
+          <div className="text-[10px] uppercase font-bold">{t("driverPortal.time")}</div>
         </div>
       </div>
 
       <div className="bg-white/10 rounded-3xl p-4 space-y-3">
         <div>
-          <p className="text-[11px] uppercase opacity-70 font-bold">Pickup area</p>
-          <p className="font-bold">{request.booking?.pickupArea || "Area unavailable"}</p>
+          <p className="text-[11px] uppercase opacity-70 font-bold">{t("driverPortal.pickupArea")}</p>
+          <p className="font-bold">{request.booking?.pickupArea && request.booking.pickupArea !== "Area unavailable" ? request.booking.pickupArea : t("driverPortal.areaUnavailable")}</p>
         </div>
         <div>
-          <p className="text-[11px] uppercase opacity-70 font-bold">Destination area</p>
-          <p className="font-bold">{request.booking?.dropoffArea || "Area unavailable"}</p>
+          <p className="text-[11px] uppercase opacity-70 font-bold">{t("driverPortal.destinationArea")}</p>
+          <p className="font-bold">{request.booking?.dropoffArea && request.booking.dropoffArea !== "Area unavailable" ? request.booking.dropoffArea : t("driverPortal.areaUnavailable")}</p>
         </div>
         <div className="grid grid-cols-2 gap-3 text-sm">
-          <div className="bg-white/10 rounded-2xl p-3 font-bold">{request.booking?.passengerCount} passengers</div>
-          <div className="bg-white/10 rounded-2xl p-3 font-bold">{request.booking?.wavRequired ? "Accessible vehicle" : request.booking?.serviceType}</div>
+          <div className="bg-white/10 rounded-2xl p-3 font-bold">{request.booking?.passengerCount} {t(`driverPortal.passengers.${new Intl.PluralRules(locale).select(request.booking?.passengerCount || 0)}`)}</div>
+          <div className="bg-white/10 rounded-2xl p-3 font-bold">{request.booking?.wavRequired ? t("driverPortal.accessibleVehicle") : t(`service.${request.booking?.serviceType}`, t("driverPortal.service"))}</div>
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3 mt-5">
         <button
           onClick={onReject}
           disabled={updating || secondsLeft <= 0}
-          aria-label={"Decline offer " + request.booking?.bookingRef}
+          aria-label={t("driverPortal.declineOfferLabel").replace("{reference}", request.booking?.bookingRef || "")}
           className="py-4 rounded-3xl bg-red-500 hover:bg-red-600 text-white font-black disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         >
-          {updating ? "â³..." : "âŒ OdmietnuÅ¥"}
+          {updating ? t("driverPortal.updating") : t("driverPortal.declineOffer")}
         </button>
 
         <button
           onClick={onAccept}
           disabled={updating || secondsLeft <= 0}
-          aria-label={"Accept offer " + request.booking?.bookingRef}
+          aria-label={t("driverPortal.acceptOfferLabel").replace("{reference}", request.booking?.bookingRef || "")}
           className="py-4 rounded-3xl bg-white text-green-700 hover:bg-green-50 font-black disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         >
-          {updating ? "â³..." : "âœ… PrijaÅ¥"}
+          {updating ? t("driverPortal.updating") : t("driverPortal.acceptOffer")}
         </button>
       </div>
     </div>
@@ -894,7 +894,8 @@ function ActiveTripCard({
   onCashConfirm: () => void;
   showTripControls?: boolean;
 }) {
-  const nextAction = getNextAction(booking);
+  const { t, locale } = useLanguage();
+  const nextAction = getNextAction(booking, t);
 
   return (
     <div className="bg-gray-950 text-white rounded-[2rem] p-5 shadow-xl">
@@ -904,26 +905,26 @@ function ActiveTripCard({
             {booking.bookingRef}
           </p>
           <h3 className="text-xl font-black mt-1">
-            {getStatusEmoji(booking.status)} {formatStatus(booking.status)}
+            {getStatusEmoji(booking.status)} {formatStatus(booking.status, t)}
           </h3>
         </div>
 
         <span className="bg-white/10 px-3 py-2 rounded-2xl text-xs font-black">
-          {booking.serviceType}
+          {t(`service.${booking.serviceType}`, t("driverPortal.service"))}
         </span>
       </div>
 
       <div className="bg-white/10 rounded-3xl p-4 space-y-3 mb-4">
         <div>
           <p className="text-[11px] text-gray-400 uppercase font-bold">
-            Vyzdvihnutie
+            {t("driverPortal.pickup")}
           </p>
-          <p className="font-bold">ðŸ“ {booking.pickupAddress}</p>
+          <p className="font-bold">📍 {booking.pickupAddress}</p>
         </div>
 
         <div>
-          <p className="text-[11px] text-gray-400 uppercase font-bold">CieÄ¾</p>
-          <p className="font-bold">ðŸ {booking.dropoffAddress}</p>
+          <p className="text-[11px] text-gray-400 uppercase font-bold">{t("driverPortal.destination")}</p>
+          <p className="font-bold">🏁 {booking.dropoffAddress}</p>
         </div>
       </div>
 
@@ -935,7 +936,7 @@ function ActiveTripCard({
           href={`tel:${booking.customerPhoneCode}${booking.customerPhone}`}
           className="text-center py-3 bg-blue-600 rounded-2xl font-black"
         >
-          ðŸ“ž ZavolaÅ¥
+          {t("driverPortal.callPassenger")}
         </a>
 
         {showTripControls && <a
@@ -944,7 +945,7 @@ function ActiveTripCard({
           rel="noopener noreferrer"
           className="text-center py-3 bg-white text-gray-950 rounded-2xl font-black"
         >
-          ðŸ—ºï¸ NavigovaÅ¥
+          {t("driverPortal.navigate")}
         </a>}
       </div>
 
@@ -952,7 +953,7 @@ function ActiveTripCard({
         booking.status === "DRIVER_ENROUTE" && (
           <div className="p-3 bg-amber-100 text-amber-900 rounded-2xl mb-4">
             <p className="text-sm font-black">
-              âš ï¸ HotovosÅ¥ musÃ­ byÅ¥ prijatÃ¡ pred zaÄiatkom jazdy
+              {t("driverPortal.cashBeforeTrip")}
             </p>
           </div>
         )}
@@ -969,7 +970,7 @@ function ActiveTripCard({
           disabled={updating}
           className="w-full py-4 bg-green-600 hover:bg-green-700 text-white font-black rounded-3xl disabled:opacity-50"
         >
-          {updating ? "â³ Aktualizujem..." : nextAction.label}
+          {updating ? t("driverPortal.updating") : nextAction.label}
         </button>
       )}
     </div>
@@ -1032,7 +1033,8 @@ function BookingCard({
   onCashConfirm: () => void;
   updating: boolean;
 }) {
-  const nextAction = getNextAction(booking);
+  const { t, locale } = useLanguage();
+  const nextAction = getNextAction(booking, t);
 
   return (
     <div className="bg-white border border-gray-200 rounded-3xl overflow-hidden shadow-sm">
@@ -1051,32 +1053,32 @@ function BookingCard({
 
         <div className="space-y-1">
           <p className="text-sm font-bold text-gray-900 truncate">
-            ðŸ“ {booking.pickupAddress}
+            📍 {booking.pickupAddress}
           </p>
           <p className="text-sm font-bold text-gray-900 truncate">
-            ðŸ {booking.dropoffAddress}
+            🏁 {booking.dropoffAddress}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-gray-500">
-          <span>ðŸ“… {booking.scheduledDate}</span>
-          <span>â° {booking.scheduledTime}</span>
-          <span>ðŸ‘¥ {booking.passengerCount}</span>
-          {booking.wheelchairNeeded && <span>â™¿</span>}
+          <span>📅 {booking.scheduledDate}</span>
+          <span>⏰ {booking.scheduledTime}</span>
+          <span>👥 {booking.passengerCount}</span>
+          {booking.wheelchairNeeded && <span>♿</span>}
           {booking.paymentMethod === "CASH" && (
-            <span className="text-amber-600 font-bold">ðŸ’µ CASH</span>
+            <span className="text-amber-600 font-bold">{t("driverPortal.paymentCash")}</span>
           )}
         </div>
 
         <div className="text-xs text-gray-400 mt-2">
-          {expanded ? "â–² Menej" : "â–¼ Viac detailov"}
+          {expanded ? t("driverPortal.lessDetails") : t("driverPortal.moreDetails")}
         </div>
       </button>
 
       {expanded && (
         <div className="px-4 pb-4 border-t border-gray-100 pt-3 space-y-3">
           <div className="bg-gray-50 rounded-2xl p-3">
-            <p className="text-xs font-bold text-gray-500 mb-1">ZÃKAZNÃK</p>
+            <p className="text-xs font-bold text-gray-500 mb-1">{t("driverPortal.passenger")}</p>
             <p className="text-sm font-bold">{booking.customerName}</p>
 
             <div className="flex gap-2 mt-2">
@@ -1084,7 +1086,7 @@ function BookingCard({
                 href={`tel:${booking.customerPhoneCode}${booking.customerPhone}`}
                 className="flex-1 text-center py-2 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold"
               >
-                ðŸ“ž ZavolaÅ¥
+                {t("driverPortal.callPassenger")}
               </a>
 
               <a
@@ -1096,30 +1098,30 @@ function BookingCard({
                 rel="noopener noreferrer"
                 className="flex-1 text-center py-2 bg-green-50 text-green-700 rounded-xl text-xs font-bold"
               >
-                ðŸ’¬ WhatsApp
+                💬 WhatsApp
               </a>
             </div>
           </div>
 
           <div className="text-xs space-y-1 text-gray-600">
-            <InfoRow label="BatoÅ¾ina" value={booking.luggageType} />
-            <InfoRow label="MalÃ¡ / veÄ¾kÃ¡ batoÅ¾ina" value={`${booking.smallBags || 0} / ${booking.largeBags || 0}`} />
-            <InfoRow label="Platba" value={booking.paymentMethod} />
+            <InfoRow label={t("driverPortal.luggage")} value={t(`luggage.${booking.luggageType}`, t("driverPortal.notAvailable"))} />
+            <InfoRow label={t("driverPortal.bagCounts")} value={`${booking.smallBags || 0} / ${booking.largeBags || 0}`} />
+            <InfoRow label={t("driverPortal.payment")} value={t(`payment.${booking.paymentMethod}`, t("driverPortal.notAvailable"))} />
             {booking.earning && (
               <InfoRow
-                label="VaÅ¡e zÃ¡robky"
-                value={formatDriverMoney(booking.earning.driverAmount)}
+                label={t("driverPortal.yourEarnings")}
+                value={formatDriverMoney(booking.earning.driverAmount, locale)}
               />
             )}
             {booking.flightNumber && (
-              <InfoRow label="Let" value={`âœˆï¸ ${booking.flightNumber}`} />
+              <InfoRow label={t("driverPortal.flight")} value={`✈️ ${booking.flightNumber}`} />
             )}
             {booking.waitAndGreet && (
-              <InfoRow label="Wait & Greet" value="âœ… Ãno" />
+              <InfoRow label={t("driverPortal.waitAndGreet")} value={t("driverPortal.yes")} />
             )}
             {booking.specialNotes && (
               <div className="mt-2 p-2 bg-amber-50 rounded-xl">
-                <span className="font-bold">ðŸ“ PoznÃ¡mky: </span>
+                <span className="font-bold">{t("driverPortal.notes")}: </span>
                 {booking.specialNotes}
               </div>
             )}
@@ -1140,7 +1142,7 @@ function BookingCard({
               disabled={updating}
               className="w-full py-3 bg-green-700 hover:bg-green-800 text-white font-black rounded-2xl text-sm disabled:opacity-50"
             >
-              {updating ? "â³ Aktualizujem..." : nextAction.label}
+              {updating ? t("driverPortal.updating") : nextAction.label}
             </button>
           )}
 
@@ -1150,7 +1152,7 @@ function BookingCard({
             rel="noopener noreferrer"
             className="block w-full py-3 bg-blue-50 text-blue-700 font-bold rounded-2xl text-sm text-center hover:bg-blue-100"
           >
-            ðŸ—ºï¸ NavigovaÅ¥ k zÃ¡kaznÃ­kovi
+            {t("driverPortal.navigateToPickup")}
           </a>
         </div>
       )}
@@ -1187,15 +1189,16 @@ function getDriverEarningAmount(booking: Booking) {
   return Number(booking.earning?.driverAmount || 0);
 }
 
-function formatDriverMoney(value: number) {
-  return `EUR ${Number(value || 0).toFixed(2)}`;
+function formatDriverMoney(value: number, locale: string) {
+  return new Intl.NumberFormat(locale, { style: "currency", currency: "EUR" }).format(Number(value || 0));
 }
 
 function MoneyCard({ label, value }: { label: string; value: number }) {
+  const { locale } = useLanguage();
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-3 text-center">
       <div className="text-xl font-black text-gray-900">
-        EUR {Number(value || 0).toFixed(2)}
+        {formatDriverMoney(value, locale)}
       </div>
       <div className="text-xs font-bold text-gray-500">{label}</div>
     </div>
@@ -1203,6 +1206,7 @@ function MoneyCard({ label, value }: { label: string; value: number }) {
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useLanguage();
   const styles: Record<string, string> = {
     ASSIGNED: "bg-purple-100 text-purple-700",
     CONFIRMED: "bg-blue-100 text-blue-700",
@@ -1217,7 +1221,7 @@ function StatusBadge({ status }: { status: string }) {
         styles[status] || "bg-gray-100 text-gray-600"
       }`}
     >
-      {formatStatus(status)}
+      {formatStatus(status, t)}
     </span>
   );
 }
@@ -1238,25 +1242,26 @@ function ChildrenTransportSummary({
   booking?: Booking;
   dark?: boolean;
 }) {
+  const { t } = useLanguage();
   if (!booking || (booking.serviceType !== "CHILDREN" && !booking.scheduledRide)) return null;
 
   const childrenRows = getChildrenRows(booking).map((child, index) => [
-    `Child ${index + 1}`,
-    `${child.fullName || "N/A"}${child.age !== null && child.age !== undefined && child.age !== "" ? `, ${child.age}` : ""}${child.specialRequirements ? ` - ${child.specialRequirements}` : ""}`,
+    t("driverPortal.childNumber").replace("{number}", String(index + 1)),
+    `${child.fullName || t("driverPortal.notAvailable")}${child.age !== null && child.age !== undefined && child.age !== "" ? `, ${child.age}` : ""}${child.specialRequirements ? ` - ${child.specialRequirements}` : ""}`,
   ]);
   const rows = [
-    ["Pickup address", booking.pickupAddress || "N/A"],
-    ["Number of children", String(booking.passengerCount || 0)],
+    [t("driverPortal.pickupAddress"), booking.pickupAddress || t("driverPortal.notAvailable")],
+    [t("driverPortal.numberOfChildren"), String(booking.passengerCount || 0)],
     ...childrenRows,
-    ["Guardian", booking.guardianName || booking.parentFullName || "N/A"],
-    ["Primary phone", booking.guardianPhone || booking.parentPrimaryPhone || "N/A"],
-    ["Emergency phone", booking.guardianEmergencyPhone || booking.parentEmergencyPhone || "N/A"],
-    ["Institution", booking.institutionName || booking.educationalInstitutionName || "N/A"],
-    ["Institution address", booking.institutionAddress || booking.dropoffAddress || "N/A"],
-    ["Pickup", `${booking.pickupDate || booking.scheduledDate || ""} ${booking.pickupTime || booking.scheduledTime || ""}`.trim()],
-    ["Return", `${booking.returnDate || ""} ${booking.returnTime || ""}`.trim() || "N/A"],
-    ["Return pickup time", booking.returnTime || "N/A"],
-    ["Recurrence", formatEnum(booking.recurrenceType || booking.recurrence)],
+    [t("driverPortal.guardian"), booking.guardianName || booking.parentFullName || t("driverPortal.notAvailable")],
+    [t("driverPortal.primaryPhone"), booking.guardianPhone || booking.parentPrimaryPhone || t("driverPortal.notAvailable")],
+    [t("driverPortal.emergencyPhone"), booking.guardianEmergencyPhone || booking.parentEmergencyPhone || t("driverPortal.notAvailable")],
+    [t("driverPortal.institution"), booking.institutionName || booking.educationalInstitutionName || t("driverPortal.notAvailable")],
+    [t("driverPortal.institutionAddress"), booking.institutionAddress || booking.dropoffAddress || t("driverPortal.notAvailable")],
+    [t("driverPortal.pickup"), `${booking.pickupDate || booking.scheduledDate || ""} ${booking.pickupTime || booking.scheduledTime || ""}`.trim()],
+    [t("driverPortal.return"), `${booking.returnDate || ""} ${booking.returnTime || ""}`.trim() || t("driverPortal.notAvailable")],
+    [t("driverPortal.returnPickupTime"), booking.returnTime || t("driverPortal.notAvailable")],
+    [t("driverPortal.recurrence"), formatEnum(booking.recurrenceType || booking.recurrence, t)],
   ].filter(Boolean) as string[][];
 
   return (
@@ -1268,13 +1273,13 @@ function ChildrenTransportSummary({
       }`}
     >
       <p className="mb-2 font-black uppercase">
-        Children Transport
+        {t("driverPortal.childrenTransport")}
       </p>
       <div className="space-y-1.5">
         {rows.map(([label, value]) => (
           <div key={label} className="flex justify-between gap-3">
             <span className={dark ? "text-white/70" : "text-pink-700"}>{label}</span>
-            <span className="font-bold text-right">{value || "N/A"}</span>
+            <span className="font-bold text-right">{value || t("driverPortal.notAvailable")}</span>
           </div>
         ))}
       </div>
@@ -1315,34 +1320,35 @@ function AssistanceSummary({
   booking?: Booking;
   dark?: boolean;
 }) {
+  const { t } = useLanguage();
   if (!booking) return null;
 
   const rows = [
-    booking.seniorPassenger && ["Senior Passenger", formatEnum(booking.assistanceLevel)],
-    booking.ztpCardHolder && ["ZTP Passenger", "Yes"],
+    booking.seniorPassenger && [t("driverPortal.seniorPassenger"), formatEnum(booking.assistanceLevel, t)],
+    booking.ztpCardHolder && [t("driverPortal.ztpPassenger"), t("driverPortal.yes")],
     (booking.wheelchairUser || booking.wheelchairNeeded) && [
-      "Wheelchair",
-      `${formatEnum(booking.wheelchairType)} Â· transfer: ${
+      t("driverPortal.wheelchair"),
+      `${formatEnum(booking.wheelchairType, t)} · ${t("driverPortal.transferToSeat")}: ${
         booking.canTransferToSeat === null || booking.canTransferToSeat === undefined
-          ? "N/A"
+          ? t("driverPortal.notAvailable")
           : booking.canTransferToSeat
-          ? "Yes"
-          : "No"
+          ? t("driverPortal.yes")
+          : t("driverPortal.no")
       }`,
     ],
-    booking.wavRequired && ["WAV Required", booking.passengerRemainsInWheelchair ? "Passenger remains in wheelchair" : "Yes"],
-    (booking.companionCount || 0) > 0 && ["Companions", String(booking.companionCount)],
-    booking.hospitalName && ["Hospital", booking.hospitalName],
+    booking.wavRequired && [t("driverPortal.wavRequired"), booking.passengerRemainsInWheelchair ? t("driverPortal.remainsInWheelchair") : t("driverPortal.yes")],
+    (booking.companionCount || 0) > 0 && [t("driverPortal.companions"), String(booking.companionCount)],
+    booking.hospitalName && [t("driverPortal.hospital"), booking.hospitalName],
     (booking.appointmentDate || booking.appointmentTime) && [
-      "Appointment",
+      t("driverPortal.appointment"),
       `${booking.appointmentDate || ""} ${booking.appointmentTime || ""}`.trim(),
     ],
     (booking.waitingDuration || booking.customWaitingDuration) && [
-      "Waiting",
-      formatEnum(booking.customWaitingDuration || booking.waitingDuration),
+      t("driverPortal.waiting"),
+      formatEnum(booking.customWaitingDuration || booking.waitingDuration, t),
     ],
     (booking.returnDate || booking.returnTime) && [
-      "Return",
+      t("driverPortal.return"),
       `${booking.returnDate || ""} ${booking.returnTime || ""}`.trim(),
     ],
   ].filter(Boolean) as string[][];
@@ -1358,13 +1364,13 @@ function AssistanceSummary({
       }`}
     >
       <p className="mb-2 font-black uppercase">
-        Assistance
+        {t("driverPortal.assistance")}
       </p>
       <div className="space-y-1.5">
         {rows.map(([label, value]) => (
           <div key={label} className="flex justify-between gap-3">
             <span className={dark ? "text-white/70" : "text-blue-700"}>{label}</span>
-            <span className="font-bold text-right">{value || "N/A"}</span>
+            <span className="font-bold text-right">{value || t("driverPortal.notAvailable")}</span>
           </div>
         ))}
       </div>
@@ -1372,38 +1378,40 @@ function AssistanceSummary({
   );
 }
 
-function formatEnum(value?: string | null) {
-  if (!value) return "N/A";
-  return value.replaceAll("_", " ");
+type Translate = ReturnType<typeof useLanguage>["t"];
+
+function formatEnum(value: string | null | undefined, t: Translate) {
+  if (!value) return t("driverPortal.notAvailable");
+  return t(`driverPortal.enum.${value}`, value.replaceAll("_", " "));
 }
 
-function getNextAction(booking: Booking) {
+function getNextAction(booking: Booking, t: Translate) {
   switch (booking.status) {
     case "ASSIGNED":
     case "CONFIRMED":
       return {
-        label: "ðŸš— Som na ceste",
+        label: t("driverPortal.startRoute"),
         nextStatus: "DRIVER_ENROUTE",
       };
     case "DRIVER_ENROUTE":
       return {
-        label: "Arrived at pickup",
+        label: t("driverPortal.arrivedAtPickup"),
         nextStatus: "ARRIVED",
       };
     case "ARRIVED":
       if (booking.paymentMethod === "CASH") {
         return {
-          label: "ðŸ’µ PotvrdiÅ¥ hotovosÅ¥ + zaÄaÅ¥",
+          label: t("driverPortal.confirmCashStart"),
           nextStatus: "CASH_CONFIRM",
         };
       }
       return {
-        label: "ðŸš• ZaÄaÅ¥ jazdu",
+        label: t("driverPortal.startTrip"),
         nextStatus: "IN_PROGRESS",
       };
     case "IN_PROGRESS":
       return {
-        label: "âœ… DokonÄiÅ¥ jazdu",
+        label: t("driverPortal.completeTrip"),
         nextStatus: "COMPLETED",
       };
     default:
@@ -1413,38 +1421,46 @@ function getNextAction(booking: Booking) {
 
 function getServiceIcon(type: string) {
   const icons: Record<string, string> = {
-    STANDARD: "ðŸš•",
-    ACCESSIBLE: "â™¿",
-    SENIOR: "ðŸ‘´",
-    CHILDREN: "ðŸ‘¶",
-    AIRPORT: "âœˆï¸",
+    STANDARD: "🚕",
+    ACCESSIBLE: "♿",
+    SENIOR: "👴",
+    CHILDREN: "👶",
+    AIRPORT: "✈️",
   };
 
-  return icons[type] || "ðŸš—";
+  return icons[type] || "🚗";
 }
 
 function getStatusEmoji(status: string) {
   const icons: Record<string, string> = {
-    ASSIGNED: "ðŸ“Œ",
-    CONFIRMED: "âœ…",
-    DRIVER_ENROUTE: "ðŸš—",
-    IN_PROGRESS: "ðŸš•",
-    COMPLETED: "ðŸ",
+    ASSIGNED: "📌",
+    CONFIRMED: "✅",
+    DRIVER_ENROUTE: "🚗",
+    IN_PROGRESS: "🚕",
+    COMPLETED: "🏁",
   };
 
-  return icons[status] || "ðŸš—";
+  return icons[status] || "🚗";
 }
 
-function formatStatus(status: string) {
-  const labels: Record<string, string> = {
-    ASSIGNED: "PriradenÃ©",
-    CONFIRMED: "PotvrdenÃ©",
-    DRIVER_ENROUTE: "Na ceste",
-    IN_PROGRESS: "Prebieha",
-    COMPLETED: "DokonÄenÃ©",
-    PENDING: "ÄŒakÃ¡",
-    CANCELLED: "ZruÅ¡enÃ©",
-  };
+function formatStatus(status: string, t: Translate) {
+  return t(`driverPortal.status.${status}`, t("driverPortal.notAvailable"));
+}
 
-  return labels[status] || status.replaceAll("_", " ");
+// API codes stay unchanged; only the driver-facing message is localized.
+function driverErrorKey(code: string | undefined, fallback: string) {
+  const keys: Record<string, string> = {
+    OFFER_EXPIRED: "driverPortal.errorOfferExpired",
+    OFFER_NOT_FOUND: "driverPortal.errorOfferNotFound",
+    OFFER_ALREADY_RESPONDED: "driverPortal.errorOfferResponded",
+    DRIVER_NOT_AVAILABLE: "driverPortal.errorDriverUnavailable",
+    CONFLICTING_ACTIVE_TRIP: "driverPortal.errorActiveTrip",
+    BOOKING_ALREADY_CLAIMED: "driverPortal.errorBookingClaimed",
+    BOOKING_NOT_FOUND: "driverPortal.errorBookingNotFound",
+    INVALID_TRANSITION: "driverPortal.errorTransition",
+    STATE_CONFLICT: "driverPortal.errorStateConflict",
+    TRANSACTION_UNAVAILABLE: "driverPortal.errorTransaction",
+    INVALID_REQUEST: "driverPortal.errorInvalidRequest",
+  };
+  return keys[code || ""] || fallback;
 }

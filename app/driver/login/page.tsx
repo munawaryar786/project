@@ -8,7 +8,7 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { PHONE_NUMBER, WHATSAPP_URL } from "@/lib/constants";
 
 export default function DriverLoginPage() {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const router = useRouter();
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -29,13 +29,13 @@ export default function DriverLoginPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || t("login.invalid"));
+        throw new Error("driverPortal.loginFailed");
       }
 
 
       window.location.assign("/driver/dashboard");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t("login.invalid"));
+      setError("driverPortal.loginFailed");
     } finally {
       setLoading(false);
     }
@@ -45,7 +45,7 @@ export default function DriverLoginPage() {
     <div className="relative min-h-screen overflow-hidden bg-[linear-gradient(135deg,#041a2b_0%,#062338_45%,#0d5c68_100%)] px-4 py-10">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(63,214,205,0.22),transparent_28%),radial-gradient(circle_at_bottom_right,rgba(31,129,147,0.2),transparent_32%)]" />
       <div className="absolute right-4 top-4 z-10">
-        <LanguageSwitcher tone="dark" />
+        <LanguageSwitcher tone="dark" ariaLabel={t("driverPortal.changeLanguage")} />
       </div>
 
       <div className="relative mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-6xl items-center justify-center">
@@ -67,7 +67,7 @@ export default function DriverLoginPage() {
               {[
                 ["24/7", t("driverLogin.featureDispatch")],
                 ["GPS", t("driverLogin.featureGps")],
-                ["SK", t("driverLogin.featureLocale")],
+                [locale.toUpperCase(), t("driverLogin.featureLocale")],
               ].map(([value, label]) => (
                 <div key={label} className="rounded-[28px] border border-white/10 bg-white/[0.08] p-5">
                   <div className="text-2xl font-black text-white">{value}</div>
@@ -126,7 +126,7 @@ export default function DriverLoginPage() {
 
               {error && (
                 <div className="rounded-[22px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
-                  {error}
+                  {t(error)}
                 </div>
               )}
 
