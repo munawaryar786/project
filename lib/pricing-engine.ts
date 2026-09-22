@@ -43,6 +43,8 @@ export interface DistancePricingTier {
 export interface FareCalculationInput {
   distanceKm: number;
   waitingMinutes?: number;
+  reservedWaiting?: boolean;
+  assistanceLevel?: "LIGHT" | "DOOR_TO_DOOR" | "BOARDING_HELP" | null;
   tripDurationMinutes?: number;
   driverAssistanceRequired?: boolean;
   pickupDateTime?: Date | string | null;
@@ -122,6 +124,7 @@ export const DEFAULT_SERVICE_PRICING_PROFILES: Array<{
 ];
 
 export const DEFAULT_COMMISSION_RATE = 12.5;
+const BOOKING_ASSISTANCE_FLAT_FEE = 2.5;
 
 function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
@@ -211,19 +214,25 @@ export function calculateFare(input: FareCalculationInput) {
       : "standard") as keyof typeof WAITING_RULES;
   const waitingRule = WAITING_RULES[serviceKey] || WAITING_RULES.standard;
   const waitingCharge = roundMoney(
-    Math.max(0, waitingMinutes - waitingRule.freeMinutes) *
-      (serviceKey === "standard" || serviceKey === "airport"
-        ? config.waitingRatePerMinute
-        : waitingRule.ratePerMinute)
+    input.reservedWaiting
+      ? waitingMinutes * (10 / 60)
+      : Math.max(0, waitingMinutes - waitingRule.freeMinutes) *
+          (serviceKey === "standard" || serviceKey === "airport"
+            ? config.waitingRatePerMinute
+            : waitingRule.ratePerMinute)
   );
 
   const optionalServiceCharges: Record<string, number> = {};
   const optionalCharges = input.optionalCharges || {};
   if (optionalCharges.airportPickup) optionalServiceCharges.airportPickup = config.airportPickupFee;
   if (optionalCharges.airportMeetGreet) optionalServiceCharges.airportMeetGreet = config.airportMeetGreetFee;
-  if (optionalCharges.assistedTransport && input.driverAssistanceRequired) {
-    const durationMinutes = toNonNegativeNumber(input.tripDurationMinutes);
-    optionalServiceCharges.assistedTransport = roundMoney((durationMinutes / 60) * 10);
+  if (optionalCharges.assistedTransport) {
+    if (input.assistanceLevel === "DOOR_TO_DOOR" || input.assistanceLevel === "BOARDING_HELP") {
+      optionalServiceCharges.assistedTransport = roundMoney(BOOKING_ASSISTANCE_FLAT_FEE);
+    } else if (input.assistanceLevel == null && input.driverAssistanceRequired) {
+      const durationMinutes = toNonNegativeNumber(input.tripDurationMinutes);
+      optionalServiceCharges.assistedTransport = roundMoney((durationMinutes / 60) * 10);
+    }
   }
   if (optionalCharges.childTransport) optionalServiceCharges.childTransport = config.childTransportFee;
   if (optionalCharges.priorityBooking) optionalServiceCharges.priorityBooking = config.priorityBookingFee;

@@ -9,7 +9,7 @@ type QuoteInput = {
   waitingMinutes?: number;
   waitingDuration?: string | null;
   customWaitingDuration?: string | null;
-  assistanceLevel?: string | null;
+  assistanceLevel?: "LIGHT" | "DOOR_TO_DOOR" | "BOARDING_HELP" | null;
   scheduledDate?: string | null;
   scheduledTime?: string | null;
   waitAndGreet?: boolean;
@@ -87,10 +87,13 @@ export async function calculateAuthoritativeBookingQuote(input: QuoteInput) {
   const pickupDateTime = input.scheduledDate && input.scheduledTime
     ? `${input.scheduledDate}T${input.scheduledTime}:00`
     : null;
+  const waitingMinutes = waitingMinutesFromInput(input);
   const fare = calculateFare({
     distanceKm: distance.distanceKm,
-    waitingMinutes: waitingMinutesFromInput(input),
+    waitingMinutes,
+    reservedWaiting: waitingMinutes > 0,
     tripDurationMinutes: distance.durationMinutes,
+    assistanceLevel: input.assistanceLevel,
     driverAssistanceRequired: Boolean(input.assistanceLevel),
     pickupDateTime,
     optionalCharges: optionalCharges(input.serviceType, Boolean(input.waitAndGreet)),
