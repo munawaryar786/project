@@ -1741,10 +1741,10 @@ scheduledTime:
             onMouseDown={(event) => event.stopPropagation()}
           >
             <h2 id="wav-dialog-title" className="text-lg font-extrabold text-drivo-navy">
-              {t("booking.wavRequired", "Wheelchair accessible vehicle required")}
+              {t("booking.wavAvailabilityNoticeTitle")}
             </h2>
             <p className="mt-3 text-sm leading-6 text-drivo-text-secondary">
-              {t("booking.passengerRemainsWheelchair", "This passenger remains in their wheelchair. We will only dispatch a vehicle with a safe wheelchair ramp or lift.")}
+              {t("booking.wavAvailabilityNoticeBody")}
             </p>
             <button
               type="button"
@@ -2296,8 +2296,8 @@ onChange={(e) => {
               </div>
               {wavRequired && (
                 <div className="sm:col-span-2 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-[13px] text-blue-800">
-                  <strong>{t("booking.wavRequired", "WAV required")}.</strong>{" "}
-                  {t("booking.passengerRemainsWheelchair", "Passenger remains in wheelchair. Vehicle must support wheelchair entry.")}
+                  <strong>{t("booking.wavAvailabilityNoticeTitle")}</strong>
+                  <p className="mt-1">{t("booking.wavAvailabilityNoticeBody")}</p>
                 </div>
               )}
             </div>
