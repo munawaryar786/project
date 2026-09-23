@@ -61,7 +61,32 @@ check("Twilio Verify WhatsApp unchanged", files.twilio.includes("channel: \"what
 check("no SMS fallback", !files.send.includes("sendSMSOTP") && files.twilio.includes("sendWhatsAppVerification"));
 check("returning password login unchanged", files.login.includes("bcrypt.compare") && files.login.includes("stepUpRequired: false"));
 check("email-only Forgot Password", files.reset.includes("password-reset/email") || files.reset.includes("sendPassengerPasswordResetEmail"));
-const dispatchSchemaDiff = cp.execFileSync("git", ["diff", "--", "prisma/schema.prisma"], { encoding: "utf8" }); check("Prisma change is additive Dispatch schema only", dispatchSchemaDiff.includes("+model DispatchOperator") && dispatchSchemaDiff.includes("+model BookingPayment") && dispatchSchemaDiff.includes("+model DispatchAuditEvent") && !dispatchSchemaDiff.split("\n").some(line => line.startsWith("-") && !line.startsWith("---")));
+let dispatchSchemaDiff = "";
+let dispatchSchemaDiffSource = "working-tree diff";
+let dispatchSchemaDiffError = null;
+try {
+  dispatchSchemaDiff = cp.execFileSync("git", ["diff", "--", "prisma/schema.prisma"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  if (!dispatchSchemaDiff.trim()) {
+    dispatchSchemaDiffSource = "latest committed schema change";
+    const schemaCommit = cp.execFileSync("git", ["log", "-1", "--format=%H", "--", "prisma/schema.prisma"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    if (!schemaCommit) throw new Error("Git history contains no commit for prisma/schema.prisma");
+    dispatchSchemaDiff = cp.execFileSync("git", ["diff", `${schemaCommit}^`, schemaCommit, "--", "prisma/schema.prisma"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    if (!dispatchSchemaDiff.trim()) throw new Error(`Git returned an empty schema diff for commit ${schemaCommit}`);
+  }
+} catch (error) {
+  const detail = error && typeof error === "object" && "stderr" in error && error.stderr
+    ? String(error.stderr).trim()
+    : error instanceof Error ? error.message : String(error);
+  dispatchSchemaDiffError = `${dispatchSchemaDiffSource} could not be resolved${detail ? `: ${detail}` : ""}`;
+}
+const dispatchSchemaDiffIsAdditive = !dispatchSchemaDiffError &&
+  dispatchSchemaDiff.includes("+model DispatchOperator") &&
+  dispatchSchemaDiff.includes("+model BookingPayment") &&
+  dispatchSchemaDiff.includes("+model DispatchAuditEvent") &&
+  !dispatchSchemaDiff.split("\n").some(line => line.startsWith("-") && !line.startsWith("---"));
+if (dispatchSchemaDiffError) console.error(`Prisma schema assertion detail: ${dispatchSchemaDiffError}`);
+else if (!dispatchSchemaDiffIsAdditive) console.error(`Prisma schema assertion detail: ${dispatchSchemaDiffSource} must add all three Dispatch models and contain no schema deletions.`);
+check("Prisma change is additive Dispatch schema only", dispatchSchemaDiffIsAdditive);
 check("Redis namespace isolated", files.limiter.includes("drivo:auth:rate:v1") && !files.limiter.includes("bull:") && !files.limiter.includes("socket.io"));
 check("secrets not client-side", !files.limiter.includes("NEXT_PUBLIC_") && !files.env.includes("NEXT_PUBLIC_AUTH_RATE"));
 check("no raw Redis credential logging", files.limiter.includes("category") && !files.limiter.includes("REDIS_URL"));
