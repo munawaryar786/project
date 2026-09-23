@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { LocalizedServicePage } from "@/components/shared/LocalizedPublicPages";
 import { FEATURE_FLAGS } from "@/lib/feature-flags";
 
-export const metadata: Metadata = {
+const childrenMetadata: Metadata = {
   title: "Special Needs Children Transport Bratislava",
   description:
     "School Pick-up & Drop-off and safe, gentle transport for children with physical or developmental disabilities in Bratislava.",
@@ -20,6 +20,13 @@ export const metadata: Metadata = {
   },
   alternates: { canonical: "/children" },
 };
+
+export const metadata: Metadata = FEATURE_FLAGS.childrenTransport
+  ? childrenMetadata
+  : {
+      title: "Page Not Found",
+      robots: { index: false, follow: false },
+    };
 
 export default function ChildrenPage() {
   if (!FEATURE_FLAGS.childrenTransport) notFound();

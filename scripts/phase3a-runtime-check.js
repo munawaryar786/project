@@ -29,10 +29,14 @@ let booking = null;
 let activeRequest = null;
 let writes = 0;
 let bookingReads = 0;
+let dispatchStarts = 0;
 let stripeParams;
 let paymentSession;
 let event;
 let emails = 0;
+let webhookEvents = [];
+let adminAuditEvents = [];
+let dispatchOperatorRecord = { id: sid, fullName: "Existing Operator", email: "old@example.com", phone: "+421900000001", normalizedPhone: "+421900000001", status: "ACTIVE", mustChangePassword: false, authVersion: 0 };
 const prisma = {
   passenger: { findUnique: async () => actor, findFirst: async () => actor, update: async ({data}) => ({...actor, ...data, authVersion: data.authVersion?.increment ? (actor.authVersion || 0) + data.authVersion.increment : (data.authVersion ?? actor.authVersion)}) },
   passengerSession: {
@@ -43,15 +47,28 @@ const prisma = {
   },
   driver: { findUnique: async () => actor, findMany: async () => [], update: async () => ({}) },
   adminUser: { findUnique: async () => actor },
+  dispatchOperator: {
+    findUnique: async () => dispatchOperatorRecord,
+    update: async ({ data }) => { dispatchOperatorRecord = { ...dispatchOperatorRecord, ...data, authVersion: data.authVersion?.increment ? dispatchOperatorRecord.authVersion + data.authVersion.increment : (data.authVersion ?? dispatchOperatorRecord.authVersion) }; return dispatchOperatorRecord; },
+  },
+  adminAuditEvent: { create: async ({ data }) => { adminAuditEvents.push(data); return data; } },
+  $transaction: async (callback) => callback(prisma),
   booking: {
     findUnique: async () => {bookingReads++; return booking;},
-    findFirst: async ({where}) => booking && booking.id === where.id && booking.passengerId === where.passengerId ? booking : null,
+    findFirst: async ({where}) => { if (!booking || booking.id !== where.id) return null; for (const key of ["passengerId","status","paymentMethod","driverId","dispatchStatus"]) if (key in where && booking[key] !== where[key]) return null; return booking; },
     findMany: async () => booking ? [booking] : [],
     updateMany: async ({where, data}) => { if (!booking || booking.status !== where.status) return {count:0}; writes++; Object.assign(booking, data); return {count:1}; },
     update: async ({data}) => { writes++; Object.assign(booking, data); return booking; },
     create: async ({data}) => {writes++; booking={id:other,...data};return booking;},
   },
   rideRequest: { findFirst: async () => activeRequest, findMany: async () => [], updateMany: async () => {writes++;return {count:0};}, create: async () => {writes++;return {};} },
+  bookingPayment: { findUnique: async () => null },
+  paymentWebhookEvent: {
+    findUnique: async ({where}) => webhookEvents.find(row => row.providerEventId === where.providerEventId) || null,
+    create: async ({data}) => { if (webhookEvents.some(row => row.providerEventId === data.providerEventId)) throw Object.assign(new Error("duplicate"), {code:"P2002"}); const row={id:"event-"+webhookEvents.length,...data}; webhookEvents.push(row); return row; },
+    update: async ({where,data}) => { const row=webhookEvents.find(item=>item.id===where.id); if(!row) throw new Error("missing webhook receipt"); Object.assign(row,data); return row; },
+    updateMany: async ({where,data}) => { const rows=webhookEvents.filter(row=>row.providerEventId===where.providerEventId && row.processingStatus!=="PROCESSED"); rows.forEach(row=>Object.assign(row,data)); return {count:rows.length}; },
+  },
 };
 const mocks = {
   "@/lib/prisma": {prisma},
@@ -62,6 +79,10 @@ const mocks = {
     getPaymentSession: async () => ({success:true,session:paymentSession,status:paymentSession.payment_status}),
     verifyWebhookSignature: (_, signature) => ({valid:signature==="test-valid",event}),
   },
+  "@/lib/automatic-dispatch": { startAutomaticDispatch: async () => { dispatchStarts++; return booking?.paymentMethod === "CARD" && booking?.status === "PENDING" ? ({ok:false,code:"PAYMENT_NOT_CONFIRMED"}) : !["PENDING","CONFIRMED","SEARCHING_DRIVER"].includes(booking?.status) ? ({ok:false,code:"BOOKING_NOT_DISPATCHABLE"}) : ({ok:true}); }, advanceExpiredOffersForDriver: async () => ({}) },
+  "@/lib/driver-operations": { expireDriverOffers: async () => ({}), getDriverPresence: async () => null },
+  "@/lib/scheduled-marketplace": { isScheduledBooking: () => false, SCHEDULED_MARKET_CONFIG: { timezone: "Europe/Bratislava" }, parseMarketDateTime: (date, time) => new Date(`${date}T${time}:00+02:00`) },
+  "@/lib/dispatch-audit": { recordDispatchAudit: async () => ({}) },
   "@/lib/email": {bookingToEmailData:b=>b,sendPaymentReceipt:async()=>{emails++;},sendBookingCompletionEmails:async()=>{emails++;},isSeniorAssistedService:s=>["SENIOR","ACCESSIBLE"].includes(s),sendSeniorAssistedBookingEmails:async()=>({adminFull:{success:true},driverSafe:{success:true}})},
   "@/lib/google-maps": {calculateDistance:async()=>({distanceKm:10,durationMinutes:20})},
   "@/lib/pricing-engine-config": {getPricingEngineConfig:async()=>({config:{},distanceTiers:[]})},
@@ -186,14 +207,59 @@ await test("checkout ownership, state, EUR, ignored browser amount and historica
 });
 await test("webhook signature rejection, atomic duplicate guard, no ride status regression",async()=>{
   const webhook=load("app/api/payments/webhook/route.ts").POST;
-  booking=paidBooking();writes=0;emails=0;
+  booking=paidBooking();writes=0;emails=0;dispatchStarts=0;webhookEvents=[];
   paymentSession={id:"cs_test",payment_intent:"pi_test",metadata:{bookingId:other,bookingRef:booking.bookingRef},payment_status:"paid",amount_total:2500,currency:"eur"};
-  event={id:"evt_test",type:"checkout.session.completed",data:{object:paymentSession}};
+  event={id:"evt_test",type:"checkout.session.completed",created:Math.floor(Date.now()/1000),data:{object:paymentSession}};
   assert.equal((await webhook(request("POST",undefined,"PASSENGER",{}))).status,400);
   const invoke=()=>webhook(request("POST",undefined,"PASSENGER",{},{"stripe-signature":"test-valid"}));
-  await Promise.all([invoke(),invoke()]);assert.equal(writes,1);assert.equal(emails,2);
+  await Promise.all([invoke(),invoke()]);assert.equal(writes,1);assert.equal(emails,2);assert.equal(booking.status,"CONFIRMED");assert.equal(dispatchStarts,1,"genuine public card checkout keeps the legacy flow");
   for(const state of ["ASSIGNED","DRIVER_ENROUTE","IN_PROGRESS","NO_SHOW","COMPLETED","CANCELLED"]){booking.status=state;assert.equal((await invoke()).status,200);assert.equal(booking.status,state);}
   assert.equal(writes,1);assert.equal(emails,2);
+});
+await test("missing Dispatch BookingPayment fails closed while public legacy checkout remains available",async()=>{
+  const webhook=load("app/api/payments/webhook/route.ts").POST;
+  booking={...paidBooking(),bookingSource:"PHONE_DISPATCH"};writes=0;emails=0;dispatchStarts=0;webhookEvents=[];
+  paymentSession={id:"cs_missing_dispatch",payment_intent:"pi_missing_dispatch",metadata:{bookingId:other,bookingRef:booking.bookingRef},payment_status:"paid",amount_total:2500,currency:"eur"};
+  event={id:"evt_missing_dispatch_payment",type:"checkout.session.completed",created:Math.floor(Date.now()/1000),data:{object:paymentSession}};
+  const response=await webhook(request("POST",undefined,"PASSENGER",{},{"stripe-signature":"test-valid"}));
+  assert.equal(response.status,500);assert.equal(booking.status,"PENDING");assert.equal(writes,0);assert.equal(emails,0);assert.equal(dispatchStarts,0);
+  assert.equal(webhookEvents[0].processingStatus,"FAILED");assert.equal(webhookEvents[0].safeFailureCode,"PHONE_DISPATCH_PAYMENT_RECORD_MISSING");
+});
+await test("processed duplicate webhook only recovers an untouched immediate Dispatch booking",async()=>{
+  const webhook=load("app/api/payments/webhook/route.ts").POST;
+  const invoke=async(dispatchStatus,pendingOffer=false)=>{
+    booking={...paidBooking(),bookingSource:"PHONE_DISPATCH",status:"CONFIRMED",dispatchStatus,driverId:null,scheduledRide:false};
+    dispatchStarts=0;activeRequest=pendingOffer?{id:sid}:null;
+    const id="evt_duplicate_"+dispatchStatus+"_"+pendingOffer;
+    webhookEvents=[{id:"receipt-duplicate",providerEventId:id,eventType:"checkout.session.completed",processingStatus:"PROCESSED"}];
+    event={id,type:"checkout.session.completed",created:Math.floor(Date.now()/1000),data:{object:{id:"cs_duplicate",metadata:{bookingId:other,bookingRef:booking.bookingRef}}}};
+    const response=await webhook(request("POST",undefined,"PASSENGER",{},{"stripe-signature":"test-valid"}));
+    assert.equal(response.status,200);assert.equal((await response.json()).duplicate,true);
+    return dispatchStarts;
+  };
+  assert.equal(await invoke("NOT_STARTED"),1,"narrow safe recovery is allowed");
+  assert.equal(await invoke("SEARCHING_DRIVER"),0,"an already-started dispatch cycle is never advanced by duplicate payment delivery");
+  assert.equal(await invoke("NOT_STARTED",true),0,"an existing pending offer blocks duplicate dispatch recovery");
+  activeRequest=null;
+});
+await test("profile-only Dispatch Operator Admin edit audits changed fields without password data",async()=>{
+  const patchOperator=load("app/api/admin/dispatch-operators/[id]/route.ts").PATCH;
+  const originalActor=actor;
+  actor={...actor,role:"SUPER_ADMIN",status:"ACTIVE",authVersion:0};
+  const adminToken=await session.createCanonicalToken({sub:id,actor:"ADMIN",role:"SUPER_ADMIN",ver:0});
+  adminAuditEvents=[];
+  dispatchOperatorRecord={id:sid,fullName:"Existing Operator",email:"old@example.com",phone:"+421900000001",normalizedPhone:"+421900000001",status:"ACTIVE",mustChangePassword:false,authVersion:0};
+  const response=await patchOperator(request("PATCH",adminToken,"ADMIN",{fullName:"Updated Operator",email:"new@example.com",phone:"+421900000002"}),{params:Promise.resolve({id:sid})});
+  assert.equal(response.status,200);
+  assert.equal(adminAuditEvents.length,1);
+  assert.equal(adminAuditEvents[0].action,"DISPATCH_OPERATOR_UPDATED");
+  assert.deepEqual(adminAuditEvents[0].safeMetadata,{changedFields:["fullName","email","phone"]});
+  assert.equal(JSON.stringify(adminAuditEvents[0]).includes("temporaryPassword"),false);
+  assert.equal(JSON.stringify(adminAuditEvents[0]).includes("new@example.com"),false);
+  assert.equal(JSON.stringify(adminAuditEvents[0]).includes("+421900000002"),false);
+  const noOp=await patchOperator(request("PATCH",adminToken,"ADMIN",{fullName:"Updated Operator",email:"new@example.com",phone:"+421900000002"}),{params:Promise.resolve({id:sid})});
+  assert.equal(noOp.status,200);assert.equal(adminAuditEvents.length,1,"unchanged profile values do not create another audit event");
+  actor=originalActor;
 });
 await test("dispatch auth, ownership, assigned/terminal/card guards and repeated active request",async()=>{
   const dispatch=load("app/api/dispatch/start/route.ts").POST;
@@ -311,6 +377,18 @@ await test("new bookings ignore browser prices and match Pricing Engine V1 previ
     const res=await create(request("POST",undefined,"PASSENGER",{serviceType:"CHILDREN",pickupAddress:"Test pickup",dropoffAddress:"Test school",scheduledDate:"2026-10-01",scheduledTime:"12:00",passengerCount:1,customerName:"Test Parent",customerEmail:"parent@example.com",customerPhone:"900000000",paymentMethod:"INVOICE"}));
     assert.equal(res.status,409);assert.equal(writes,0);
   }finally{console.log=oldLog;}
+});
+await test("disabled Children booking is rejected for public and Dispatch actors",async()=>{
+  const create=load("app/api/bookings/route.ts").POST;
+  const input={serviceType:"CHILDREN",pickupAddress:"Test pickup",dropoffAddress:"Test school",scheduledDate:"2026-10-01",scheduledTime:"12:00",passengerCount:1,customerName:"Test Parent",customerEmail:"parent@example.com",customerPhone:"900000000",paymentMethod:"INVOICE"};
+  writes=0;
+  const publicResponse=await create(request("POST",undefined,"PASSENGER",input));
+  assert.equal(publicResponse.status,409);assert.equal(writes,0);
+  const service=load("lib/booking-creation-service.ts");
+  for(const actor of [{kind:"PUBLIC"},{kind:"DISPATCH_OPERATOR",operatorId:id}]){
+    await assert.rejects(()=>service.createBookingWithDrivoRules(request("POST",undefined,"PASSENGER",input),input,actor),error=>error.status===409);
+  }
+  assert.equal(writes,0);
 });
 await test("payment verification is read-only and rejects wrong ownership/reference/amount",async()=>{
   const token=await passenger.createPassengerSession(actor);

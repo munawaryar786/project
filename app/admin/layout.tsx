@@ -15,6 +15,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const { t } = useLanguage();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [adminRole, setAdminRole] = useState("");
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -27,8 +28,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         if (!cancelled) setLoading(false);
         return;
       }
+      const payload = await response.json().catch(() => null);
       if (!cancelled) {
         setIsAuthenticated(true);
+        setAdminRole(payload?.admin?.role || "");
         setLoading(false);
       }
     };
@@ -104,6 +107,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       icon: "FN",
       active: pathname.startsWith("/admin/financial"),
     },
+    ...(adminRole === "SUPER_ADMIN" ? [{
+      href: "/admin/dispatch-team",
+      label: t("dispatchAdmin.title", "Dispatch Team"),
+      icon: "DT",
+      active: pathname.startsWith("/admin/dispatch-team"),
+    }] : []),
   ];
 
   const handleLogout = async () => {

@@ -837,6 +837,21 @@ export async function sendBookingConfirmationInvoice(data: BookingEmailData): Pr
   return deliverIdempotentEmail("BOOKING_CONFIRMATION_INVOICE:" + data.bookingRef, "BOOKING_CONFIRMATION_INVOICE", { to: data.customerEmail, subject: "Drivo booking confirmation / invoice - " + data.bookingRef, html: buildCustomerConfirmationEmail(data), text: buildCustomerConfirmationText(data) });
 }
 
+export async function sendDispatchPaymentLinkEmail(input: {
+  to: string; bookingRef: string; amount: string; url: string; expiresAt: Date; language?: string | null; paymentId: string;
+}): Promise<EmailSendResult> {
+  const copy: Record<string, { subject: string; title: string; intro: string; pay: string; expires: string; security: string }> = {
+    en: { subject: "Secure payment for Drivo booking", title: "Complete your Drivo payment", intro: "Use the secure hosted payment page to pay for booking", pay: "Pay securely", expires: "This link expires in 30 minutes.", security: "Enter card details only on the secure payment provider page." },
+    sk: { subject: "Bezpečná platba za jazdu Drivo", title: "Dokončite platbu Drivo", intro: "Na bezpečnej platobnej stránke uhraďte rezerváciu", pay: "Bezpečne zaplatiť", expires: "Tento odkaz vyprší o 30 minút.", security: "Údaje o karte zadávajte iba na zabezpečenej stránke poskytovateľa platby." },
+    de: { subject: "Sichere Zahlung für Ihre Drivo-Fahrt", title: "Drivo-Zahlung abschließen", intro: "Bezahlen Sie Ihre Buchung über die sichere Zahlungsseite", pay: "Sicher bezahlen", expires: "Dieser Link läuft in 30 Minuten ab.", security: "Geben Sie Kartendaten ausschließlich auf der sicheren Zahlungsseite ein." },
+    uk: { subject: "Безпечна оплата поїздки Drivo", title: "Завершіть оплату Drivo", intro: "Оплатіть бронювання на захищеній платіжній сторінці", pay: "Безпечно оплатити", expires: "Посилання дійсне 30 хвилин.", security: "Вводьте дані картки лише на захищеній сторінці платіжного провайдера." },
+  };
+  const locale = (input.language || "sk").toLowerCase().slice(0, 2);
+  const text = copy[locale] || copy.sk;
+  const body = `<p style="font:15px/1.6 Arial;color:#374151">${escapeHtml(text.intro)} <strong>${escapeHtml(input.bookingRef)}</strong>.</p><p style="font:20px/1.5 Arial;color:#10202f;font-weight:700">${escapeHtml(input.amount)}</p><p><a href="${escapeHtml(input.url)}" style="display:inline-block;background:#087f73;color:#fff;padding:13px 20px;border-radius:8px;text-decoration:none;font-weight:700">${escapeHtml(text.pay)}</a></p><p style="font:14px/1.6 Arial;color:#60707d">${escapeHtml(text.expires)} ${escapeHtml(text.security)}</p>`;
+  return deliverIdempotentEmail("DISPATCH_PAYMENT_LINK:" + input.paymentId, "DISPATCH_PAYMENT_LINK", { to: input.to, subject: text.subject + " - " + input.bookingRef, html: buildEmailShell(text.title, text.intro, body), text: [text.title, "", text.intro + " " + input.bookingRef + ".", input.amount, input.url, "", text.expires, text.security].join("\n") });
+}
+
 export async function sendNoDriverAdminEscalation(data: BookingEmailData): Promise<EmailSendResult> {
   const adminEmail = getAdminEmail();
   const rows = [["Booking reference", data.bookingRef], ["Service", serviceLabel(data.serviceType)], ["Ride type", data.scheduledDate ? "Scheduled" : "Immediate"], ["Pickup time", data.scheduledDate + " " + data.scheduledTime], ["Pickup", data.pickupAddress], ["Destination", data.dropoffAddress], ["Passengers", String(data.passengerCount)], ["Luggage", data.luggageType], ["Accessibility", data.wheelchairNeeded ? "Wheelchair capability required" : "No wheelchair requirement recorded"], ["Booking status", data.status || "UNKNOWN"], ["Dispatch status", "DISPATCH_EXHAUSTED"]].map(([label,value]) => "<tr><td style=\"padding:8px 0;color:#60707d;width:38%\">" + escapeHtml(label) + "</td><td style=\"padding:8px 0;font-weight:700;color:#10202f\">" + escapeHtml(value) + "</td></tr>").join("");

@@ -23,6 +23,8 @@ export interface PaymentSessionParams {
   customerEmail: string;
   customerName: string;
   description: string;
+  expiresAt?: number;
+  idempotencyKey?: string;
 }
 
 /**
@@ -61,11 +63,12 @@ export async function createPaymentSession(params: PaymentSessionParams) {
       mode: 'payment',
       success_url: `${baseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/payment/cancel?booking_id=${params.bookingId}`,
+      ...(params.expiresAt ? { expires_at: params.expiresAt } : {}),
       metadata: {
         bookingId: params.bookingId,
         bookingRef: params.bookingRef,
       },
-    });
+    }, params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : undefined);
 
     return {
       success: true,
@@ -76,6 +79,12 @@ export async function createPaymentSession(params: PaymentSessionParams) {
     console.error("❌ Stripe session creation error:", error.message);
     throw error;
   }
+}
+
+export async function expirePaymentSession(sessionId: string) {
+  const stripe = getStripeClient();
+  if (!stripe) throw new Error("Stripe not configured");
+  return stripe.checkout.sessions.expire(sessionId);
 }
 
 /**

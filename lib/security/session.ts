@@ -3,13 +3,14 @@ import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 import type { NextResponse } from "next/server";
 import { getServerEnvironment } from "@/lib/env";
 
-export const ACTORS = ["PASSENGER", "DRIVER", "ADMIN"] as const;
+export const ACTORS = ["PASSENGER", "DRIVER", "ADMIN", "DISPATCH_OPERATOR"] as const;
 export type Actor = (typeof ACTORS)[number];
 
 export const SESSION_TTL_SECONDS: Record<Actor, number> = {
   PASSENGER: 7 * 24 * 60 * 60,
   DRIVER: 12 * 60 * 60,
   ADMIN: 8 * 60 * 60,
+  DISPATCH_OPERATOR: 8 * 60 * 60,
 };
 
 export type CanonicalSession = JWTPayload & {
@@ -36,6 +37,7 @@ export const LEGACY_COOKIES: Record<Actor, string[]> = {
   PASSENGER: ["drivo_passenger_token", "drivo_passenger_session"],
   DRIVER: ["drivo_driver_token"],
   ADMIN: ["drivo_admin_token"],
+  DISPATCH_OPERATOR: [],
 };
 
 export function hashCsrfToken(value: string) {

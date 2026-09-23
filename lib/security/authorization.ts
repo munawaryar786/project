@@ -58,6 +58,22 @@ export async function authorizeAdmin(request: NextRequest): Promise<Authorizatio
   return validateMutationSecurity(request, "ADMIN", session) || { ok: true, actor: admin, session };
 }
 
+export async function authorizeDispatchOperator(
+  request: NextRequest,
+  options: { allowPasswordChange?: boolean } = {},
+): Promise<AuthorizationResult<any>> {
+  const session = await canonicalRequest(request, "DISPATCH_OPERATOR");
+  if (!session) return reject(401, "Authentication required");
+  const operator = await prisma.dispatchOperator.findUnique({ where: { id: session.sub } });
+  if (!operator || operator.status !== "ACTIVE" || operator.authVersion !== session.ver) {
+    return reject(401, "Authentication required");
+  }
+  if (operator.mustChangePassword && !options.allowPasswordChange) {
+    return reject(403, "Password change required");
+  }
+  return validateMutationSecurity(request, "DISPATCH_OPERATOR", session) || { ok: true, actor: operator, session };
+}
+
 export async function requireAdminRole(request: NextRequest, roles: string[]) {
   const auth = await authorizeAdmin(request);
   if (!auth.ok) return auth;

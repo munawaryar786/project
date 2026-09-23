@@ -1,0 +1,12 @@
+"use client";
+
+import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
+
+export default function DispatchChangePasswordPage() {
+  const router = useRouter(); const { t } = useLanguage(); const [currentPassword, setCurrent] = useState(""); const [newPassword, setNext] = useState(""); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
+  async function submit(event: FormEvent) { event.preventDefault(); setBusy(true); setError(""); const response = await csrfFetch("dispatch_operator", "/api/dispatch/auth/change-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ currentPassword, newPassword }) }); const data = await response.json().catch(() => ({})); setBusy(false); if (!response.ok) { setError(data.error || t("dispatch.passwordError", "Password could not be changed.")); return; } router.replace("/dispatch"); }
+  return <section className="mx-auto max-w-xl rounded-2xl border bg-white p-6" aria-labelledby="change-password-heading"><h1 id="change-password-heading" className="text-2xl font-black">{t("dispatch.changePassword", "Change your temporary password")}</h1><p className="mt-2 text-sm text-slate-700">{t("dispatch.passwordRule", "Choose a password with at least 12 characters.")}</p><form onSubmit={submit} className="mt-5 space-y-4"><label className="block text-sm font-semibold">{t("dispatch.currentPassword", "Temporary password")}<input required type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrent(event.target.value)} className="mt-1 min-h-12 w-full rounded-lg border px-3"/></label><label className="block text-sm font-semibold">{t("dispatch.newPassword", "New password")}<input required minLength={12} maxLength={128} type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNext(event.target.value)} className="mt-1 min-h-12 w-full rounded-lg border px-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-teal-700"/></label>{error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-900">{error}</p>}<button disabled={busy} className="min-h-12 rounded-xl bg-drivo-navy px-5 font-bold text-white">{busy ? t("common.loading", "Loading") : t("dispatch.changePassword", "Change password")}</button></form></section>;
+}

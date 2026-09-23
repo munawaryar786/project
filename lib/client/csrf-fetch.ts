@@ -1,6 +1,6 @@
 "use client";
 
-export type ClientActor = "passenger" | "driver" | "admin";
+export type ClientActor = "passenger" | "driver" | "admin" | "dispatch_operator";
 
 function readCookie(name: string) {
   if (typeof document === "undefined") return "";

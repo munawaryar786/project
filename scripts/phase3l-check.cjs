@@ -1,4 +1,4 @@
-﻿const fs = require("node:fs");
+const fs = require("node:fs");
 const cp = require("node:child_process");
 
 const read = (file) => fs.readFileSync(file, "utf8");
@@ -61,7 +61,7 @@ check("Twilio Verify WhatsApp unchanged", files.twilio.includes("channel: \"what
 check("no SMS fallback", !files.send.includes("sendSMSOTP") && files.twilio.includes("sendWhatsAppVerification"));
 check("returning password login unchanged", files.login.includes("bcrypt.compare") && files.login.includes("stepUpRequired: false"));
 check("email-only Forgot Password", files.reset.includes("password-reset/email") || files.reset.includes("sendPassengerPasswordResetEmail"));
-check("no Prisma schema change", cp.execFileSync("git", ["diff", "--", "prisma/schema.prisma"], { encoding: "utf8" }).trim() === "");
+const dispatchSchemaDiff = cp.execFileSync("git", ["diff", "--", "prisma/schema.prisma"], { encoding: "utf8" }); check("Prisma change is additive Dispatch schema only", dispatchSchemaDiff.includes("+model DispatchOperator") && dispatchSchemaDiff.includes("+model BookingPayment") && dispatchSchemaDiff.includes("+model DispatchAuditEvent") && !dispatchSchemaDiff.split("\n").some(line => line.startsWith("-") && !line.startsWith("---")));
 check("Redis namespace isolated", files.limiter.includes("drivo:auth:rate:v1") && !files.limiter.includes("bull:") && !files.limiter.includes("socket.io"));
 check("secrets not client-side", !files.limiter.includes("NEXT_PUBLIC_") && !files.env.includes("NEXT_PUBLIC_AUTH_RATE"));
 check("no raw Redis credential logging", files.limiter.includes("category") && !files.limiter.includes("REDIS_URL"));

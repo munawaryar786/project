@@ -97,7 +97,8 @@ if (!quoteSource.includes("reservedWaiting: waitingMinutes > 0")) throw new Erro
 if (!quoteSource.includes("assistanceLevel: input.assistanceLevel")) throw new Error("Authoritative quote does not pass explicit assistance level to the pricing engine");
 if (!fs.readFileSync(path.join(root, "components/booking/PriceEstimate.tsx"), "utf8").includes("waitingMinutes,")) throw new Error("Frontend estimate no longer sends selected waiting minutes");
 if (!fs.readFileSync(path.join(root, "app/api/bookings/distance/route.ts"), "utf8").includes("waitingMinutes: data.waitingMinutes")) throw new Error("Estimate route does not pass selected waiting minutes to authoritative quote");
-if (!/waitingMinutes:\s*data\.waitingDuration\s*===/.test(fs.readFileSync(path.join(root, "app/api/bookings/route.ts"), "utf8"))) throw new Error("Booking route does not pass selected waiting minutes to authoritative quote");
+const bookingServiceSource = fs.readFileSync(path.join(root, "lib/booking-creation-service.ts"), "utf8");
+if (!/waitingMinutes:\s*data\.waitingDuration\s*===/.test(bookingServiceSource)) throw new Error("Shared booking service does not pass selected waiting minutes to authoritative quote");
 const distanceRouteSource = fs.readFileSync(path.join(root, "app/api/bookings/distance/route.ts"), "utf8");
 if (!distanceRouteSource.includes('assistanceLevel: z.enum(["LIGHT", "DOOR_TO_DOOR", "BOARDING_HELP"]).optional().nullable()')) throw new Error("Estimate route assistance-level schema does not match booking flow");
 if (!distanceRouteSource.includes("assistanceLevel: data.assistanceLevel")) throw new Error("Estimate route does not forward assistance level unchanged");
@@ -108,7 +109,7 @@ if (!estimateComponentSource.includes('assistedTransport: "Driver Assistance"') 
 function must(file, value) { if (!fs.readFileSync(path.join(root, file), "utf8").includes(value)) throw new Error(`${file} missing ${value}`); }
 must("lib/assisted-transport.ts", "function requiresWav");
 must("app/api/bookings/distance/route.ts", "calculateAuthoritativeBookingQuote");
-must("app/api/bookings/route.ts", "calculateAuthoritativeBookingQuote({");
+must("lib/booking-creation-service.ts", "calculateAuthoritativeBookingQuote({");
 must("components/booking/BookingForm.tsx", "role=\"dialog\"");
 must("lib/feature-flags.ts", "FEATURE_FLAGS.childrenTransport");
 
