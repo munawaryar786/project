@@ -3,6 +3,7 @@ import { Emitter } from "@socket.io/redis-emitter";
 import { prisma } from "@/lib/prisma";
 import { advanceDispatch, startScheduledRecoveryDispatch } from "@/lib/automatic-dispatch";
 import { processScheduledRideJob, reconcileScheduledRideJobs } from "@/lib/scheduled-jobs";
+import { bookingPickupAt, isFutureScheduledBooking, scheduleScheduledRideJobs } from "@/lib/scheduled-marketplace";
 import { createNotification, notificationDedupe } from "@/lib/notifications";
 import { createRedisConnection, closeRedis } from "@/lib/realtime/redis";
 import { eventTypeForDomain, safeEvent } from "@/lib/realtime/contracts";
@@ -10,6 +11,7 @@ import { OUTBOX_STATES, REALTIME_EVENTS, REALTIME_QUEUES } from "@/lib/realtime/
 import { getOfferExpiryQueue, getScheduledRideQueue, closeQueues } from "@/lib/realtime/queues";
 import { relayOutboxOnce } from "@/lib/outbox-relay";
 import { bookingToEmailData, sendNoDriverAdminEscalation } from "@/lib/email";
+import { isScheduledReminderDeliveryCurrent } from "@/lib/scheduled-reminder-delivery";
 
 const redis = createRedisConnection("worker-emitter");
 const emitter = new Emitter(redis as any);
@@ -17,8 +19,21 @@ function payloadOf(event: any) { return (event.payload && typeof event.payload =
 async function signal(event: any, recipientType: "DRIVER" | "ADMIN" | "PASSENGER", recipientId: string, stateHint?: string) { const type = eventTypeForDomain(event.eventType); emitter.of(`/${recipientType.toLowerCase()}`).to(`${recipientType.toLowerCase()}:${recipientId}`).emit(type, safeEvent({ eventId: event.id, type, entityId: event.aggregateId, stateHint, actorType: recipientType })); }
 async function routeEvent(event: any) {
   const p = payloadOf(event); const bookingId = String(p.bookingId || event.aggregateId); const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+  if (event.eventType === "SCHEDULED_REMINDER_30" || event.eventType === "SCHEDULED_WARNING_20") return;
+  if (event.eventType === "SCHEDULED_RIDE_REMINDER") {
+    if (booking?.driverId && isScheduledReminderDeliveryCurrent(booking, p)) await signal(event, "DRIVER", booking.driverId, "scheduled-ride-reminder");
+    return;
+  }
+  // Recovery intent was committed with readiness release. A transient failure
+  // of the immediate recovery call is retried through this durable event.
+  if (event.eventType === "SCHEDULED_READINESS_FAILED" && booking && !booking.driverId && !["CANCELLED", "COMPLETED", "NO_SHOW"].includes(booking.status)) {
+    const recoveryPickup = bookingPickupAt(booking);
+    if (recoveryPickup && recoveryPickup.toISOString() === p.pickupAt && recoveryPickup.getTime() > Date.now()) await startScheduledRecoveryDispatch(bookingId);
+  }
   if (event.eventType === "OFFER_CREATED" && p.driverId) { await createNotification({ recipientType: "DRIVER", recipientId: String(p.driverId), type: "DRIVER_OFFER_UPDATED", data: { bookingId, offerId: String(p.offerId || "") }, dedupeKey: notificationDedupe(event.id, "DRIVER", String(p.driverId)) }); await signal(event, "DRIVER", String(p.driverId), "offer-updated"); const offer = p.offerId ? await prisma.rideRequest.findUnique({ where: { id: String(p.offerId) }, select: { expiresAt: true } }) : null; if (offer) { const delay = Math.max(0, offer.expiresAt.getTime() - Date.now()); await getOfferExpiryQueue().add("expire", { offerId: String(p.offerId), bookingId }, { jobId: `offer-expiry-${String(p.offerId)}`, delay }); } return; }
   if (event.eventType === "DRIVER_OFFER_ACCEPTED") {
+    // The outbox event is committed with the assignment. Queue failures retry
+    // this event instead of affecting the HTTP acceptance response.
     const admins = await prisma.adminUser.findMany({ select: { id: true } });
     for (const admin of admins) {
       await createNotification({ recipientType: "ADMIN", recipientId: admin.id, type: "DRIVER_ASSIGNED", data: { bookingId, bookingRef: booking?.bookingRef || "", driverId: String(p.driverId || booking?.driverId || ""), serviceType: booking?.serviceType || "", status: booking?.status || "ASSIGNED", pickupAt: booking?.pickupAt?.toISOString?.() || null }, dedupeKey: notificationDedupe(event.id, "ADMIN", admin.id) });
@@ -26,6 +41,7 @@ async function routeEvent(event: any) {
     }
     if (booking?.driverId) await signal(event, "DRIVER", booking.driverId, "assigned");
     if (booking?.passengerId) await signal(event, "PASSENGER", booking.passengerId, "assigned");
+    if (booking?.scheduledRide === true && isFutureScheduledBooking(booking)) await scheduleScheduledRideJobs(bookingId);
     return;
   }
   if (event.eventType === "DISPATCH_EXHAUSTED") {
@@ -40,6 +56,7 @@ async function routeEvent(event: any) {
   if (booking?.driverId) await signal(event, "DRIVER", booking.driverId, event.eventType.toLowerCase());
   if (booking?.passengerId) await signal(event, "PASSENGER", booking.passengerId, event.eventType.toLowerCase());
   const admins = await prisma.adminUser.findMany({ select: { id: true } }); for (const admin of admins) await signal(event, "ADMIN", admin.id, event.eventType.toLowerCase());
+  if (["SCHEDULED_RIDE_CLAIMED", "ADMIN_MANUAL_ASSIGNMENT"].includes(event.eventType) && booking?.scheduledRide === true && isFutureScheduledBooking(booking)) await scheduleScheduledRideJobs(bookingId);
 }
 async function processOutbox(job: Job<{ outboxEventId: string }>) {
   const event = await prisma.outboxEvent.findUnique({ where: { id: job.data.outboxEventId } }); if (!event) return;

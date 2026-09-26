@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { DRIVER_TRIP_SELECT, serializeDriverTrip } from "@/lib/driver-projections";
 import { isTerminalTripStatus } from "@/lib/driver-state";
 import { authorizeDriver } from "@/lib/security/authorization";
+import { bookingPickupAt } from "@/lib/scheduled-marketplace";
 
 export async function GET(request: NextRequest) {
   const auth = await authorizeDriver(request);
@@ -13,7 +14,9 @@ export async function GET(request: NextRequest) {
       orderBy: { scheduledDate: "asc" },
       select: { ...DRIVER_TRIP_SELECT, estimatedPrice: true, fareTotalFare: true, earning: { select: { driverAmount: true } } },
     });
-    const safeBookings = bookings.map(serializeDriverTrip);
+    const safeBookings = bookings.map((booking) => serializeDriverTrip(
+      booking.scheduledRide ? { ...booking, pickupAt: bookingPickupAt(booking) } : booking,
+    ));
     const today = new Date().toISOString().split("T")[0];
     const active = (b: { status: string }) => !isTerminalTripStatus(b.status);
     return NextResponse.json({

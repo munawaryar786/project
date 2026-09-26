@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { authorizeAdmin } from "@/lib/security/authorization";
 import { assignAdminDriver, requireReason } from "@/lib/admin-operations";
+import { scheduleScheduledRideJobs } from "@/lib/scheduled-marketplace";
 
 const Schema = z.object({
   bookingId: z.string().regex(/^[a-f0-9]{24}$/i),
@@ -17,5 +18,8 @@ export async function POST(request: NextRequest) {
   if (!parsed.success || !requireReason(parsed.data?.reason)) return NextResponse.json({ success: false, error: "A bounded operational reason is required", code: "AUDIT_REASON_REQUIRED" }, { status: 400 });
   const result = await assignAdminDriver(parsed.data, auth.actor.id);
   if (!result.ok) return NextResponse.json({ success: false, error: "Driver assignment was not allowed", code: result.code }, { status: 409 });
+  // Assignment committed in assignAdminDriver; queue failure must not undo it.
+  try { await scheduleScheduledRideJobs(parsed.data.bookingId); }
+  catch { console.error("[admin.scheduled-reminders.schedule-failed]"); }
   return NextResponse.json({ success: true, ...result });
 }

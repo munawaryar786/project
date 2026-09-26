@@ -4,6 +4,7 @@ import { authorizeDriver } from "@/lib/security/authorization";
 import { acceptDriverOfferAtomically, declineDriverOffer } from "@/lib/driver-operations";
 import { advanceDispatch } from "@/lib/automatic-dispatch";
 import { DRIVER_ERROR_CODES, errorBody } from "@/lib/driver-state";
+import { scheduleScheduledRideJobs } from "@/lib/scheduled-marketplace";
 
 
 const RespondSchema = z.object({
@@ -31,6 +32,12 @@ export async function PATCH(request: NextRequest) {
   if (action !== "ACCEPT") {
     const advancement = result.bookingId ? await advanceDispatch(result.bookingId) : null;
     return NextResponse.json({ success: true, action: "DECLINED", offerId: requestId, dispatch: advancement?.ok ? advancement.outcome : "ADVANCEMENT_PENDING" });
+  }
+  if (result.bookingId) {
+    // This is the sole production caller of acceptDriverOfferAtomically, so post-commit queue work here covers offer acceptance without coupling its transaction to Redis.
+    // The scheduler safely ignores non-scheduled rides.
+    try { await scheduleScheduledRideJobs(result.bookingId); }
+    catch { console.error("[driver.scheduled-reminders.schedule-failed]", { code: "SCHEDULED_REMINDER_ENQUEUE_FAILED" }); }
   }
   return NextResponse.json({ success: true, action: "ACCEPTED", offerId: requestId, bookingId: result.bookingId });
 }

@@ -4,6 +4,7 @@ import { driverCompatibility } from "@/lib/dispatch-matching";
 import { isLocationFresh } from "@/lib/driver-state";
 import { createNotification } from "@/lib/notifications";
 import { writeOutboxEvent } from "@/lib/outbox";
+import { createScheduledRideJobPlanWithRecentMilestones, isCurrentScheduledRideJob, scheduledReminderDedupeKey, scheduledRideJobId, type ScheduledRideJobKind } from "@/lib/scheduled-reminders";
 
 export const SCHEDULED_ERROR_CODES = {
   SCHEDULED_RIDE_NOT_FOUND: "SCHEDULED_RIDE_NOT_FOUND",
@@ -215,8 +216,8 @@ export async function assertScheduledRouteFeasible(input: { db: ScheduleDb; driv
   return { ok: true as const, previous: previous?.id || null, next: next?.id || null };
 }
 
-export async function emitScheduledEvent(input: { bookingId: string; driverId?: string | null; eventType: string; kind: string; pickupAt?: Date | null }) {
-  const key = "scheduled:" + input.kind + ":" + input.bookingId + ":" + (input.pickupAt?.getTime() || "none");
+export async function emitScheduledEvent(input: { bookingId: string; driverId?: string | null; eventType: string; kind: string; pickupAt?: Date | null; assignedAtMs?: number }) {
+  const key = "scheduled:" + input.kind + ":" + input.bookingId + ":" + (input.pickupAt?.getTime() || "none") + (input.assignedAtMs === undefined ? "" : ":" + input.driverId + ":" + input.assignedAtMs);
   try {
     await prisma.outboxEvent.create({
       data: {
@@ -240,6 +241,39 @@ export async function emitScheduledEvent(input: { bookingId: string; driverId?: 
       dedupeKey: key,
     });
   }
+}
+
+export async function emitScheduledRideReminder(input: {
+  bookingId: string;
+  pickupAt: Date;
+  driverId: string;
+  assignedAtMs: number;
+  kind: ScheduledRideJobKind;
+  minutesBeforePickup: number;
+}) {
+  const key = scheduledReminderDedupeKey({ bookingId: input.bookingId, pickupAtMs: input.pickupAt.getTime(), driverId: input.driverId, assignedAtMs: input.assignedAtMs, kind: input.kind });
+  const payload = { bookingId: input.bookingId, driverId: input.driverId, assignedAtMs: input.assignedAtMs, pickupAt: input.pickupAt.toISOString(), reminderMinutes: input.minutesBeforePickup };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const booking = await tx.booking.findUnique({ where: { id: input.bookingId } });
+        const currentPickupAt = booking ? bookingPickupAt(booking) : null;
+        if (!booking || !currentPickupAt || !isCurrentScheduledRideJob({ booking: { ...booking, pickupAt: currentPickupAt }, job: { bookingId: input.bookingId, pickupAtMs: input.pickupAt.getTime(), driverId: input.driverId, assignedAtMs: input.assignedAtMs }, nowMs: Date.now() })) return false;
+        if (await tx.outboxEvent.findUnique({ where: { idempotencyKey: key } })) return true;
+        // A write to the booking serializes this transaction with release,
+        // reassignment, cancellation and pickup edits in Prisma/MongoDB. The
+        // assignment value is unchanged; concurrent changes retry from a fresh read.
+        const owned = await tx.booking.updateMany({ where: { id: booking.id, driverId: input.driverId, status: booking.status, ...(booking.acceptedAt ? { acceptedAt: booking.acceptedAt } : { OR: [{ acceptedAt: null }, { acceptedAt: { isSet: false } }] }) }, data: { acceptedAt: booking.acceptedAt } });
+        if (owned.count !== 1) return false;
+        await tx.notification.upsert({ where: { dedupeKey: key }, create: { recipientType: "DRIVER", recipientId: input.driverId, type: "SCHEDULED_RIDE_REMINDER", data: { ...payload, messageKey: "driverPortal.scheduledRideReminderMessage" }, dedupeKey: key }, update: {} });
+        await writeOutboxEvent(tx, { eventType: "SCHEDULED_RIDE_REMINDER", aggregateType: "Booking", aggregateId: input.bookingId, idempotencyKey: key, payload });
+        return true;
+      });
+    } catch (error: any) {
+      if (attempt === 2 || !["P2002", "P2034"].includes(error?.code)) throw error;
+    }
+  }
+  return false;
 }
 
 export async function claimScheduledRide(bookingId: string, driverId: string) {
@@ -266,21 +300,26 @@ export async function claimScheduledRide(bookingId: string, driverId: string) {
       if (current.driverId) return { ok: false as const, code: SCHEDULED_ERROR_CODES.SCHEDULED_RIDE_ALREADY_CLAIMED };
       const currentEligible = scheduledMarketplaceEligibility(current, new Date());
       if (!currentEligible.eligible) return { ok: false as const, code: SCHEDULED_ERROR_CODES.CLAIM_STATE_CONFLICT };
+      const acceptedAt = new Date();
       const changed = await tx.booking.updateMany({
         where: { id: bookingId, driverId: null, status: { in: [...marketplaceStates] } },
-        data: { driverId, dispatchStatus: "SCHEDULED_CLAIMED", acceptedAt: new Date() },
+        data: { driverId, dispatchStatus: "SCHEDULED_CLAIMED", acceptedAt },
       });
       if (changed.count !== 1) return { ok: false as const, code: SCHEDULED_ERROR_CODES.CLAIM_STATE_CONFLICT };
       await writeOutboxEvent(tx, {
         eventType: "SCHEDULED_RIDE_CLAIMED",
         aggregateType: "Booking",
         aggregateId: bookingId,
-        idempotencyKey: "scheduled-claimed:" + bookingId + ":" + driverId,
-        payload: { bookingId, driverId },
+        idempotencyKey: "scheduled-claimed:" + bookingId + ":" + driverId + ":" + acceptedAt.getTime(),
+        payload: { bookingId, driverId, assignedAtMs: acceptedAt.getTime() },
       });
       return { ok: true as const, alreadyClaimed: false };
     });
-    if (result.ok) await scheduleScheduledRideJobs(bookingId);
+    if (result.ok && !result.alreadyClaimed) {
+      // Claim is committed; the outbox and reconciliation remain recovery paths if queueing fails.
+      try { await scheduleScheduledRideJobs(bookingId); }
+      catch { console.error("[scheduled.marketplace.reminders.schedule-failed]"); }
+    }
     return result;
   } catch (error: any) {
     if (error?.code === "P2034") return { ok: false as const, code: SCHEDULED_ERROR_CODES.CLAIM_STATE_CONFLICT };
@@ -288,33 +327,35 @@ export async function claimScheduledRide(bookingId: string, driverId: string) {
   }
 }
 
-export async function releaseScheduledAssignment(tx: any, booking: any, reason: string) {
+export async function releaseScheduledAssignment(tx: any, booking: any, reason: string, operationalReadiness = false) {
   const now = new Date();
   const pickupAt = bookingPickupAt(booking);
-  if (!pickupAt || pickupAt.getTime() <= now.getTime() + SCHEDULED_MARKET_CONFIG.minClaimLeadMinutes * 60 * 1000) {
+  if (!pickupAt || pickupAt.getTime() <= now.getTime() + (operationalReadiness ? 0 : SCHEDULED_MARKET_CONFIG.minClaimLeadMinutes * 60 * 1000)) {
     return { ok: false as const, code: SCHEDULED_ERROR_CODES.RELEASE_NOT_ALLOWED };
   }
   const changed = await tx.booking.updateMany({
-    where: { id: booking.id, driverId: booking.driverId, status: { in: [...marketplaceStates] } },
-    data: { driverId: null, dispatchStatus: "NOT_STARTED", acceptedAt: null },
+    where: { id: booking.id, driverId: booking.driverId, status: { in: operationalReadiness ? [...marketplaceStates, "ASSIGNED"] : [...marketplaceStates] } },
+    data: { driverId: null, dispatchStatus: "NOT_STARTED", acceptedAt: null, ...(operationalReadiness && booking.status === "ASSIGNED" ? { status: "CONFIRMED" } : {}) },
   });
   if (changed.count !== 1) return { ok: false as const, code: SCHEDULED_ERROR_CODES.CLAIM_STATE_CONFLICT };
   await writeOutboxEvent(tx, {
     eventType: "SCHEDULED_RIDE_RELEASED",
     aggregateType: "Booking",
     aggregateId: booking.id,
-    idempotencyKey: "scheduled-released:" + booking.id + ":" + reason + ":" + pickupAt.getTime(),
+    idempotencyKey: "scheduled-released:" + booking.id + ":" + reason + ":" + pickupAt.getTime() + ":" + booking.driverId + ":" + new Date(booking.acceptedAt || booking.createdAt).getTime(),
     payload: { bookingId: booking.id, reason },
   });
   return { ok: true as const };
 }
 
-export async function runScheduledReadinessCheck(bookingId: string, expectedPickupAtMs: number) {
+export async function runScheduledReadinessCheck(bookingId: string, expectedPickupAtMs: number, assignment?: { driverId: string; assignedAtMs: number }) {
   const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
   if (!booking || bookingPickupAt(booking)?.getTime() !== expectedPickupAtMs || !booking.driverId) return { ok: true as const, outcome: "NOOP" };
   const driver = await prisma.driver.findUnique({ where: { id: booking.driverId }, include: { vehicle: true } });
   const pickupAt = bookingPickupAt(booking);
-  if (!driver || !pickupAt || (terminalStates as readonly string[]).includes(booking.status)) return { ok: true as const, outcome: "NOOP" };
+  const assignmentIdentity = assignment || { driverId: booking.driverId, assignedAtMs: new Date(booking.acceptedAt || booking.createdAt).getTime() };
+  const current = (row: any) => isCurrentScheduledRideJob({ booking: { ...row, pickupAt: bookingPickupAt(row) }, job: { bookingId, pickupAtMs: expectedPickupAtMs, ...assignmentIdentity }, nowMs: Date.now() });
+  if (!driver || !pickupAt || !current(booking) || Date.now() < expectedPickupAtMs - 15 * 60_000) return { ok: true as const, outcome: "NOOP" };
   const compatibility = scheduledDriverCompatibility(booking, driver);
   const ready = compatibility.eligible && driver.isOnline && isLocationFresh(driver.lastLocationReceivedAt, new Date(), SCHEDULED_MARKET_CONFIG.locationMaxAgeSeconds * 1000);
   let feasible = false;
@@ -322,15 +363,17 @@ export async function runScheduledReadinessCheck(bookingId: string, expectedPick
     try { await assertScheduledRouteFeasible({ db: prisma, driver, booking }); feasible = true; } catch { feasible = false; }
   }
   if (ready && feasible) {
-    await emitScheduledEvent({ bookingId, driverId: driver.id, eventType: "SCHEDULED_READINESS_CHECKED", kind: "SCHEDULED_READINESS_READY", pickupAt });
+    const latest = await prisma.booking.findUnique({ where: { id: bookingId } });
+    if (!latest || !current(latest)) return { ok: true as const, outcome: "NOOP" };
+    await emitScheduledEvent({ bookingId, driverId: driver.id, eventType: "SCHEDULED_READINESS_CHECKED", kind: "SCHEDULED_READINESS_READY", pickupAt, assignedAtMs: assignmentIdentity.assignedAtMs });
     return { ok: true as const, outcome: "READY" };
   }
   const result = await prisma.$transaction(async (tx: any) => {
     const current = await tx.booking.findUnique({ where: { id: bookingId } });
-    if (!current || current.driverId !== driver.id || bookingPickupAt(current)?.getTime() !== expectedPickupAtMs) return { ok: true as const, outcome: "NOOP" };
-    const released = await releaseScheduledAssignment(tx, current, "READINESS_FAILED");
+    if (!current || !isCurrentScheduledRideJob({ booking: { ...current, pickupAt: bookingPickupAt(current) }, job: { bookingId, pickupAtMs: expectedPickupAtMs, ...assignmentIdentity }, nowMs: Date.now() })) return { ok: true as const, outcome: "NOOP" };
+    const released = await releaseScheduledAssignment(tx, current, "READINESS_FAILED", true);
     if (!released.ok) return { ok: false as const, code: released.code };
-    await writeOutboxEvent(tx, { eventType: "SCHEDULED_READINESS_FAILED", aggregateType: "Booking", aggregateId: bookingId, idempotencyKey: "scheduled-readiness-failed:" + bookingId + ":" + expectedPickupAtMs, payload: { bookingId, driverId: driver.id } });
+    await writeOutboxEvent(tx, { eventType: "SCHEDULED_READINESS_FAILED", aggregateType: "Booking", aggregateId: bookingId, idempotencyKey: "scheduled-readiness-failed:" + bookingId + ":" + expectedPickupAtMs + ":" + driver.id + ":" + assignmentIdentity.assignedAtMs, payload: { bookingId, driverId: driver.id, pickupAt: pickupAt.toISOString() } });
     return { ok: true as const, outcome: "RELEASED" };
   });
   if (result.ok && result.outcome === "RELEASED") {
@@ -344,17 +387,38 @@ export async function runScheduledReadinessCheck(bookingId: string, expectedPick
   return result;
 }
 
+async function withScheduledQueueDeadline<T>(operation: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([operation, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("SCHEDULED_REMINDER_QUEUE_UNAVAILABLE")), 2_000);
+    })]);
+  } finally { if (timer) clearTimeout(timer); }
+}
+
 export async function scheduleScheduledRideJobs(bookingId: string) {
+  // Legacy T30/T20 jobs are recognized as no-ops; legacy T15 still means readiness. No T30/T20 jobs are enqueued.
   const { getScheduledRideQueue } = await import("@/lib/realtime/queues");
-  const booking = await prisma.booking.findUnique({ where: { id: bookingId }, select: { id: true, driverId: true, pickupAt: true } });
-  if (!booking?.driverId || !booking.pickupAt) return;
-  const pickupMs = booking.pickupAt.getTime();
-  const jobs = [
-    { kind: "T30", event: "SCHEDULED_REMINDER_30", minutes: 30 },
-    { kind: "T20", event: "SCHEDULED_WARNING_20", minutes: 20 },
-    { kind: "T15", event: "SCHEDULED_READINESS_CHECK", minutes: 15 },
-  ];
+  const booking = await prisma.booking.findUnique({ where: { id: bookingId }, select: { id: true, driverId: true, pickupAt: true, pickupDate: true, pickupTime: true, scheduledDate: true, scheduledTime: true, marketTimezone: true, scheduledRide: true, status: true, acceptedAt: true, createdAt: true } });
+  if (!booking?.driverId || !isScheduledBooking(booking, new Date(booking.acceptedAt || booking.createdAt)) || (terminalStates as readonly string[]).includes(booking.status)) return;
+  const pickupAt = bookingPickupAt(booking);
+  if (!pickupAt || pickupAt.getTime() <= Date.now()) return;
+  const pickupMs = pickupAt.getTime();
+  const assignedAtMs = new Date(booking.acceptedAt || booking.createdAt).getTime();
+  const nowMs = Date.now();
+  const jobs = createScheduledRideJobPlanWithRecentMilestones({ assignedAtMs, pickupAtMs: pickupMs, nowMs });
+  if (!jobs.length) return { pickupMs, assignedAtMs, jobs: 0 };
   const queue = getScheduledRideQueue();
-  for (const job of jobs) await queue.add(job.kind, { bookingId, pickupAtMs: pickupMs, kind: job.kind }, { jobId: "scheduled-" + job.kind.toLowerCase() + "-" + bookingId + "-" + pickupMs, delay: Math.max(0, pickupMs - job.minutes * 60 * 1000 - Date.now()) });
-  return { pickupMs };
+  // BullMQ's shared Redis client retries indefinitely. Bound this best-effort
+  // post-commit operation without changing Redis/TLS configuration. A command
+  // already in flight may complete later; deterministic IDs keep that safe.
+  await withScheduledQueueDeadline(queue.waitUntilReady());
+  for (const job of jobs) {
+    const jobId = scheduledRideJobId({ bookingId, pickupAtMs: pickupMs, driverId: booking.driverId, assignedAtMs, kind: job.kind, runAtMs: job.runAtMs });
+    // A completed readiness job must remain deduped past pickup; otherwise
+    // reconciliation could recreate it after BullMQ's count-based cleanup.
+    const removeOnComplete = job.kind === "READINESS_15M" ? { age: 24 * 60 * 60 } : { count: 1000 };
+    await withScheduledQueueDeadline(queue.add(job.kind, { bookingId, pickupAtMs: pickupMs, kind: job.kind, driverId: booking.driverId, assignedAtMs, minutesBeforePickup: job.minutesBeforePickup }, { jobId, delay: Math.max(0, job.runAtMs - Date.now()), removeOnComplete, removeOnFail: { count: 1000 } }));
+  }
+  return { pickupMs, assignedAtMs, jobs: jobs.length };
 }

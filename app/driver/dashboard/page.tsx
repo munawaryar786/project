@@ -49,6 +49,8 @@ interface Booking {
   waitingDuration?: string | null;
   customWaitingDuration?: string | null;
   scheduledRide?: boolean;
+  pickupAt?: string | null;
+  marketTimezone?: string | null;
   recurrence?: string | null;
   recurrenceType?: string | null;
   recurrenceCustom?: string | null;
@@ -114,6 +116,7 @@ export default function DriverDashboard() {
   const [todayBookings, setTodayBookings] = useState<Booking[]>([]);
   const [upcomingBookings, setUpcomingBookings] = useState<Booking[]>([]);
   const [completedBookings, setCompletedBookings] = useState<Booking[]>([]);
+  const [scheduledReminders, setScheduledReminders] = useState<Array<{ id: string; data: { bookingId: string; pickupAt: string } }>>([]);
 
   const [rideRequests, setRideRequests] = useState<RideRequest[]>([]);
   const [requestUpdating, setRequestUpdating] = useState<string | null>(null);
@@ -348,6 +351,11 @@ export default function DriverDashboard() {
         fetchBookings(driverId),
         fetchRideRequests(driverId),
         fetchFinancial(driverId),
+        fetch("/api/driver/notifications?limit=30", { cache: "no-store" }).then(async (response) => {
+          if (!response.ok) throw new Error("notification_refresh_failed");
+          const data = await response.json();
+          setScheduledReminders((data.notifications || []).filter((item: any) => item.type === "SCHEDULED_RIDE_REMINDER" && !item.readAt).slice(0, 3));
+        }).catch(() => { setScheduledReminders([]); setRefreshError("driverPortal.refreshFailed"); }),
       ]);
     } catch (err: any) {
       const message = "driverPortal.refreshFailed";
@@ -621,6 +629,16 @@ export default function DriverDashboard() {
       </div>
 
       <DriverEarningsPanel />
+
+      <div aria-live="polite" aria-atomic="true">
+        {scheduledReminders.map((reminder) => {
+          const ride = [...todayBookings, ...upcomingBookings].find((item) => item.id === reminder.data.bookingId);
+          if (!ride || ["CANCELLED", "COMPLETED", "NO_SHOW"].includes(ride.status) || new Date(reminder.data.pickupAt).getTime() <= Date.now()) return null;
+          return <p key={reminder.id} role="status" className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            {t("driverPortal.scheduledRideReminderMessage")} {ride.bookingRef} · {new Date(reminder.data.pickupAt).toLocaleString(locale)}
+          </p>;
+        })}
+      </div>
 
       {refreshError && (
         <div role="alert" className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-700">
@@ -1034,7 +1052,34 @@ function BookingCard({
   updating: boolean;
 }) {
   const { t, locale } = useLanguage();
+  const [calendarBusy, setCalendarBusy] = useState(false);
+  const [calendarMessage, setCalendarMessage] = useState<"" | "success" | "error">("");
   const nextAction = getNextAction(booking, t);
+  const calendarPickupMs = booking.pickupAt ? new Date(booking.pickupAt).getTime() : NaN;
+  const canAddToCalendar = booking.scheduledRide === true && !["CANCELLED", "COMPLETED", "NO_SHOW"].includes(booking.status) && Number.isFinite(calendarPickupMs) && calendarPickupMs > Date.now();
+
+  const addToCalendar = async () => {
+    setCalendarBusy(true);
+    setCalendarMessage("");
+    try {
+      const response = await csrfFetch("driver", `/api/driver/scheduled-rides/${booking.id}/calendar`, { cache: "no-store" });
+      if (!response.ok) throw new Error("calendar_export_failed");
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = `drivo-ride-${booking.bookingRef.replace(/[^a-zA-Z0-9_-]/g, "-")}.ics`;
+      anchor.rel = "noopener";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      setCalendarMessage("success");
+    } catch {
+      setCalendarMessage("error");
+    } finally {
+      setCalendarBusy(false);
+    }
+  };
 
   return (
     <div className="bg-white border border-gray-200 rounded-3xl overflow-hidden shadow-sm">
@@ -1077,6 +1122,24 @@ function BookingCard({
 
       {expanded && (
         <div className="px-4 pb-4 border-t border-gray-100 pt-3 space-y-3">
+          {canAddToCalendar && (
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => void addToCalendar()}
+                disabled={calendarBusy}
+                aria-label={t("driverPortal.addToCalendarForRide").replace("{reference}", booking.bookingRef)}
+                className="min-h-11 w-full rounded-xl border border-indigo-200 bg-white px-4 py-2 text-sm font-bold text-indigo-800 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700 disabled:opacity-60"
+              >
+                {calendarBusy ? t("driverPortal.preparingCalendar") : t("driverPortal.addToCalendar")}
+              </button>
+              {calendarMessage && (
+                <p role={calendarMessage === "error" ? "alert" : "status"} aria-live="polite" className={calendarMessage === "error" ? "text-xs font-medium text-red-700" : "text-xs font-medium text-green-700"}>
+                  {calendarMessage === "error" ? t("driverPortal.calendarDownloadError") : t("driverPortal.calendarDownloadSuccess")}
+                </p>
+              )}
+            </div>
+          )}
           <div className="bg-gray-50 rounded-2xl p-3">
             <p className="text-xs font-bold text-gray-500 mb-1">{t("driverPortal.passenger")}</p>
             <p className="text-sm font-bold">{booking.customerName}</p>

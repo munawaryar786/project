@@ -20,6 +20,7 @@
     "test:phase3d": "node scripts/phase3d-check.cjs",
     "test:phase3e": "node scripts/phase3e-check.cjs",
     "test:phase3f": "node scripts/phase3f-check.cjs",
+    "test:scheduled-driver": "tsx scripts/scheduled-driver-feature-check.ts && node scripts/scheduled-driver-runtime-check.cjs",
     "test:phase3g": "node scripts/phase3g-check.cjs",
     "test:phase3h": "node scripts/phase3h-check.cjs",
     "test:homepage-priority": "node scripts/homepage-priority-check.cjs",
