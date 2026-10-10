@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createDriverRideIcs, escapeIcsText, isDriverCalendarRideEligible } from "../lib/driver-calendar";
-import { createScheduledRideJobPlan, createScheduledRideJobPlanWithRecentMilestones, isCurrentScheduledRideJob, isWithinScheduledReminderReconciliationWindow, processCursorBatches, scheduledReminderDedupeKey, scheduledRideJobId, scheduledRideJobKind, SCHEDULED_REMINDER_RECONCILIATION_HORIZON_MS } from "../lib/scheduled-reminders";
+import { createScheduledRideJobPlan, createScheduledRideJobPlanWithRecentMilestones, isCurrentScheduledRideJob, isScheduledReminderSuperseded, isWithinScheduledReminderReconciliationWindow, processCursorBatches, scheduledReminderDedupeKey, scheduledRideJobId, scheduledRideJobKind, SCHEDULED_REMINDER_RECONCILIATION_HORIZON_MS } from "../lib/scheduled-reminders";
 import { bookingPickupAt, isFutureScheduledBooking, parseMarketDateTime } from "../lib/scheduled-marketplace";
+import translations, { getTranslation, locales } from "../lib/i18n";
+import { driverScheduledReminderMessage } from "../lib/driver-reminder-message";
+import { downloadDriverCalendar } from "../lib/driver-calendar-download";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -21,6 +24,9 @@ assert.deepEqual(reminderOffsets(plan(70)), [60, 15], "70m assignment skips an u
 assert.deepEqual(reminderOffsets(plan(40)), [30, 15], "40m assignment gets T-30m and T-15m");
 assert.equal(plan(40)[0].runAtMs, origin + 10 * MINUTE);
 assert.deepEqual(reminderOffsets(plan(25)), [15], "25m assignment gets T-15m only");
+for (const [remaining, expected] of [[299, [180, 60, 15]], [80, [70, 60, 15]], [59, [30, 15]], [31, [30, 15]]] as const) {
+  assert.deepEqual(reminderOffsets(plan(remaining)), expected, `T-${remaining} boundary keeps the correct future milestones`);
+}
 const fifteenTenSeconds = createScheduledRideJobPlan({ assignedAtMs: origin, pickupAtMs: origin + 15 * MINUTE + 10_000, nowMs: origin });
 assert.equal(fifteenTenSeconds.find((item) => item.kind === "REMINDER_15M")?.runAtMs, origin + 10_000, "T-15m10s acceptance queues the T-15m reminder immediately for its milestone");
 assert.equal(isFutureScheduledBooking({ scheduledRide: true, pickupAt: new Date(origin + 15 * MINUTE + 10_000) }, new Date(origin)), true, "near-T15 scheduled offer is eligible for immediate event scheduling");
@@ -63,8 +69,8 @@ assert.equal(plan(22, 0, 6).some((item) => item.kind === "READINESS_15M"), true,
 assert.deepEqual(plan(14, 0, 14), [], "no readiness job is created after pickup");
 assert.deepEqual(createScheduledRideJobPlan({ assignedAtMs: origin, pickupAtMs: origin + HOUR, nowMs: origin + HOUR }), [], "no jobs are planned after pickup");
 assert.deepEqual(reminders(plan(120, 0, 60)).map((item) => item.minutesBeforePickup), [15], "reconciliation does not enqueue already-passed milestones");
-const reminderHorizon = 24 * HOUR + 5 * MINUTE;
-assert.equal(SCHEDULED_REMINDER_RECONCILIATION_HORIZON_MS, reminderHorizon, "reconciliation horizon is T-24h plus a five-minute jitter margin");
+const reminderHorizon = 25 * HOUR;
+assert.equal(SCHEDULED_REMINDER_RECONCILIATION_HORIZON_MS, reminderHorizon, "reconciliation horizon gives bounded repair sweeps an hour of lead before T-24h");
 const beyondReminderHorizon = new Date(origin + reminderHorizon + 1);
 assert.equal(isWithinScheduledReminderReconciliationWindow(beyondReminderHorizon, new Date(origin)), false, "rides beyond the reminder horizon are not scheduled early");
 assert.equal(isWithinScheduledReminderReconciliationWindow(beyondReminderHorizon, new Date(origin + MINUTE)), true, "a ride becomes eligible after it enters the rolling reminder horizon");
@@ -179,9 +185,14 @@ async function verifyCursorPagination() {
   assert.equal(recoveredIds.length, 250);
   assert.equal(new Set(recoveredIds).size, 250, "queue-failure recovery does not duplicate later rows");
 }
-void verifyCursorPagination().then(() => console.log("Scheduled Driver reminder/calendar checks passed.")).catch((error) => { console.error(error); process.exitCode = 1; });
 
 const allPlans = [plan(30 * 60), plan(10 * 60), plan(180), plan(120), plan(70), plan(40), plan(25)];
+const adaptiveIdentity = { assignedAtMs: origin, pickupAtMs: origin + 40 * MINUTE, kind: "REMINDER_ADAPTIVE" };
+assert.equal(isScheduledReminderSuperseded({ ...adaptiveIdentity, nowMs: origin + 25 * MINUTE - 1 }), false, "an adaptive reminder remains useful before the next milestone");
+assert.equal(isScheduledReminderSuperseded({ ...adaptiveIdentity, nowMs: origin + 25 * MINUTE }), true, "the exact next milestone supersedes a delayed adaptive reminder");
+assert.equal(isScheduledReminderSuperseded({ ...adaptiveIdentity, kind: "REMINDER_15M", nowMs: origin + 26 * MINUTE }), false, "the latest useful reminder remains retryable before pickup");
+assert.equal(isScheduledReminderSuperseded({ ...adaptiveIdentity, kind: "READINESS_15M", nowMs: origin + 26 * MINUTE }), false, "operational readiness is never superseded as a reminder");
+assert.equal(isScheduledReminderSuperseded({ ...adaptiveIdentity, kind: undefined, minutesBeforePickup: 30, nowMs: origin + 25 * MINUTE }), true, "older persisted payloads without kind still suppress obsolete delivery");
 for (const scheduled of allPlans) {
   const reminderTimes = reminders(scheduled).map((item) => item.runAtMs);
   assert.equal(new Set(reminderTimes).size, reminderTimes.length, "reminder milestones do not duplicate");
@@ -202,6 +213,10 @@ assert.equal(isCurrentScheduledRideJob({ booking: assignedBooking, job, nowMs: o
 assert.equal(isCurrentScheduledRideJob({ booking: { ...assignedBooking, status: "CANCELLED" }, job, nowMs: origin }), false, "cancelled ride is a no-op");
 assert.equal(isCurrentScheduledRideJob({ booking: { ...assignedBooking, status: "COMPLETED" }, job, nowMs: origin }), false, "completed ride is a no-op");
 assert.equal(isCurrentScheduledRideJob({ booking: { ...assignedBooking, status: "NO_SHOW" }, job, nowMs: origin }), false, "no-show ride is a no-op");
+assert.equal(isCurrentScheduledRideJob({ booking: { ...assignedBooking, status: "IN_PROGRESS" }, job, nowMs: origin }), false, "an already-started ride cannot receive an upcoming reminder");
+for (const status of ["DRIVER_ENROUTE", "ARRIVED"]) {
+  assert.equal(isCurrentScheduledRideJob({ booking: { ...assignedBooking, status }, job, nowMs: origin }), true, "travelling to pickup or arriving does not mean the passenger ride has started");
+}
 assert.equal(isCurrentScheduledRideJob({ booking: { ...assignedBooking, driverId: null }, job, nowMs: origin }), false, "unassigned ride is a no-op");
 assert.equal(isCurrentScheduledRideJob({ booking: { ...assignedBooking, pickupAt: new Date(pickupAt.getTime() + MINUTE) }, job, nowMs: origin }), false, "changed pickup time is stale");
 assert.equal(isCurrentScheduledRideJob({ booking: { ...assignedBooking, driverId: "driver-b", acceptedAt: new Date(origin + MINUTE) }, job, nowMs: origin }), false, "released Driver A cannot receive the old job");
@@ -237,7 +252,7 @@ assert.match(ics, /Booking reference: DR-1234/);
 assert.ok(unfoldedIcs.includes('LOCATION:Main St\\, 4\\; "B\\\\C"\\nUnit'));
 assert.ok(unfoldedIcs.includes('Pickup: Main St\\, 4\\; "B\\\\C"\\nUnit'));
 assert.match(ics, /Destination: Destination\\; 8/);
-assert.match(ics, /Service: STANDARD/);
+assert.match(ics, /Service: Taxi/);
 assert.doesNotMatch(ics, /DTEND|DURATION|Passenger Name|passenger@example|medical|wheelchair|private note/i);
 assert.equal(ics.endsWith("\r\n"), true);
 assert.equal(ics.replace(/\r\n/g, "").includes("\n"), false, "ICS uses CRLF line endings");
@@ -322,7 +337,7 @@ assert.match(scheduledJobsSource, /isWithinScheduledReminderReconciliationWindow
 assert.match(scheduledJobsSource, /orderBy: \[\{ pickupAt: "asc" \}, \{ id: "asc" \}\]/);
 assert.ok(ics.split("\r\n").filter(Boolean).every((line) => new TextEncoder().encode(line).length <= 75), "ICS lines are folded within 75 UTF-8 octets");
 
-const newLocaleKeys = ["addToCalendar", "addToCalendarForRide", "preparingCalendar", "calendarDownloadSuccess", "calendarDownloadError", "scheduledRideReminderMessage"];
+const newLocaleKeys = ["addToCalendar", "addToCalendarForRide", "preparingCalendar", "calendarDownloadSuccess", "calendarDownloadError", "scheduledRideReminderMessage", "scheduledRideReminderTiming", "calendarRideSummary", "calendarBookingReference"];
 for (const locale of ["en", "sk", "de", "uk"]) {
   const source = readFileSync(`lib/i18n/translations/${locale}.ts`, "utf8");
   for (const key of newLocaleKeys) assert.ok(source.includes(`\"driverPortal.${key}\"`), `${locale} contains driverPortal.${key}`);
@@ -330,7 +345,7 @@ for (const locale of ["en", "sk", "de", "uk"]) {
 assert.deepEqual(createScheduledRideJobPlan({ assignedAtMs: origin + 1, pickupAtMs: origin + HOUR, nowMs: origin }), [], "future assignment timestamps fail closed");
 assert.deepEqual(createScheduledRideJobPlanWithRecentMilestones({ assignedAtMs: origin, pickupAtMs: origin + 5_000, nowMs: origin + 10_000 }), [], "recent-milestone recovery never produces jobs after pickup");
 assert.equal(isCurrentScheduledRideJob({ booking: { ...assignedBooking, scheduledRide: false }, job, nowMs: pickupAt.getTime() - MINUTE }), true, "legacy scheduled classification stays valid in the final five minutes");
-const unicodeIcs = createDriverRideIcs({ ...ride, pickupAddress: "Žilina für Україна ".repeat(20), customerName: "PRIVATE_NAME", customerPhone: "PRIVATE_PHONE", customerEmail: "PRIVATE_EMAIL", medicalAppointment: "PRIVATE_MEDICAL", specialNotes: "PRIVATE_NOTES", paymentMethod: "PRIVATE_PAYMENT" } as typeof ride);
+const unicodeIcs = createDriverRideIcs({ ...ride, pickupAddress: "Žilina für Україна ".repeat(20), customerName: "PRIVATE_NAME", customerPhone: "PRIVATE_PHONE", customerEmail: "PRIVATE_EMAIL", medicalAppointment: "PRIVATE_MEDICAL", specialNotes: "PRIVATE_NOTES", paymentMethod: "PRIVATE_PAYMENT", accessibilityDetails: "PRIVATE_ACCESSIBILITY", childName: "PRIVATE_CHILD", driverNotes: "PRIVATE_DRIVER_NOTES", dispatchAudit: "PRIVATE_AUDIT", paymentIntent: "PRIVATE_PAYMENT_INTENT", sessionToken: "PRIVATE_TOKEN" } as typeof ride);
 assert.ok(unicodeIcs.split("\r\n").every((line) => Buffer.byteLength(line, "utf8") <= 75));
 assert.ok(unicodeIcs.replace(/\r\n /g, "").includes("Žilina für Україна ".repeat(20)));
 assert.doesNotMatch(unicodeIcs, /PRIVATE_/);
@@ -341,3 +356,69 @@ for (const [date, time, utc] of [
   ["2026-10-25", "03:30", "2026-10-25T02:30:00.000Z"],
 ]) assert.equal(parseMarketDateTime(date, time, "Europe/Bratislava")?.toISOString(), utc, "DST transition uses absolute pickup instant");
 assert.deepEqual(createScheduledRideJobPlan({ assignedAtMs: origin, pickupAtMs: 1e20, nowMs: origin }), [], "invalid JavaScript date range rejected");
+for (const [date, time] of [["2026-02-31", "12:00"], ["2026-01-10", "25:00"], ["2026-01-10", "12:60"], ["2026-01-10", "12:00:60"], ["2026-03-29", "02:30"]]) {
+  assert.equal(parseMarketDateTime(date, time, "Europe/Bratislava"), null, "invalid dates/time and DST gap cannot silently move pickup");
+}
+assert.equal(parseMarketDateTime("2026-10-25", "02:30", "Europe/Bratislava")?.toISOString(), "2026-10-25T01:30:00.000Z", "ambiguous autumn time preserves the existing conversion choice");
+for (const locale of locales) {
+  const featureKeys = Object.keys(translations[locale]).filter((key) => newLocaleKeys.some((name) => key === `driverPortal.${name}`)).sort();
+  assert.deepEqual(featureKeys, newLocaleKeys.map((name) => `driverPortal.${name}`).sort(), `${locale} exact feature-key parity`);
+  const localizedIcs = createDriverRideIcs(ride, new Date(origin), locale).replace(/\r\n /g, "");
+  assert.ok(localizedIcs.includes(`SUMMARY:${escapeIcsText(getTranslation(locale, "driverPortal.calendarRideSummary"))}`));
+  assert.ok(localizedIcs.includes(escapeIcsText(getTranslation(locale, "driverPortal.calendarBookingReference"))));
+  for (const minutes of [1440, 300, 60, 15, 120, 90, 30]) {
+    const message = driverScheduledReminderMessage(locale, minutes);
+    assert.doesNotMatch(message, /driverPortal\.|\{time\}|1440|300/, "localized reminder never displays technical keys or raw minute counts");
+    assert.ok(message.startsWith(getTranslation(locale, "driverPortal.scheduledRideReminderMessage")));
+  }
+}
+assert.match(driverScheduledReminderMessage("en", 1440), /in 1 day/);
+assert.match(driverScheduledReminderMessage("en", 300), /in 5 hours/);
+assert.match(driverScheduledReminderMessage("en", 60), /in 1 hour/);
+assert.match(driverScheduledReminderMessage("en", 15), /in 15 minutes/);
+assert.equal(driverScheduledReminderMessage("en", NaN), getTranslation("en", "driverPortal.scheduledRideReminderMessage"));
+assert.match(dashboard, /title=\{t\("driverPortal.upcoming"\)\}[\s\S]*?allowCalendar/);
+assert.match(dashboard, /const canAddToCalendar = allowCalendar && booking.scheduledRide === true/);
+assert.match(dashboard, /driverScheduledReminderMessage\(locale, reminder.data.reminderMinutes\)/);
+assert.match(dashboard, /csrfFetch\("driver", url, \{ cache: "no-store" \}\)/);
+assert.match(dashboard, /await downloadDriverCalendar\([\s\S]*setCalendarMessage\("success"\)/);
+
+async function verifyCalendarDownload() {
+  const savedDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+  const savedWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const savedCreate = URL.createObjectURL, savedRevoke = URL.revokeObjectURL;
+  const anchors: Array<{ href: string; download: string; rel: string; clicked: boolean; removed: boolean; click(): void; remove(): void }> = [];
+  const timers: Array<() => void> = []; const revoked: string[] = [];
+  let created = 0, blocked = false;
+  URL.createObjectURL = () => `blob:test-${++created}`; URL.revokeObjectURL = (value) => { revoked.push(value); };
+  Object.defineProperty(globalThis, "document", { configurable: true, value: {
+    body: { appendChild: () => {} }, createElement: () => {
+      const anchor = { href: "", download: "", rel: "", clicked: false, removed: false, click() { if (blocked) throw new Error("blocked"); this.clicked = true; }, remove() { this.removed = true; } };
+      anchors.push(anchor); return anchor;
+    },
+  } });
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { setTimeout: (callback: () => void, delay: number) => { assert.equal(delay, 60_000); timers.push(callback); } } });
+  try {
+    const fetchCalendar = async (url: string) => {
+      assert.equal(url, `/api/driver/scheduled-rides/${ride.id}/calendar?locale=uk`);
+      return new Response(ics, { headers: { "Content-Type": "text/calendar; charset=utf-8" } });
+    };
+    await downloadDriverCalendar(ride.id, '../bad"\r\nHeader: x', fetchCalendar, "uk");
+    assert.equal(anchors[0].clicked, true); assert.equal(anchors[0].removed, true);
+    assert.doesNotMatch(anchors[0].download, /[\r\n"/\\]/); assert.ok(anchors[0].download.endsWith(".ics"));
+    assert.equal(revoked.length, 0, "URL stays alive for Safari/iOS opening"); timers.shift()!(); assert.equal(revoked.length, 1);
+    for (const response of [new Response("denied", { status: 401 }), new Response("<html>login</html>", { headers: { "Content-Type": "text/html" } }), new Response("", { headers: { "Content-Type": "text/calendar" } })]) {
+      await assert.rejects(downloadDriverCalendar(ride.id, ride.bookingRef, async () => response));
+    }
+    assert.equal(created, 1, "error/login/empty responses do not create or download a calendar Blob");
+    await assert.rejects(downloadDriverCalendar(ride.id, ride.bookingRef, async () => { throw new Error("offline"); }));
+    blocked = true;
+    await assert.rejects(downloadDriverCalendar(ride.id, ride.bookingRef, fetchCalendar, "uk"));
+    assert.equal(anchors[1].removed, true); timers.shift()!(); assert.equal(revoked.length, 2, "URL is released even if the browser blocks opening");
+  } finally {
+    URL.createObjectURL = savedCreate; URL.revokeObjectURL = savedRevoke;
+    if (savedDocument) Object.defineProperty(globalThis, "document", savedDocument); else Reflect.deleteProperty(globalThis, "document");
+    if (savedWindow) Object.defineProperty(globalThis, "window", savedWindow); else Reflect.deleteProperty(globalThis, "window");
+  }
+}
+void Promise.all([verifyCursorPagination(), verifyCalendarDownload()]).then(() => console.log("Scheduled Driver reminder/calendar checks passed.")).catch((error) => { console.error(error); process.exitCode = 1; });

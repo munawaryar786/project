@@ -4,7 +4,7 @@ import { driverCompatibility } from "@/lib/dispatch-matching";
 import { isLocationFresh } from "@/lib/driver-state";
 import { createNotification } from "@/lib/notifications";
 import { writeOutboxEvent } from "@/lib/outbox";
-import { createScheduledRideJobPlanWithRecentMilestones, isCurrentScheduledRideJob, scheduledReminderDedupeKey, scheduledRideJobId, type ScheduledRideJobKind } from "@/lib/scheduled-reminders";
+import { createScheduledRideJobPlan, createScheduledRideJobPlanWithRecentMilestones, isCurrentScheduledRideJob, isScheduledReminderSuperseded, SCHEDULED_JOB_INELIGIBLE_STATUSES, scheduledReminderDedupeKey, scheduledRideJobId, type ScheduledRideJobKind } from "@/lib/scheduled-reminders";
 
 export const SCHEDULED_ERROR_CODES = {
   SCHEDULED_RIDE_NOT_FOUND: "SCHEDULED_RIDE_NOT_FOUND",
@@ -63,11 +63,17 @@ export function parseMarketDateTime(dateValue: unknown, timeValue: unknown, time
   const timeMatch = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(time);
   if (!match || !timeMatch) return null;
   const hour = Number(timeMatch[1]), minute = Number(timeMatch[2]), second = Number(timeMatch[3] || 0);
+  if (hour > 23 || minute > 59 || second > 59) return null;
   const naive = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), hour, minute, second);
   if (!Number.isFinite(naive)) return null;
   try {
     const first = new Date(naive - offsetAt(new Date(naive), timeZone));
-    return new Date(naive - offsetAt(first, timeZone));
+    const value = new Date(naive - offsetAt(first, timeZone));
+    const parts = timeZoneParts(value, timeZone);
+    // Reject invalid calendar dates and nonexistent local times during the
+    // spring DST gap instead of silently moving pickup to another time.
+    if (parts.year !== Number(match[1]) || parts.month !== Number(match[2]) || parts.day !== Number(match[3]) || parts.hour !== hour || parts.minute !== minute || parts.second !== second) return null;
+    return value;
   } catch {
     return null;
   }
@@ -216,31 +222,36 @@ export async function assertScheduledRouteFeasible(input: { db: ScheduleDb; driv
   return { ok: true as const, previous: previous?.id || null, next: next?.id || null };
 }
 
+function scheduledEventKey(input: { bookingId: string; driverId?: string | null; kind: string; pickupAt?: Date | null; assignedAtMs?: number }) {
+  return "scheduled:" + input.kind + ":" + input.bookingId + ":" + (input.pickupAt?.getTime() || "none") + (input.assignedAtMs === undefined ? "" : ":" + input.driverId + ":" + input.assignedAtMs);
+}
+
 export async function emitScheduledEvent(input: { bookingId: string; driverId?: string | null; eventType: string; kind: string; pickupAt?: Date | null; assignedAtMs?: number }) {
-  const key = "scheduled:" + input.kind + ":" + input.bookingId + ":" + (input.pickupAt?.getTime() || "none") + (input.assignedAtMs === undefined ? "" : ":" + input.driverId + ":" + input.assignedAtMs);
-  try {
-    await prisma.outboxEvent.create({
-      data: {
-        eventType: input.eventType,
-        aggregateType: "Booking",
-        aggregateId: input.bookingId,
-        idempotencyKey: key,
-        payload: { bookingId: input.bookingId, driverId: input.driverId || undefined, kind: input.kind },
-        state: "PENDING",
-      },
-    });
-  } catch (error: any) {
-    if (error?.code !== "P2002") throw error;
+  if (!input.driverId || !input.pickupAt || input.assignedAtMs === undefined) return false;
+  const key = scheduledEventKey(input);
+  const payload = { bookingId: input.bookingId, driverId: input.driverId, assignedAtMs: input.assignedAtMs, pickupAt: input.pickupAt.toISOString(), kind: input.kind };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        const booking = await tx.booking.findUnique({ where: { id: input.bookingId } });
+        if (!booking || !isCurrentScheduledRideJob({ booking: { ...booking, pickupAt: bookingPickupAt(booking) }, job: { bookingId: input.bookingId, pickupAtMs: input.pickupAt!.getTime(), driverId: input.driverId!, assignedAtMs: input.assignedAtMs! }, nowMs: Date.now() })) return false;
+        // Serialize readiness persistence with ownership/pickup/status changes,
+        // just as reminder persistence does. Queue work stays outside this transaction.
+        const owned = await tx.booking.updateMany({ where: { id: booking.id, driverId: input.driverId, status: booking.status, ...(booking.acceptedAt ? { acceptedAt: booking.acceptedAt } : { OR: [{ acceptedAt: null }, { acceptedAt: { isSet: false } }] }) }, data: { acceptedAt: booking.acceptedAt } });
+        if (owned.count !== 1) return false;
+        await tx.notification.upsert({ where: { dedupeKey: key }, create: { recipientType: "DRIVER", recipientId: input.driverId!, type: input.kind, data: payload, dedupeKey: key }, update: {} });
+        // A completed readiness check remains completed, while a missing legacy
+        // notification can be repaired without repeating the operational check.
+        if (!(await tx.outboxEvent.findUnique({ where: { idempotencyKey: key } }))) {
+          await writeOutboxEvent(tx, { eventType: input.eventType, aggregateType: "Booking", aggregateId: input.bookingId, idempotencyKey: key, payload });
+        }
+        return true;
+      });
+    } catch (error: any) {
+      if (attempt === 2 || !["P2002", "P2034"].includes(error?.code)) throw error;
+    }
   }
-  if (input.driverId) {
-    await createNotification({
-      recipientType: "DRIVER",
-      recipientId: input.driverId,
-      type: input.kind,
-      data: { bookingId: input.bookingId, pickupAt: input.pickupAt?.toISOString() || null },
-      dedupeKey: key,
-    });
-  }
+  return false;
 }
 
 export async function emitScheduledRideReminder(input: {
@@ -252,13 +263,14 @@ export async function emitScheduledRideReminder(input: {
   minutesBeforePickup: number;
 }) {
   const key = scheduledReminderDedupeKey({ bookingId: input.bookingId, pickupAtMs: input.pickupAt.getTime(), driverId: input.driverId, assignedAtMs: input.assignedAtMs, kind: input.kind });
-  const payload = { bookingId: input.bookingId, driverId: input.driverId, assignedAtMs: input.assignedAtMs, pickupAt: input.pickupAt.toISOString(), reminderMinutes: input.minutesBeforePickup };
+  const payload = { bookingId: input.bookingId, driverId: input.driverId, assignedAtMs: input.assignedAtMs, pickupAt: input.pickupAt.toISOString(), reminderMinutes: input.minutesBeforePickup, kind: input.kind };
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       return await prisma.$transaction(async (tx) => {
         const booking = await tx.booking.findUnique({ where: { id: input.bookingId } });
         const currentPickupAt = booking ? bookingPickupAt(booking) : null;
         if (!booking || !currentPickupAt || !isCurrentScheduledRideJob({ booking: { ...booking, pickupAt: currentPickupAt }, job: { bookingId: input.bookingId, pickupAtMs: input.pickupAt.getTime(), driverId: input.driverId, assignedAtMs: input.assignedAtMs }, nowMs: Date.now() })) return false;
+        if (isScheduledReminderSuperseded({ assignedAtMs: input.assignedAtMs, pickupAtMs: currentPickupAt.getTime(), kind: input.kind, nowMs: Date.now() })) return false;
         if (await tx.outboxEvent.findUnique({ where: { idempotencyKey: key } })) return true;
         // A write to the booking serializes this transaction with release,
         // reassignment, cancellation and pickup edits in Prisma/MongoDB. The
@@ -356,6 +368,14 @@ export async function runScheduledReadinessCheck(bookingId: string, expectedPick
   const assignmentIdentity = assignment || { driverId: booking.driverId, assignedAtMs: new Date(booking.acceptedAt || booking.createdAt).getTime() };
   const current = (row: any) => isCurrentScheduledRideJob({ booking: { ...row, pickupAt: bookingPickupAt(row) }, job: { bookingId, pickupAtMs: expectedPickupAtMs, ...assignmentIdentity }, nowMs: Date.now() });
   if (!driver || !pickupAt || !current(booking) || Date.now() < expectedPickupAtMs - 15 * 60_000) return { ok: true as const, outcome: "NOOP" };
+  const readinessKey = scheduledEventKey({ bookingId, driverId: driver.id, kind: "SCHEDULED_READINESS_READY", pickupAt, assignedAtMs: assignmentIdentity.assignedAtMs });
+  const persistReady = () => emitScheduledEvent({ bookingId, driverId: driver.id, eventType: "SCHEDULED_READINESS_CHECKED", kind: "SCHEDULED_READINESS_READY", pickupAt, assignedAtMs: assignmentIdentity.assignedAtMs });
+  if (await prisma.outboxEvent.findUnique({ where: { idempotencyKey: readinessKey } })) {
+    // Repair the notification if an earlier ready-event write succeeded but
+    // notification persistence failed. A completed check remains completed
+    // even if Redis later removes its job; a new assignment has a new key.
+    return { ok: true as const, outcome: await persistReady() ? "READY" : "NOOP" };
+  }
   const compatibility = scheduledDriverCompatibility(booking, driver);
   const ready = compatibility.eligible && driver.isOnline && isLocationFresh(driver.lastLocationReceivedAt, new Date(), SCHEDULED_MARKET_CONFIG.locationMaxAgeSeconds * 1000);
   let feasible = false;
@@ -365,8 +385,7 @@ export async function runScheduledReadinessCheck(bookingId: string, expectedPick
   if (ready && feasible) {
     const latest = await prisma.booking.findUnique({ where: { id: bookingId } });
     if (!latest || !current(latest)) return { ok: true as const, outcome: "NOOP" };
-    await emitScheduledEvent({ bookingId, driverId: driver.id, eventType: "SCHEDULED_READINESS_CHECKED", kind: "SCHEDULED_READINESS_READY", pickupAt, assignedAtMs: assignmentIdentity.assignedAtMs });
-    return { ok: true as const, outcome: "READY" };
+    return { ok: true as const, outcome: await persistReady() ? "READY" : "NOOP" };
   }
   const result = await prisma.$transaction(async (tx: any) => {
     const current = await tx.booking.findUnique({ where: { id: bookingId } });
@@ -400,25 +419,46 @@ export async function scheduleScheduledRideJobs(bookingId: string) {
   // Legacy T30/T20 jobs are recognized as no-ops; legacy T15 still means readiness. No T30/T20 jobs are enqueued.
   const { getScheduledRideQueue } = await import("@/lib/realtime/queues");
   const booking = await prisma.booking.findUnique({ where: { id: bookingId }, select: { id: true, driverId: true, pickupAt: true, pickupDate: true, pickupTime: true, scheduledDate: true, scheduledTime: true, marketTimezone: true, scheduledRide: true, status: true, acceptedAt: true, createdAt: true } });
-  if (!booking?.driverId || !isScheduledBooking(booking, new Date(booking.acceptedAt || booking.createdAt)) || (terminalStates as readonly string[]).includes(booking.status)) return;
+  if (!booking?.driverId || !isScheduledBooking(booking, new Date(booking.acceptedAt || booking.createdAt)) || SCHEDULED_JOB_INELIGIBLE_STATUSES.includes(booking.status)) return;
   const pickupAt = bookingPickupAt(booking);
   if (!pickupAt || pickupAt.getTime() <= Date.now()) return;
   const pickupMs = pickupAt.getTime();
   const assignedAtMs = new Date(booking.acceptedAt || booking.createdAt).getTime();
   const nowMs = Date.now();
   const jobs = createScheduledRideJobPlanWithRecentMilestones({ assignedAtMs, pickupAtMs: pickupMs, nowMs });
-  if (!jobs.length) return { pickupMs, assignedAtMs, jobs: 0 };
+  // Repair retained, exhausted jobs without creating reminders for expired
+  // milestones. Only IDs originally valid for this assignment are inspected.
+  const overdue = createScheduledRideJobPlan({ assignedAtMs, pickupAtMs: pickupMs, nowMs: assignedAtMs })
+    .filter((item) => item.runAtMs <= nowMs && !jobs.some((planned) => planned.kind === item.kind && planned.runAtMs === item.runAtMs));
+  if (!jobs.length && !overdue.length) return { pickupMs, assignedAtMs, jobs: 0 };
   const queue = getScheduledRideQueue();
   // BullMQ's shared Redis client retries indefinitely. Bound this best-effort
   // post-commit operation without changing Redis/TLS configuration. A command
   // already in flight may complete later; deterministic IDs keep that safe.
   await withScheduledQueueDeadline(queue.waitUntilReady());
+  const repairFailed = async (job: Awaited<ReturnType<typeof queue.getJob>>, runAtMs: number) => {
+    // BullMQ retry moves a failed job straight to waiting, so never retry
+    // before its original milestone (even if an early/manual run failed).
+    if (!job || runAtMs > Date.now() || await withScheduledQueueDeadline(job.getState()) !== "failed") return;
+    try { await withScheduledQueueDeadline(job.retry("failed", { resetAttemptsMade: true })); }
+    catch (error) {
+      // Another worker may already have retried the same deterministic ID.
+      // Keep real Redis failures observable to the post-commit/reconcile caller.
+      const state = await withScheduledQueueDeadline(job.getState());
+      if (state === "failed" || state === "unknown") throw error;
+    }
+  };
   for (const job of jobs) {
     const jobId = scheduledRideJobId({ bookingId, pickupAtMs: pickupMs, driverId: booking.driverId, assignedAtMs, kind: job.kind, runAtMs: job.runAtMs });
     // A completed readiness job must remain deduped past pickup; otherwise
     // reconciliation could recreate it after BullMQ's count-based cleanup.
     const removeOnComplete = job.kind === "READINESS_15M" ? { age: 24 * 60 * 60 } : { count: 1000 };
-    await withScheduledQueueDeadline(queue.add(job.kind, { bookingId, pickupAtMs: pickupMs, kind: job.kind, driverId: booking.driverId, assignedAtMs, minutesBeforePickup: job.minutesBeforePickup }, { jobId, delay: Math.max(0, job.runAtMs - Date.now()), removeOnComplete, removeOnFail: { count: 1000 } }));
+    const registered = await withScheduledQueueDeadline(queue.add(job.kind, { bookingId, pickupAtMs: pickupMs, kind: job.kind, driverId: booking.driverId, assignedAtMs, minutesBeforePickup: job.minutesBeforePickup }, { jobId, delay: Math.max(0, job.runAtMs - Date.now()), removeOnComplete, removeOnFail: { count: 1000 } }));
+    await repairFailed(registered, job.runAtMs);
+  }
+  for (const job of overdue) {
+    const jobId = scheduledRideJobId({ bookingId, pickupAtMs: pickupMs, driverId: booking.driverId, assignedAtMs, kind: job.kind, runAtMs: job.runAtMs });
+    await repairFailed(await withScheduledQueueDeadline(queue.getJob(jobId)), job.runAtMs);
   }
   return { pickupMs, assignedAtMs, jobs: jobs.length };
 }

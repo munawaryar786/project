@@ -10,6 +10,19 @@ export async function claimOutboxBatch(limit = 50) {
   for (const event of candidates) { const changed = await prisma.outboxEvent.updateMany({ where: { id: event.id, OR: [{ state: event.state }, { state: OUTBOX_STATES.PROCESSING, attempts: { lt: MAX_OUTBOX_ATTEMPTS }, claimedAt: { lt: stale } }] }, data: { state: OUTBOX_STATES.PROCESSING, claimedAt: now, attempts: { increment: 1 } } }); if (changed.count === 1) claimed.push(event); }
   return claimed;
 }
-export async function enqueueOutboxEvent(event: { id: string }) { const queue = getOutboxQueue(); await queue.add("deliver", { outboxEventId: event.id }, { jobId: `outbox-${event.id}` }); await prisma.outboxEvent.updateMany({ where: { id: event.id, state: OUTBOX_STATES.PROCESSING }, data: { state: OUTBOX_STATES.QUEUED } }); }
+export async function enqueueOutboxEvent(event: { id: string; eventType?: string }) {
+  const queue = getOutboxQueue();
+  const registered = await queue.add("deliver", { outboxEventId: event.id }, { jobId: `outbox-${event.id}` });
+  // Adding the same ID does not restart a retained failed BullMQ job. Repair
+  // only this feature's delivery events; email/dispatch retry policy is unchanged.
+  if (["SCHEDULED_RIDE_REMINDER", "SCHEDULED_READINESS_CHECKED", "SCHEDULED_READINESS_FAILED"].includes(event.eventType || "") && await registered.getState() === "failed") {
+    try { await registered.retry("failed", { resetAttemptsMade: true }); }
+    catch (error) {
+      const state = await registered.getState();
+      if (state === "failed" || state === "unknown") throw error;
+    }
+  }
+  await prisma.outboxEvent.updateMany({ where: { id: event.id, state: OUTBOX_STATES.PROCESSING }, data: { state: OUTBOX_STATES.QUEUED } });
+}
 export async function relayOutboxOnce(limit = 50) { await prisma.outboxEvent.updateMany({ where: { state: { in: [OUTBOX_STATES.PENDING, OUTBOX_STATES.RETRY, OUTBOX_STATES.PROCESSING] }, attempts: { gte: MAX_OUTBOX_ATTEMPTS } }, data: { state: OUTBOX_STATES.FAILED, lastError: "retry_limit_exceeded", claimedAt: null } }); const claimed = await claimOutboxBatch(limit); let queued = 0; for (const event of claimed) { try { await enqueueOutboxEvent(event); queued++; } catch (error) { await prisma.outboxEvent.updateMany({ where: { id: event.id }, data: { state: OUTBOX_STATES.RETRY, lastError: "queue_enqueue_failed", nextAttemptAt: new Date(Date.now() + 5000) } }); } } return { claimed: claimed.length, queued }; }
 export async function reconcileOutbox() { return relayOutboxOnce(100); }

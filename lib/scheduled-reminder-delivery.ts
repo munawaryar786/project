@@ -1,11 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { bookingPickupAt } from "@/lib/scheduled-marketplace";
-import { isCurrentScheduledRideJob } from "@/lib/scheduled-reminders";
+import { isCurrentScheduledRideJob, isScheduledReminderSuperseded } from "@/lib/scheduled-reminders";
 
 /** Shared validation at both realtime delivery and persisted-notification reads. */
 export function isScheduledReminderDeliveryCurrent(booking: any, payload: any, now = new Date()) {
   if (!booking || !payload || payload.bookingId !== booking.id || typeof payload.driverId !== "string" || !Number.isFinite(payload.assignedAtMs)) return false;
   const pickupAt = bookingPickupAt(booking);
+  if (pickupAt && isScheduledReminderSuperseded({ assignedAtMs: payload.assignedAtMs, pickupAtMs: pickupAt.getTime(), nowMs: now.getTime(), kind: payload.kind, minutesBeforePickup: payload.reminderMinutes })) return false;
   return Boolean(pickupAt && pickupAt.toISOString() === payload.pickupAt &&
     isCurrentScheduledRideJob({ booking: { ...booking, pickupAt }, job: {
       bookingId: booking.id, pickupAtMs: pickupAt.getTime(), driverId: payload.driverId, assignedAtMs: payload.assignedAtMs,

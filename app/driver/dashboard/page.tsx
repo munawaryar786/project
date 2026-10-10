@@ -7,6 +7,8 @@ import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { ACTIVE_TRIP_STATUSES } from "@/lib/driver-state";
 import { csrfFetch } from "@/lib/client/csrf-fetch";
+import { downloadDriverCalendar } from "@/lib/driver-calendar-download";
+import { driverScheduledReminderMessage } from "@/lib/driver-reminder-message";
 import { io } from "socket.io-client";
 import { DriverNavigationPanel } from "@/components/driver/DriverNavigation";
 import { DriverEarningsPanel } from "@/components/driver/DriverEarningsPanel";
@@ -116,7 +118,7 @@ export default function DriverDashboard() {
   const [todayBookings, setTodayBookings] = useState<Booking[]>([]);
   const [upcomingBookings, setUpcomingBookings] = useState<Booking[]>([]);
   const [completedBookings, setCompletedBookings] = useState<Booking[]>([]);
-  const [scheduledReminders, setScheduledReminders] = useState<Array<{ id: string; data: { bookingId: string; pickupAt: string } }>>([]);
+  const [scheduledReminders, setScheduledReminders] = useState<Array<{ id: string; data: { bookingId: string; pickupAt: string; reminderMinutes?: number } }>>([]);
 
   const [rideRequests, setRideRequests] = useState<RideRequest[]>([]);
   const [requestUpdating, setRequestUpdating] = useState<string | null>(null);
@@ -635,7 +637,7 @@ export default function DriverDashboard() {
           const ride = [...todayBookings, ...upcomingBookings].find((item) => item.id === reminder.data.bookingId);
           if (!ride || ["CANCELLED", "COMPLETED", "NO_SHOW"].includes(ride.status) || new Date(reminder.data.pickupAt).getTime() <= Date.now()) return null;
           return <p key={reminder.id} role="status" className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-            {t("driverPortal.scheduledRideReminderMessage")} {ride.bookingRef} · {new Date(reminder.data.pickupAt).toLocaleString(locale)}
+            {driverScheduledReminderMessage(locale, reminder.data.reminderMinutes)} {ride.bookingRef} · {new Date(reminder.data.pickupAt).toLocaleString(locale)}
           </p>;
         })}
       </div>
@@ -713,6 +715,7 @@ export default function DriverDashboard() {
       {upcomingBookings.length > 0 && (
         <BookingSection
           title={t("driverPortal.upcoming")}
+          allowCalendar
           bookings={upcomingBookings}
           expandedBooking={expandedBooking}
           setExpandedBooking={setExpandedBooking}
@@ -1003,6 +1006,7 @@ function BookingSection({
   updateStatus,
   setShowCashModal,
   updating,
+  allowCalendar = false,
 }: {
   title: string;
   bookings: Booking[];
@@ -1011,6 +1015,7 @@ function BookingSection({
   updateStatus: (id: string, status: string, cash?: boolean) => void;
   setShowCashModal: (id: string | null) => void;
   updating: string | null;
+  allowCalendar?: boolean;
 }) {
   return (
     <div className="mb-6">
@@ -1020,6 +1025,7 @@ function BookingSection({
           <BookingCard
             key={booking.id}
             booking={booking}
+            allowCalendar={allowCalendar}
             expanded={expandedBooking === booking.id}
             onToggle={() =>
               setExpandedBooking(
@@ -1043,6 +1049,7 @@ function BookingCard({
   onStatusUpdate,
   onCashConfirm,
   updating,
+  allowCalendar,
 }: {
   booking: Booking;
   expanded: boolean;
@@ -1050,29 +1057,20 @@ function BookingCard({
   onStatusUpdate: (id: string, status: string, cash?: boolean) => void;
   onCashConfirm: () => void;
   updating: boolean;
+  allowCalendar: boolean;
 }) {
   const { t, locale } = useLanguage();
   const [calendarBusy, setCalendarBusy] = useState(false);
   const [calendarMessage, setCalendarMessage] = useState<"" | "success" | "error">("");
   const nextAction = getNextAction(booking, t);
   const calendarPickupMs = booking.pickupAt ? new Date(booking.pickupAt).getTime() : NaN;
-  const canAddToCalendar = booking.scheduledRide === true && !["CANCELLED", "COMPLETED", "NO_SHOW"].includes(booking.status) && Number.isFinite(calendarPickupMs) && calendarPickupMs > Date.now();
+  const canAddToCalendar = allowCalendar && booking.scheduledRide === true && !["CANCELLED", "COMPLETED", "NO_SHOW"].includes(booking.status) && Number.isFinite(calendarPickupMs) && calendarPickupMs > Date.now();
 
   const addToCalendar = async () => {
     setCalendarBusy(true);
     setCalendarMessage("");
     try {
-      const response = await csrfFetch("driver", `/api/driver/scheduled-rides/${booking.id}/calendar`, { cache: "no-store" });
-      if (!response.ok) throw new Error("calendar_export_failed");
-      const objectUrl = URL.createObjectURL(await response.blob());
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = `drivo-ride-${booking.bookingRef.replace(/[^a-zA-Z0-9_-]/g, "-")}.ics`;
-      anchor.rel = "noopener";
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+      await downloadDriverCalendar(booking.id, booking.bookingRef, (url) => csrfFetch("driver", url, { cache: "no-store" }), locale);
       setCalendarMessage("success");
     } catch {
       setCalendarMessage("error");

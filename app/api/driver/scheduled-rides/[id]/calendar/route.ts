@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { authorizeDriver } from "@/lib/security/authorization";
 import { bookingPickupAt } from "@/lib/scheduled-marketplace";
 import { createDriverRideIcs, isDriverCalendarRideEligible } from "@/lib/driver-calendar";
+import { locales, type Locale } from "@/lib/i18n/index";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,9 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: "Scheduled ride not found", code: "SCHEDULED_RIDE_NOT_FOUND" }, { status: 404, headers: { "Cache-Control": "no-store" } });
     }
 
-    const ics = createDriverRideIcs({ id: booking.id, bookingRef: booking.bookingRef, pickupAt, pickupAddress: booking.pickupAddress || "", dropoffAddress: booking.dropoffAddress || "", serviceType: booking.serviceType || "" });
+    const requestedLocale = request.nextUrl.searchParams.get("locale");
+    const locale: Locale = locales.includes(requestedLocale as Locale) ? requestedLocale as Locale : "sk";
+    const ics = createDriverRideIcs({ id: booking.id, bookingRef: booking.bookingRef, pickupAt, pickupAddress: booking.pickupAddress || "", dropoffAddress: booking.dropoffAddress || "", serviceType: booking.serviceType || "" }, new Date(), locale);
     const safeRef = String(booking.bookingRef || booking.id).replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 64) || booking.id;
     return new NextResponse(ics, {
       status: 200,

@@ -1,7 +1,7 @@
 import type { Job } from "bullmq";
 import { prisma } from "@/lib/prisma";
 import { emitScheduledRideReminder, runScheduledReadinessCheck, scheduleScheduledRideJobs, bookingPickupAt, isScheduledBooking } from "@/lib/scheduled-marketplace";
-import { createScheduledRideJobPlan, isCurrentScheduledRideJob, isWithinScheduledReminderReconciliationWindow, processCursorBatches, SCHEDULED_REMINDER_RECONCILIATION_HORIZON_MS, scheduledRideJobKind, type ScheduledRideJobKind } from "@/lib/scheduled-reminders";
+import { createScheduledRideJobPlan, isCurrentScheduledRideJob, isScheduledReminderSuperseded, isWithinScheduledReminderReconciliationWindow, processCursorBatches, SCHEDULED_JOB_INELIGIBLE_STATUSES, SCHEDULED_REMINDER_RECONCILIATION_HORIZON_MS, scheduledRideJobKind, type ScheduledRideJobKind } from "@/lib/scheduled-reminders";
 
 export type ScheduledRideJob = { bookingId: string; pickupAtMs: number; kind: string; driverId?: string; assignedAtMs?: number; minutesBeforePickup?: number };
 
@@ -15,13 +15,15 @@ const reminderMinutes: Record<string, number> = {
 };
 
 export async function processScheduledRideJob(job: Job<ScheduledRideJob>) {
-  const { bookingId, pickupAtMs } = job.data;
-  const kind = scheduledRideJobKind(String(job.name || ""), job.data.kind);
+  const data = job?.data;
+  const kind = scheduledRideJobKind(String(job?.name || ""), data?.kind);
   if (kind === "LEGACY_REMINDER") return { outcome: "LEGACY_REMINDER_IGNORED" };
   if (!kind) return { outcome: "UNKNOWN_JOB_IGNORED" };
+  if (!data || typeof data.bookingId !== "string" || !/^[a-f0-9]{24}$/i.test(data.bookingId) || !Number.isFinite(data.pickupAtMs)) return { outcome: "INVALID_JOB_IGNORED" };
+  const { bookingId, pickupAtMs } = data;
 
   const booking = await prisma.booking.findUnique({ where: { id: bookingId }, select: { id: true, driverId: true, acceptedAt: true, createdAt: true, status: true, scheduledRide: true, pickupAt: true, pickupDate: true, pickupTime: true, scheduledDate: true, scheduledTime: true, marketTimezone: true } });
-  if (!booking || !booking.driverId || !isScheduledBooking(booking, new Date(booking.acceptedAt || booking.createdAt)) || ["CANCELLED", "COMPLETED", "NO_SHOW"].includes(booking.status)) return { outcome: "NOOP" };
+  if (!booking || !booking.driverId || !isScheduledBooking(booking, new Date(booking.acceptedAt || booking.createdAt)) || SCHEDULED_JOB_INELIGIBLE_STATUSES.includes(booking.status)) return { outcome: "NOOP" };
   const pickupAt = bookingPickupAt(booking);
   if (!pickupAt || pickupAt.getTime() !== pickupAtMs) return { outcome: "STALE" };
   const nowMs = Date.now();
@@ -44,6 +46,7 @@ export async function processScheduledRideJob(job: Job<ScheduledRideJob>) {
   }
 
   if (!job.data.driverId || job.data.assignedAtMs === undefined || !isCurrentScheduledRideJob({ booking: { ...booking, pickupAt }, job: { bookingId, pickupAtMs, driverId: job.data.driverId, assignedAtMs: job.data.assignedAtMs }, nowMs: Date.now() })) return { outcome: "STALE_ASSIGNMENT" };
+  if (isScheduledReminderSuperseded({ assignedAtMs: job.data.assignedAtMs, pickupAtMs, kind, nowMs: Date.now() })) return { outcome: "SUPERSEDED_REMINDER" };
   const leadMinutes = job.data.minutesBeforePickup ?? reminderMinutes[kind] ?? 0;
   const sent = await emitScheduledRideReminder({ bookingId, pickupAt, driverId: job.data.driverId, assignedAtMs: job.data.assignedAtMs, kind: kind as ScheduledRideJobKind, minutesBeforePickup: leadMinutes });
   return { outcome: sent ? "NOTIFIED" : "STALE_ASSIGNMENT" };
@@ -73,7 +76,7 @@ async function reconcileScheduledRideJobsBatch(now: Date) {
   const horizon = new Date(now.getTime() + SCHEDULED_REMINDER_RECONCILIATION_HORIZON_MS);
   // Include legacy rows classified by their reconstructed pickup instant. The
   // scheduler is the final eligibility guard; no schema/backfill is needed.
-  const shared = { driverId: { not: null }, status: { notIn: ["CANCELLED", "COMPLETED", "NO_SHOW"] } };
+  const shared = { driverId: { not: null }, status: { notIn: SCHEDULED_JOB_INELIGIBLE_STATUSES } };
   const persisted = await processCursorBatches({
     cursor: persistedPickupCursor,
     pageSize: RECONCILIATION_PAGE_SIZE,

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { scheduleScheduledRideJobs } from "@/lib/scheduled-marketplace";
 import {
   calculateBookingFinancialBreakdown,
   createOrUpdateDriverEarningForBooking,
@@ -173,59 +174,72 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    if (driverId) {
-      const driver = await prisma.driver.findUnique({
-        where: { id: driverId },
-      });
+    const updatedBooking = await prisma.$transaction(async (tx) => {
+      const currentBooking = await tx.booking.findUnique({ where: { id: bookingId } });
+      if (!currentBooking) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
+      if (driverId) {
+        const driver = await tx.driver.findUnique({
+          where: { id: driverId },
+        });
 
-      if (!driver) {
-        return NextResponse.json(
-          { error: "Driver not found" },
-          { status: 404 }
-        );
+        if (!driver) {
+          return NextResponse.json(
+            { error: "Driver not found" },
+            { status: 404 }
+          );
+        }
+
+        if (driver.status !== "ACTIVE") {
+          return NextResponse.json(
+            { error: "Driver is not active" },
+            { status: 400 }
+          );
+        }
+
+        if (driver.isOnTrip && currentBooking.driverId !== driverId) {
+          return NextResponse.json(
+            { error: "Driver is already on trip" },
+            { status: 400 }
+          );
+        }
+
+        updateData.driverId = driverId;
+        updateData.status = "ASSIGNED";
+        updateData.dispatchStatus = "ACCEPTED";
+        updateData.acceptedAt = currentBooking.driverId === driverId ? currentBooking.acceptedAt || new Date() : new Date();
+
+        await tx.driver.update({
+          where: { id: driverId },
+          data: { isOnTrip: true },
+        });
+
+        await tx.rideRequest.updateMany({
+          where: {
+            bookingId,
+            status: "PENDING",
+          },
+          data: {
+            status: "EXPIRED",
+            respondedAt: new Date(),
+          },
+        });
       }
 
-      if (driver.status !== "ACTIVE") {
-        return NextResponse.json(
-          { error: "Driver is not active" },
-          { status: 400 }
-        );
-      }
-
-      if (driver.isOnTrip && currentBooking.driverId !== driverId) {
-        return NextResponse.json(
-          { error: "Driver is already on trip" },
-          { status: 400 }
-        );
-      }
-
-      updateData.driverId = driverId;
-      updateData.status = "ASSIGNED";
-      updateData.dispatchStatus = "ACCEPTED";
-      updateData.acceptedAt = currentBooking.acceptedAt || new Date();
-
-      await prisma.driver.update({
-        where: { id: driverId },
-        data: { isOnTrip: true },
+      const committedBooking = await tx.booking.update({
+        where: { id: bookingId },
+        data: updateData,
+        include: { driver: { omit: { passwordHash: true, authVersion: true } }, earning: true },
       });
 
-      await prisma.rideRequest.updateMany({
-        where: {
-          bookingId,
-          status: "PENDING",
-        },
-        data: {
-          status: "EXPIRED",
-          respondedAt: new Date(),
-        },
-      });
-    }
-
-    const updatedBooking = await prisma.booking.update({
-      where: { id: bookingId },
-      data: updateData,
-      include: { driver: { omit: { passwordHash: true, authVersion: true } }, earning: true },
+      return committedBooking;
     });
+    if (updatedBooking instanceof NextResponse) return updatedBooking;
+
+    if (driverId) {
+      // Assignment is committed; reconciliation recovers any temporary queue failure.
+      try { await scheduleScheduledRideJobs(updatedBooking.id); }
+      catch { console.error("[admin.bookings.scheduled-reminders.schedule-failed]", { code: "SCHEDULED_REMINDER_ENQUEUE_FAILED" }); }
+    }
 
     if (
       status &&

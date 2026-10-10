@@ -8,6 +8,10 @@ export const SCHEDULED_REMINDER_MILESTONES = [
 export type ScheduledReminderKind = typeof SCHEDULED_REMINDER_MILESTONES[number]["kind"] | "REMINDER_ADAPTIVE";
 export type ScheduledRideJobKind = ScheduledReminderKind | "READINESS_15M";
 
+// START changes the ride to IN_PROGRESS. ENROUTE/ARRIVED are still pre-pickup
+// states and must retain upcoming reminders and operational readiness coverage.
+export const SCHEDULED_JOB_INELIGIBLE_STATUSES = ["CANCELLED", "COMPLETED", "NO_SHOW", "IN_PROGRESS"];
+
 export type ScheduledRideJobPlanItem = {
   kind: ScheduledRideJobKind;
   runAtMs: number;
@@ -15,8 +19,9 @@ export type ScheduledRideJobPlanItem = {
 };
 
 const MINUTE_MS = 60_000;
-// The first standard reminder is T-24h; five extra minutes absorb worker/reconcile jitter.
-export const SCHEDULED_REMINDER_RECONCILIATION_HORIZON_MS = 24 * 60 * MINUTE_MS + 5 * MINUTE_MS;
+// An hour of lead before T-24h lets bounded repair sweeps enqueue the first
+// reminder ahead of its milestone without scanning every distant future ride.
+export const SCHEDULED_REMINDER_RECONCILIATION_HORIZON_MS = 25 * 60 * MINUTE_MS;
 export const SCHEDULED_REMINDER_RECENT_MILESTONE_GRACE_MS = 30_000;
 // Reconciliation must not recreate an overdue operational readiness action
 // forever after BullMQ removes a completed job. Keep catch-up bounded to a
@@ -137,6 +142,21 @@ export function scheduledReminderDedupeKey(input: {
   return `scheduled:${input.kind}:${input.bookingId}:${input.pickupAtMs}:${input.driverId}:${input.assignedAtMs}`;
 }
 
+/** Do not replay older milestones once a later reminder for this assignment is due. */
+export function isScheduledReminderSuperseded(input: {
+  assignedAtMs: number;
+  pickupAtMs: number;
+  nowMs: number;
+  kind?: string;
+  minutesBeforePickup?: number;
+}) {
+  const reminders = createScheduledRideJobPlan({ ...input, nowMs: input.assignedAtMs })
+    .filter((item) => item.kind.startsWith("REMINDER_"));
+  // Previously persisted reminder payloads carry lead minutes but not kind.
+  const target = reminders.find((item) => input.kind ? item.kind === input.kind : item.minutesBeforePickup === input.minutesBeforePickup);
+  return Boolean(target && reminders.some((item) => item.runAtMs > target.runAtMs && item.runAtMs <= input.nowMs));
+}
+
 export function scheduledRideJobId(input: {
   bookingId: string;
   pickupAtMs: number;
@@ -155,7 +175,7 @@ export function isCurrentScheduledRideJob(input: {
 }) {
   const { booking, job, nowMs } = input;
   if (!Number.isFinite(nowMs) || !Number.isFinite(job.pickupAtMs)) return false;
-  if (!booking.driverId || ["CANCELLED", "COMPLETED", "NO_SHOW"].includes(String(booking.status))) return false;
+  if (!booking.driverId || SCHEDULED_JOB_INELIGIBLE_STATUSES.includes(String(booking.status))) return false;
   const pickupAtMs = booking.pickupAt ? new Date(booking.pickupAt).getTime() : NaN;
   if (!Number.isFinite(pickupAtMs) || pickupAtMs !== job.pickupAtMs || pickupAtMs <= nowMs) return false;
   const assignmentTimestamp = booking.acceptedAt || booking.createdAt;

@@ -24,6 +24,9 @@ async function routeEvent(event: any) {
     if (booking?.driverId && isScheduledReminderDeliveryCurrent(booking, p)) await signal(event, "DRIVER", booking.driverId, "scheduled-ride-reminder");
     return;
   }
+  // A delayed ready event is meaningful only for the assignment it checked.
+  // Legacy events without assignment identity safely finish without signaling.
+  if (event.eventType === "SCHEDULED_READINESS_CHECKED" && !isScheduledReminderDeliveryCurrent(booking, p)) return;
   // Recovery intent was committed with readiness release. A transient failure
   // of the immediate recovery call is retried through this durable event.
   if (event.eventType === "SCHEDULED_READINESS_FAILED" && booking && !booking.driverId && !["CANCELLED", "COMPLETED", "NO_SHOW"].includes(booking.status)) {

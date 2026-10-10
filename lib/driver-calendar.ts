@@ -1,3 +1,5 @@
+import { getTranslation, type Locale } from "@/lib/i18n/index";
+
 export type DriverCalendarRide = {
   id: string;
   bookingRef: string;
@@ -52,12 +54,13 @@ function foldIcsLine(line: string) {
   return chunks.join("\r\n");
 }
 
-export function createDriverRideIcs(ride: Pick<DriverCalendarRide, "id" | "bookingRef" | "pickupAt" | "pickupAddress" | "dropoffAddress" | "serviceType">, now = new Date()) {
+export function createDriverRideIcs(ride: Pick<DriverCalendarRide, "id" | "bookingRef" | "pickupAt" | "pickupAddress" | "dropoffAddress" | "serviceType">, now = new Date(), locale: Locale = "en") {
+  const t = (key: string) => getTranslation(locale, key);
   const description = [
-    `Booking reference: ${ride.bookingRef}`,
-    `Pickup: ${ride.pickupAddress}`,
-    `Destination: ${ride.dropoffAddress}`,
-    `Service: ${ride.serviceType}`,
+    `${t("driverPortal.calendarBookingReference")}: ${ride.bookingRef}`,
+    `${t("driverPortal.pickup")}: ${ride.pickupAddress}`,
+    `${t("driverPortal.destination")}: ${ride.dropoffAddress}`,
+    `${t("driverPortal.service")}: ${getTranslation(locale, `service.${ride.serviceType.toUpperCase()}`, ride.serviceType)}`,
   ].join("\n");
   const lines = [
     "BEGIN:VCALENDAR",
@@ -69,7 +72,7 @@ export function createDriverRideIcs(ride: Pick<DriverCalendarRide, "id" | "booki
     `UID:${escapeIcsText(ride.id)}@drivo`,
     `DTSTAMP:${utcStamp(now)}`,
     `DTSTART:${utcStamp(ride.pickupAt)}`,
-    "SUMMARY:Drivo scheduled ride",
+    `SUMMARY:${escapeIcsText(t("driverPortal.calendarRideSummary"))}`,
     `LOCATION:${escapeIcsText(ride.pickupAddress)}`,
     `DESCRIPTION:${escapeIcsText(description)}`,
     "STATUS:CONFIRMED",
