@@ -1,3 +1,4 @@
+import { writeBookingCreatedEmail } from "@/lib/email/domain";
 import type { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -13,7 +14,6 @@ import { signBookingPrice } from "@/lib/security/booking-price";
 import { requiresWav } from "@/lib/assisted-transport";
 import { startAutomaticDispatch } from "@/lib/automatic-dispatch";
 import { isScheduledBooking, parseMarketDateTime, SCHEDULED_MARKET_CONFIG } from "@/lib/scheduled-marketplace";
-import { bookingToEmailData, isSeniorAssistedService, sendSeniorAssistedBookingEmails } from "@/lib/email";
 import { recordDispatchAudit } from "@/lib/dispatch-audit";
 
 export type BookingCreateActor =
@@ -117,28 +117,25 @@ export async function createBookingWithDrivoRules(request: NextRequest, data: Bo
         const claimed = await tx.dispatchBookingRequest.updateMany({ where: { id: options.requestRecordId, status: "PROCESSING", bookingId: null, leaseToken: options.requestLeaseToken }, data: { status: "CREATING" } });
         if (claimed.count !== 1) throw new Error("PHONE_BOOKING_IDEMPOTENCY_LEASE_LOST");
         const created = await tx.booking.create({ data: bookingData });
+        await writeBookingCreatedEmail(tx, created.id);
         await tx.dispatchBookingRequest.update({ where: { id: options.requestRecordId }, data: { bookingId: created.id, status: "CREATED" } });
         await tx.dispatchAuditEvent.create({ data: { actorType: "DISPATCH_OPERATOR", actorId: actor.operatorId, action: "PHONE_BOOKING_CREATED", targetType: "Booking", targetId: created.id, bookingRef: created.bookingRef, requestId: randomUUID(), outcome: "SUCCESS", safeMetadata: { paymentMethod: created.paymentMethod, scheduledRide: created.scheduledRide } } });
         return created;
       })
-    : await prisma.booking.create({ data: bookingData });
+    : await prisma.$transaction(async (tx) => {
+        const created = await tx.booking.create({ data: bookingData });
+        await writeBookingCreatedEmail(tx, created.id);
+        return created;
+      });
 
   if (!isScheduledBooking(booking) && booking.paymentMethod !== "CARD" && (actor.kind === "DISPATCH_OPERATOR" || Boolean(currentPassenger))) {
     const dispatch = await startAutomaticDispatch(booking.id);
     if (!dispatch.ok) console.warn("[dispatch] immediate start deferred", { bookingId: booking.id, code: dispatch.code });
     if (actor.kind === "DISPATCH_OPERATOR") await recordDispatchAudit({ actorType: "DISPATCH_OPERATOR", actorId: actor.operatorId, action: "DISPATCH_STARTED", targetType: "Booking", targetId: booking.id, bookingRef: booking.bookingRef, outcome: dispatch.ok ? "SUCCESS" : "FAILURE", safeMetadata: { code: dispatch.ok ? null : dispatch.code || "DISPATCH_PENDING" } }).catch(() => undefined);
   }
-  let seniorAssistedAdminEmailSent = false;
-  let seniorAssistedDriverSafeEmailSent = false;
-  if (isSeniorAssistedService(booking.serviceType)) {
-    try {
-      const emailResult = await sendSeniorAssistedBookingEmails(bookingToEmailData(booking));
-      seniorAssistedAdminEmailSent = emailResult.adminFull.success;
-      seniorAssistedDriverSafeEmailSent = emailResult.driverSafe.success;
-    } catch (error) {
-      console.warn("[email] Senior/assisted booking emails failed after booking creation", { bookingRef: booking.bookingRef, error: error instanceof Error ? error.message : "Unknown email error" });
-    }
-  }
+  // The committed creation event delivers localized Admin and passenger mail asynchronously.
+  const seniorAssistedAdminEmailSent = false;
+  const seniorAssistedDriverSafeEmailSent = false;
   return { booking, estimate, quote, seniorAssistedAdminEmailSent, seniorAssistedDriverSafeEmailSent };
 }
 

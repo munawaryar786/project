@@ -35,6 +35,8 @@ let paymentSession;
 let event;
 let emails = 0;
 let webhookEvents = [];
+let emailIntents = [];
+let bookingSequence = 0;
 let adminAuditEvents = [];
 let dispatchOperatorRecord = { id: sid, fullName: "Existing Operator", email: "old@example.com", phone: "+421900000001", normalizedPhone: "+421900000001", status: "ACTIVE", mustChangePassword: false, authVersion: 0 };
 const prisma = {
@@ -52,6 +54,10 @@ const prisma = {
     update: async ({ data }) => { dispatchOperatorRecord = { ...dispatchOperatorRecord, ...data, authVersion: data.authVersion?.increment ? dispatchOperatorRecord.authVersion + data.authVersion.increment : (data.authVersion ?? dispatchOperatorRecord.authVersion) }; return dispatchOperatorRecord; },
   },
   adminAuditEvent: { create: async ({ data }) => { adminAuditEvents.push(data); return data; } },
+  outboxEvent: { create: async ({data}) => {
+    assert.ok(!emailIntents.some(item => item.idempotencyKey === data.idempotencyKey), "duplicate durable email intent");
+    emailIntents.push(data); return data;
+  } },
   $transaction: async (callback) => callback(prisma),
   booking: {
     findUnique: async () => {bookingReads++; return booking;},
@@ -59,7 +65,7 @@ const prisma = {
     findMany: async () => booking ? [booking] : [],
     updateMany: async ({where, data}) => { if (!booking || booking.status !== where.status) return {count:0}; writes++; Object.assign(booking, data); return {count:1}; },
     update: async ({data}) => { writes++; Object.assign(booking, data); return booking; },
-    create: async ({data}) => {writes++; booking={id:other,...data};return booking;},
+    create: async ({data}) => {writes++; booking={id:(++bookingSequence).toString(16).padStart(24,"0"),...data};return booking;},
   },
   rideRequest: { findFirst: async () => activeRequest, findMany: async () => [], updateMany: async () => {writes++;return {count:0};}, create: async () => {writes++;return {};} },
   bookingPayment: { findUnique: async () => null },
@@ -99,6 +105,11 @@ function load(file) {
     if (name.startsWith("@/")) {
       const candidate=path.resolve(root,name.slice(2));
       return load(fs.existsSync(candidate+".ts")?candidate+".ts":candidate+".tsx");
+    }
+    if (name.startsWith(".")) {
+      const candidate = path.resolve(path.dirname(full), name);
+      const source = [candidate + ".ts", candidate + ".tsx", path.join(candidate, "index.ts")].find(file => fs.existsSync(file));
+      if (source) return load(source);
     }
     return Module.prototype.require.call(mod,name);
   };
@@ -207,22 +218,23 @@ await test("checkout ownership, state, EUR, ignored browser amount and historica
 });
 await test("webhook signature rejection, atomic duplicate guard, no ride status regression",async()=>{
   const webhook=load("app/api/payments/webhook/route.ts").POST;
-  booking=paidBooking();writes=0;emails=0;dispatchStarts=0;webhookEvents=[];
+  booking=paidBooking();writes=0;emails=0;dispatchStarts=0;webhookEvents=[];emailIntents=[];
   paymentSession={id:"cs_test",payment_intent:"pi_test",metadata:{bookingId:other,bookingRef:booking.bookingRef},payment_status:"paid",amount_total:2500,currency:"eur"};
   event={id:"evt_test",type:"checkout.session.completed",created:Math.floor(Date.now()/1000),data:{object:paymentSession}};
   assert.equal((await webhook(request("POST",undefined,"PASSENGER",{}))).status,400);
   const invoke=()=>webhook(request("POST",undefined,"PASSENGER",{},{"stripe-signature":"test-valid"}));
-  await Promise.all([invoke(),invoke()]);assert.equal(writes,1);assert.equal(emails,2);assert.equal(booking.status,"CONFIRMED");assert.equal(dispatchStarts,1,"genuine public card checkout keeps the legacy flow");
+  await Promise.all([invoke(),invoke()]);assert.equal(writes,1);assert.equal(emails,0,"payment HTTP response does not call SMTP");assert.equal(emailIntents.length,1);assert.equal(emailIntents[0].eventType,"BOOKING_EMAIL_PAYMENT");assert.equal(emailIntents[0].payload.amount,25);assert.equal(booking.status,"CONFIRMED");assert.equal(dispatchStarts,1,"genuine public card checkout keeps the legacy flow");
   for(const state of ["ASSIGNED","DRIVER_ENROUTE","IN_PROGRESS","NO_SHOW","COMPLETED","CANCELLED"]){booking.status=state;assert.equal((await invoke()).status,200);assert.equal(booking.status,state);}
-  assert.equal(writes,1);assert.equal(emails,2);
+  assert.equal(writes,1);assert.equal(emails,0,"payment HTTP response does not call SMTP");assert.equal(emailIntents.length,1);assert.equal(emailIntents[0].eventType,"BOOKING_EMAIL_PAYMENT");assert.equal(emailIntents[0].payload.amount,25);
 });
 await test("missing Dispatch BookingPayment fails closed while public legacy checkout remains available",async()=>{
   const webhook=load("app/api/payments/webhook/route.ts").POST;
-  booking={...paidBooking(),bookingSource:"PHONE_DISPATCH"};writes=0;emails=0;dispatchStarts=0;webhookEvents=[];
+  booking={...paidBooking(),bookingSource:"PHONE_DISPATCH"};writes=0;emails=0;dispatchStarts=0;webhookEvents=[];emailIntents=[];
   paymentSession={id:"cs_missing_dispatch",payment_intent:"pi_missing_dispatch",metadata:{bookingId:other,bookingRef:booking.bookingRef},payment_status:"paid",amount_total:2500,currency:"eur"};
   event={id:"evt_missing_dispatch_payment",type:"checkout.session.completed",created:Math.floor(Date.now()/1000),data:{object:paymentSession}};
   const response=await webhook(request("POST",undefined,"PASSENGER",{},{"stripe-signature":"test-valid"}));
   assert.equal(response.status,500);assert.equal(booking.status,"PENDING");assert.equal(writes,0);assert.equal(emails,0);assert.equal(dispatchStarts,0);
+  assert.equal(emailIntents.length,0,"missing Dispatch payment record cannot enqueue successful payment mail");
   assert.equal(webhookEvents[0].processingStatus,"FAILED");assert.equal(webhookEvents[0].safeFailureCode,"PHONE_DISPATCH_PAYMENT_RECORD_MISSING");
 });
 await test("processed duplicate webhook only recovers an untouched immediate Dispatch booking",async()=>{

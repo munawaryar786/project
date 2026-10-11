@@ -1,3 +1,4 @@
+import { writeBookingPaymentEmail } from "@/lib/email/domain";
 import { NextRequest, NextResponse } from "next/server";
 import { verifyWebhookSignature } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
@@ -7,11 +8,6 @@ import { hasAuthoritativeBookingPrice } from "@/lib/security/booking-price";
 import { randomUUID } from "node:crypto";
 import { recordDispatchAudit } from "@/lib/dispatch-audit";
 import { validateDispatchCheckout } from "@/lib/dispatch-invariants";
-import {
-  bookingToEmailData,
-  sendBookingCompletionEmails,
-  sendPaymentReceipt,
-} from "@/lib/email";
 
 class SafeWebhookFailure extends Error {
   constructor(readonly safeFailureCode: string) { super(safeFailureCode); }
@@ -101,16 +97,13 @@ async function handleDispatchCheckoutCompleted(session: any, payment: any, event
     }
     const confirmed = await tx.booking.updateMany({ where: { id: booking.id, bookingSource: "PHONE_DISPATCH", paymentMethod: "CARD", status: "PENDING" }, data: { status: "CONFIRMED" } });
     if (confirmed.count !== 1) throw new Error("DISPATCH_BOOKING_STATE_CONFLICT");
+    await writeBookingPaymentEmail(tx, booking.id, paymentIntent || session.id, payment.amountMinor / 100);
     await tx.bookingPaymentSlot.updateMany({ where: { bookingId: booking.id, sessionId: payment.providerSessionId }, data: { sessionId: "", leaseKey: "" } });
     await tx.dispatchAuditEvent.create({ data: { actorType: "DISPATCH_OPERATOR", actorId: payment.createdByDispatchOperatorId, action: "PAYMENT_CONFIRMED", targetType: "Booking", targetId: booking.id, bookingRef: booking.bookingRef, requestId: randomUUID(), outcome: "SUCCESS", safeMetadata: { paymentId: payment.id, amountMinor: payment.amountMinor, currency: payment.currency } } });
     await tx.paymentWebhookEvent.update({ where: { id: eventRowId }, data: { bookingId: booking.id, paymentId: payment.id, processingStatus: "PROCESSED", processedAt: new Date() } });
     return tx.booking.findUnique({ where: { id: booking.id } });
   });
   if (!result) throw new Error("DISPATCH_CONFIRMED_BOOKING_NOT_FOUND");
-  if (result?.customerEmail) {
-    await sendPaymentReceipt({ ...bookingToEmailData(result), amount: payment.amountMinor / 100, paymentId: paymentIntent || session.id });
-  }
-  await sendBookingCompletionEmails(bookingToEmailData(result));
   return result;
 }
 
@@ -131,24 +124,20 @@ async function handleCheckoutCompleted(session: any): Promise<any | null> {
     throw new Error("Checkout amount or currency mismatch");
   }
 
-  const updated = await prisma.booking.updateMany({
-    where: {
-      id: booking.id,
-      status: "PENDING",
-    },
-    data: { status: "CONFIRMED" },
+  const updated = await prisma.$transaction(async (tx) => {
+    const updated = await tx.booking.updateMany({
+      where: {
+        id: booking.id,
+        status: "PENDING",
+      },
+      data: { status: "CONFIRMED" },
+    });
+    if (updated.count === 1) await writeBookingPaymentEmail(tx, booking.id, String(session.payment_intent || session.id), expectedAmount / 100);
+    return updated;
   });
   if (updated.count === 0) return null;
 
   const confirmedBooking = await prisma.booking.findUnique({ where: { id: booking.id } });
   if (!confirmedBooking) return null;
-  if (confirmedBooking.customerEmail) {
-    await sendPaymentReceipt({
-      ...bookingToEmailData(confirmedBooking),
-      amount: expectedAmount / 100,
-      paymentId: session.payment_intent || session.id,
-    });
-  }
-  await sendBookingCompletionEmails(bookingToEmailData(confirmedBooking));
   return confirmedBooking;
 }

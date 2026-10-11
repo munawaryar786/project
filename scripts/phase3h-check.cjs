@@ -125,7 +125,7 @@ const extraChecks = [
   ["assignment driver CAS", service.includes("isOnTrip: false")],
   ["assignment booking CAS", service.includes("driverId: null")],
   ["assignment status transition", service.includes('status: "ASSIGNED"')],
-  ["assignment acceptedAt", service.includes("acceptedAt: new Date()")],
+  ["assignment acceptedAt", /const acceptedAt = new Date\(\);\s+const changed = await tx\.booking\.updateMany\([\s\S]*?data: \{ driverId: input\.driverId, dispatchStatus: "ACCEPTED", status: "ASSIGNED", acceptedAt \}/.test(service)],
   ["offer cancellation event", service.includes("ADMIN_OFFER_CANCELLED")],
   ["dispatch retry audit", service.includes('action: "DISPATCH_RETRY"')],
   ["release audit", service.includes('action: "SCHEDULED_ASSIGNMENT_RELEASE"')],

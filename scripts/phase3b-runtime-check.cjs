@@ -119,17 +119,26 @@ function request(method, body, url="https://gate.example/api/test"){
   return new NextRequest(url,{method,...(body===undefined?{}:{body:typeof body==="string"?body:JSON.stringify(body)})});
 }
 async function check(name,fn){reset();await fn();passes++;console.log("PASS behavioral:",name);}
+function assertOneAcceptedAssignment() {
+  assert.deepEqual(state.outboxEvent.map(event => event.eventType).sort(), ["BOOKING_EMAIL_ASSIGNED", "DRIVER_OFFER_ACCEPTED"]);
+  const booking = state.booking.find(row => row.driverId);
+  const email = state.outboxEvent.find(event => event.eventType === "BOOKING_EMAIL_ASSIGNED");
+  assert.equal(email.aggregateId, booking.id);
+  assert.equal(email.payload.driverId, booking.driverId);
+  assert.equal(email.payload.assignedAtMs, booking.acceptedAt.getTime());
+  assert.equal(new Set(state.outboxEvent.map(event => event.idempotencyKey)).size, 2);
+}
 (async()=>{
-await check("one accept assigns driver, cancels competitor, writes one event",async()=>{
+await check("one accept assigns driver, cancels competitor, writes one acceptance and assignment-email intent",async()=>{
   assert.equal((await accept()).ok,true);assert.equal(state.booking[0].driverId,A);
-  assert.equal(state.rideRequest[1].status,"CANCELLED");assert.equal(state.outboxEvent.length,1);
+  assert.equal(state.rideRequest[1].status,"CANCELLED");assertOneAcceptedAssignment();
 });
 for(const field of ["null","missing"])await check("legacy "+field+" driverId is claimable",async()=>{
   if(field==="missing")delete state.booking[0].driverId;assert.equal((await accept()).ok,true);
 });
 await check("same booking simultaneous accepts simulate one winner",async()=>{
   const results=await Promise.all([accept(),ops.acceptDriverOfferAtomically({offerId:OB,driverId:B})]);
-  assert.equal(results.filter(r=>r.ok).length,1);assert.equal(state.outboxEvent.length,1);
+  assert.equal(results.filter(r=>r.ok).length,1);assertOneAcceptedAssignment();
   assert.equal(state.rideRequest.filter(r=>r.status==="ACCEPTED").length,1);
 });
 await check("same driver simultaneous different bookings simulate one winner",async()=>{
@@ -138,7 +147,7 @@ await check("same driver simultaneous different bookings simulate one winner",as
   const results=await Promise.all([accept(),ops.acceptDriverOfferAtomically({offerId:OB,driverId:A})]);
   assert.equal(results.filter(r=>r.ok).length,1);assert.equal(state.booking.filter(b=>b.driverId===A).length,1);
 });
-await check("duplicate accept creates no second event",async()=>{await accept();assert.equal((await accept()).ok,false);assert.equal(state.outboxEvent.length,1);});
+await check("duplicate accept creates no second event",async()=>{await accept();assert.equal((await accept()).ok,false);assertOneAcceptedAssignment();});
 for(const when of ["driver.updateMany","outboxEvent.create","transactions"])await check("accept rolls back on "+when,async()=>{
   failAt=when;assert.equal((await accept()).ok,false);assert.equal(state.booking[0].driverId,null);
   assert.equal(state.rideRequest[0].status,"PENDING");assert.equal(state.outboxEvent.length,0);

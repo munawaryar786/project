@@ -1,3 +1,4 @@
+import { writeBookingAssignedEmail } from "@/lib/email/domain";
 import { prisma } from "@/lib/prisma";
 import { computeGoogleRoute, validCoordinate } from "@/lib/navigation/routes";
 import { driverCompatibility } from "@/lib/dispatch-matching";
@@ -325,6 +326,7 @@ export async function claimScheduledRide(bookingId: string, driverId: string) {
         idempotencyKey: "scheduled-claimed:" + bookingId + ":" + driverId + ":" + acceptedAt.getTime(),
         payload: { bookingId, driverId, assignedAtMs: acceptedAt.getTime() },
       });
+      await writeBookingAssignedEmail(tx, bookingId, driverId, acceptedAt);
       return { ok: true as const, alreadyClaimed: false };
     });
     if (result.ok && !result.alreadyClaimed) {

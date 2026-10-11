@@ -1,3 +1,4 @@
+import { writeBookingAssignedEmail } from "@/lib/email/domain";
 import { postTripEarningLedger } from "@/lib/earnings-ledger";
 import { authorizeAdmin } from "@/lib/security/authorization";
 import { NextRequest, NextResponse } from "next/server";
@@ -231,6 +232,7 @@ export async function PATCH(request: NextRequest) {
         include: { driver: { omit: { passwordHash: true, authVersion: true } }, earning: true },
       });
 
+      if (driverId && currentBooking.driverId !== driverId && committedBooking.acceptedAt) await writeBookingAssignedEmail(tx, bookingId, driverId, committedBooking.acceptedAt);
       return committedBooking;
     });
     if (updatedBooking instanceof NextResponse) return updatedBooking;

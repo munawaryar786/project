@@ -1,18 +1,15 @@
-import net from "node:net";
-import tls from "node:tls";
-import type { Socket } from "node:net";
-import type { TLSSocket } from "node:tls";
+// Public compatibility API. All provider calls go through the transactional service.
 import type { Booking } from "@prisma/client";
-import { Resend } from "resend";
-import { EMAIL, PHONE_NUMBER, WHATSAPP_URL } from "./constants";
-import { maskEmail, maskPhone } from "./utils";
-import { prisma } from "./prisma";
-import {
-  buildSeniorAssistedAdminEmail,
-  buildSeniorAssistedDriverSafeEmail,
-} from "./email-templates/booking-emails";
-
+import { emailAddress, emailOrigin, EmailError } from "./email/config";
+import { emailLocale } from "./email/templates";
+import type { DeliveryResult, BookingMail, TransactionalEmail } from "./email/types";
+import { sendTransactionalEmail } from "./email/send";
+import { parseMarketDateTime } from "./scheduled-marketplace";
+export type EmailSendResult = DeliveryResult;
 export interface BookingEmailData {
+  bookingId?: string;
+  pickupAt?: Date | string | null;
+  marketTimezone?: string | null;
   bookingRef: string;
   serviceType: string;
   pickupAddress: string;
@@ -63,650 +60,9 @@ export interface BookingEmailData {
   customWaitingDuration?: string | null;
 }
 
-type EmailProvider = "smtp" | "resend" | "console" | "none";
-
-export interface EmailSendResult {
-  success: boolean;
-  provider: EmailProvider;
-  warning?: string;
-  error?: string;
-}
-
-interface EmailMessage {
-  to: string | string[];
-  subject: string;
-  html: string;
-  text: string;
-}
-
-interface SmtpConfig {
-  host: string;
-  port: number;
-  user: string;
-  pass: string;
-  from: string;
-  secure: boolean;
-}
-
-interface SmtpResponse {
-  code: number;
-  message: string;
-}
-
-const resend = process.env.RESEND_API_KEY
-  ? new Resend(process.env.RESEND_API_KEY)
-  : null;
-
-function getAdminEmail() {
-  return (
-    process.env.ADMIN_BOOKING_EMAIL ||
-    process.env.BOOKING_NOTIFICATION_EMAIL ||
-    process.env.ADMIN_EMAIL ||
-    EMAIL
-  );
-}
-
-function getFromAddress() {
-  return process.env.SMTP_FROM || process.env.EMAIL_FROM || `Drivo <${EMAIL}>`;
-}
-
-function getSmtpConfig(): SmtpConfig | null {
-  const host = process.env.SMTP_HOST;
-  const portValue = process.env.SMTP_PORT;
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-  const from = getFromAddress();
-
-  if (!host || !portValue || !user || !pass || !from) return null;
-
-  const port = Number(portValue);
-  if (!Number.isInteger(port) || port <= 0) {
-    console.warn(`[email] SMTP_PORT is invalid: ${portValue}`);
-    return null;
-  }
-
-  return {
-    host,
-    port,
-    user,
-    pass,
-    from,
-    secure: process.env.SMTP_SECURE === "true" || port === 465,
-  };
-}
-
-function hasPartialSmtpConfig() {
-  return [
-    process.env.SMTP_HOST,
-    process.env.SMTP_PORT,
-    process.env.SMTP_USER,
-    process.env.SMTP_PASS,
-    process.env.SMTP_FROM,
-  ].some(Boolean);
-}
-
-function escapeHtml(value: string | number | null | undefined) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function formatValue(value: string | number | null | undefined) {
-  const text = String(value ?? "").trim();
-  return text || "N/A";
-}
-
-function formatPrice(value: number | null | undefined) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "N/A";
-  return `EUR ${value.toFixed(2)}`;
-}
-
-function getPublicSiteUrl(sourceDomain?: string | null) {
-  const configured =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.PUBLIC_SITE_URL ||
-    process.env.APP_URL ||
-    process.env.NEXT_PUBLIC_BASE_URL;
-
-  if (configured) return configured.replace(/\/$/, "");
-
-  if (sourceDomain && /(^|\.)drivo\.sk$/i.test(sourceDomain)) {
-    return `https://${sourceDomain}`;
-  }
-
-  return null;
-}
-
-function getAdminDashboardUrl(data: BookingEmailData) {
-  const siteUrl = getPublicSiteUrl(data.sourceDomain);
-  return siteUrl ? `${siteUrl}/admin/bookings` : null;
-}
-
-export function isSeniorAssistedService(serviceType: string | null | undefined) {
-  const normalized = String(serviceType || "").trim().toUpperCase();
-  return normalized === "SENIOR" || normalized === "ACCESSIBLE";
-}
-
-function serviceLabel(value: string) {
-  return value
-    .toLowerCase()
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function renderRows(rows: Array<[string, string | number | null | undefined]>) {
-  return rows
-    .map(
-      ([label, value]) => `
-        <tr>
-          <td style="padding: 10px 0; border-bottom: 1px solid #e5e7eb; color: #4b5563; font-size: 14px; width: 38%;">
-            ${escapeHtml(label)}
-          </td>
-          <td style="padding: 10px 0; border-bottom: 1px solid #e5e7eb; color: #111827; font-size: 14px; font-weight: 600;">
-            ${escapeHtml(formatValue(value))}
-          </td>
-        </tr>`
-    )
-    .join("");
-}
-
-function buildEmailShell(title: string, preheader: string, body: string, sourceDomain?: string | null) {
-  const logoUrl = getPublicSiteUrl(sourceDomain);
-  const brand = logoUrl
-    ? `<img src="${escapeHtml(`${logoUrl}/drivo-logo-transparent.png`)}" width="132" alt="Drivo" style="display:block; max-width:132px; height:auto; border:0;" />`
-    : `<span style="color: #b7f7d1; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase;">Drivo</span>`;
-  return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${escapeHtml(title)}</title>
-  </head>
-  <body style="margin: 0; padding: 0; background: #f3f4f6; font-family: Arial, Helvetica, sans-serif;">
-    <div style="display: none; max-height: 0; overflow: hidden; opacity: 0;">
-      ${escapeHtml(preheader)}
-    </div>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background: #f3f4f6; padding: 24px 12px;">
-      <tr>
-        <td align="center">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 640px; background: #ffffff; border-radius: 8px; overflow: hidden;">
-            <tr>
-              <td style="background: #113f36; color: #ffffff; padding: 24px;">
-                ${brand}
-                <h1 style="margin: 10px 0 0; font-size: 24px; line-height: 1.25;">${escapeHtml(title)}</h1>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding: 24px;">
-                ${body}
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`;
-}
-
-function buildAdminNotificationEmail(data: BookingEmailData) {
-  const rows: Array<[string, string | number | null | undefined]> = [
-    ["Booking reference", data.bookingRef],
-    ["Customer name", data.customerName],
-    ["Customer phone", data.customerPhone],
-    ["Customer email", data.customerEmail],
-    ["Pickup address", data.pickupAddress],
-    ["Dropoff address", data.dropoffAddress],
-    ["Scheduled date", data.scheduledDate],
-    ["Scheduled time", data.scheduledTime],
-    ["Service type", serviceLabel(data.serviceType)],
-    ["Passenger count", data.passengerCount],
-    ["Luggage type", data.luggageType],
-    ["Payment method", data.paymentMethod],
-    ["Confirmed total", formatPrice(data.estimatedPrice)],
-  ];
-
-  if (data.specialNotes) rows.push(["Special notes", data.specialNotes]);
-  if (data.flightNumber) rows.push(["Flight number", data.flightNumber]);
-  if (data.airline) rows.push(["Airline", data.airline]);
-  if (data.waitAndGreet) rows.push(["Wait and greet", "Yes"]);
-  if (data.wheelchairNeeded) rows.push(["Wheelchair needed", "Yes"]);
-  if (data.distanceKm != null) rows.push(["Distance", `${data.distanceKm} km`]);
-  if (data.sourceDomain) rows.push(["Source domain", data.sourceDomain]);
-
-  return buildEmailShell(
-    `New booking ${data.bookingRef}`,
-    `New Drivo booking from ${data.customerName}`,
-    `<p style="margin: 0 0 18px; color: #374151; font-size: 15px; line-height: 1.6;">
-      A customer has completed a booking. Details are below.
-    </p>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-      ${renderRows(rows)}
-    </table>
-    <p style="margin: 22px 0 0; color: #6b7280; font-size: 13px;">
-      Admin panel: ${escapeHtml(process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000")}/admin/bookings
-    </p>`
-    , data.sourceDomain
-  );
-}
-
-function buildCustomerConfirmationEmail(data: BookingEmailData) {
-  const rows: Array<[string, string | number | null | undefined]> = [
-    ["Booking reference", data.bookingRef],
-    ["Pickup address", data.pickupAddress],
-    ["Dropoff address", data.dropoffAddress],
-    ["Scheduled date", data.scheduledDate],
-    ["Scheduled time", data.scheduledTime],
-    ["Service type", serviceLabel(data.serviceType)],
-    ["Passenger count", data.passengerCount],
-    ["Payment method", data.paymentMethod],
-    ["Confirmed total", formatPrice(data.estimatedPrice)],
-  ];
-  if (data.luggageType) rows.push(["Luggage", data.luggageType]);
-  if (data.distanceKm != null) rows.push(["Trip distance", `${data.distanceKm} km`]);
-  if (data.assistanceLevel || data.wheelchairNeeded || data.wavRequired) {
-    rows.push(["Assistance", data.assistanceLevel || (data.wavRequired || data.wheelchairNeeded ? "Accessibility vehicle/support" : "Requested")]);
-  }
-  if (data.status) rows.push(["Booking status", data.status]);
-
-  return buildEmailShell(
-    `Booking confirmed: ${data.bookingRef}`,
-    `Your Drivo booking ${data.bookingRef} is confirmed.`,
-    `<p style="margin: 0 0 18px; color: #374151; font-size: 15px; line-height: 1.6;">
-      Thank you for booking with Drivo. Your ride details are confirmed below.
-    </p>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-      ${renderRows(rows)}
-    </table>
-    <div style="margin-top: 22px; padding: 16px; background: #ecfdf5; border: 1px solid #bbf7d0; border-radius: 8px;">
-      <p style="margin: 0 0 8px; color: #064e3b; font-size: 15px; font-weight: 700;">Drivo support</p>
-      <p style="margin: 0; color: #065f46; font-size: 14px; line-height: 1.6;">
-        Phone: ${escapeHtml(PHONE_NUMBER)}<br />
-        Email: ${escapeHtml(EMAIL)}<br />
-        WhatsApp: <a href="${escapeHtml(WHATSAPP_URL)}" style="color: #047857;">${escapeHtml(WHATSAPP_URL)}</a>
-      </p>
-    </div>`
-    , data.sourceDomain
-  );
-}
-
-function buildAdminNotificationText(data: BookingEmailData) {
-  return [
-    `New Drivo booking: ${data.bookingRef}`,
-    "",
-    `Customer name: ${data.customerName}`,
-    `Customer phone: ${data.customerPhone}`,
-    `Customer email: ${data.customerEmail}`,
-    `Pickup address: ${data.pickupAddress}`,
-    `Dropoff address: ${data.dropoffAddress}`,
-    `Scheduled date: ${data.scheduledDate}`,
-    `Scheduled time: ${data.scheduledTime}`,
-    `Service type: ${serviceLabel(data.serviceType)}`,
-    `Passenger count: ${data.passengerCount}`,
-    `Luggage type: ${data.luggageType}`,
-    `Payment method: ${data.paymentMethod}`,
-    `Confirmed total: ${formatPrice(data.estimatedPrice)}`,
-    data.specialNotes ? `Special notes: ${data.specialNotes}` : null,
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-function buildCustomerConfirmationText(data: BookingEmailData) {
-  return [
-    `Your Drivo booking is confirmed: ${data.bookingRef}`,
-    "",
-    `Pickup address: ${data.pickupAddress}`,
-    `Dropoff address: ${data.dropoffAddress}`,
-    `Scheduled date: ${data.scheduledDate}`,
-    `Scheduled time: ${data.scheduledTime}`,
-    `Service type: ${serviceLabel(data.serviceType)}`,
-    `Passenger count: ${data.passengerCount}`,
-    `Payment method: ${data.paymentMethod}`,
-    `Confirmed total: ${formatPrice(data.estimatedPrice)}`,
-    "",
-    "Drivo support",
-    `Phone: ${PHONE_NUMBER}`,
-    `Email: ${EMAIL}`,
-    `WhatsApp: ${WHATSAPP_URL}`,
-  ].join("\n");
-}
-
-function buildPaymentReceiptHtml(
-  data: BookingEmailData & { amount: number; paymentId: string }
-) {
-  return buildEmailShell(
-    `Payment received: ${data.bookingRef}`,
-    `Payment received for Drivo booking ${data.bookingRef}.`,
-    `<p style="margin: 0 0 18px; color: #374151; font-size: 15px; line-height: 1.6;">
-      Thank you. We received your card payment.
-    </p>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-      ${renderRows([
-        ["Booking reference", data.bookingRef],
-        ["Amount paid", formatPrice(data.amount)],
-        ["Payment ID", data.paymentId],
-      ])}
-    </table>`
-    , data.sourceDomain
-  );
-}
-
-function extractEmailAddress(from: string) {
-  const match = from.match(/<([^>]+)>/);
-  return match?.[1] || from;
-}
-
-function normalizeRecipients(to: string | string[]) {
-  return Array.isArray(to) ? to : [to];
-}
-
-function encodeHeader(value: string) {
-  return `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
-}
-
-function dotStuff(value: string) {
-  return value.replace(/\r?\n\./g, "\r\n..");
-}
-
-function buildMimeMessage(from: string, message: EmailMessage) {
-  const recipients = normalizeRecipients(message.to);
-  const boundary = `drivo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-  return [
-    `From: ${from}`,
-    `To: ${recipients.join(", ")}`,
-    `Subject: ${encodeHeader(message.subject)}`,
-    "MIME-Version: 1.0",
-    `Content-Type: multipart/alternative; boundary="${boundary}"`,
-    "",
-    `--${boundary}`,
-    'Content-Type: text/plain; charset="UTF-8"',
-    "Content-Transfer-Encoding: 8bit",
-    "",
-    message.text,
-    "",
-    `--${boundary}`,
-    'Content-Type: text/html; charset="UTF-8"',
-    "Content-Transfer-Encoding: 8bit",
-    "",
-    message.html,
-    "",
-    `--${boundary}--`,
-    "",
-  ].join("\r\n");
-}
-
-async function connectSmtp(config: SmtpConfig): Promise<Socket | TLSSocket> {
-  const socket = config.secure
-    ? tls.connect({
-        host: config.host,
-        port: config.port,
-        servername: config.host,
-      })
-    : net.connect({
-        host: config.host,
-        port: config.port,
-      });
-
-  await new Promise<void>((resolve, reject) => {
-    const successEvent = config.secure ? "secureConnect" : "connect";
-    const cleanup = () => {
-      socket.off(successEvent, onSuccess);
-      socket.off("error", onError);
-    };
-    const onSuccess = () => {
-      cleanup();
-      resolve();
-    };
-    const onError = (error: Error) => {
-      cleanup();
-      reject(error);
-    };
-
-    socket.once(successEvent, onSuccess);
-    socket.once("error", onError);
-  });
-
-  socket.setTimeout(30000);
-  return socket;
-}
-
-function createSmtpReader(socket: Socket | TLSSocket) {
-  let buffer = "";
-
-  return async function readResponse(): Promise<SmtpResponse> {
-    return new Promise((resolve, reject) => {
-      const cleanup = () => {
-        socket.off("data", onData);
-        socket.off("error", onError);
-        socket.off("timeout", onTimeout);
-      };
-
-      const parse = () => {
-        const lines = buffer.split(/\r?\n/).filter(Boolean);
-        const finalLine = [...lines].reverse().find((line) => /^\d{3} /.test(line));
-        if (!finalLine) return;
-
-        cleanup();
-        buffer = "";
-        resolve({
-          code: Number(finalLine.slice(0, 3)),
-          message: lines.join("\n"),
-        });
-      };
-
-      const onData = (chunk: Buffer) => {
-        buffer += chunk.toString("utf8");
-        parse();
-      };
-
-      const onError = (error: Error) => {
-        cleanup();
-        reject(error);
-      };
-
-      const onTimeout = () => {
-        cleanup();
-        reject(new Error("SMTP connection timed out"));
-      };
-
-      socket.on("data", onData);
-      socket.once("error", onError);
-      socket.once("timeout", onTimeout);
-      parse();
-    });
-  };
-}
-
-async function expectSmtpResponse(
-  readResponse: () => Promise<SmtpResponse>,
-  expectedCodes: number[],
-  action: string
-) {
-  const response = await readResponse();
-  if (!expectedCodes.includes(response.code)) {
-    throw new Error(`${action} failed: ${response.message}`);
-  }
-  return response;
-}
-
-async function writeCommand(
-  socket: Socket | TLSSocket,
-  readResponse: () => Promise<SmtpResponse>,
-  command: string,
-  expectedCodes: number[],
-  action: string
-) {
-  socket.write(`${command}\r\n`);
-  return expectSmtpResponse(readResponse, expectedCodes, action);
-}
-
-async function upgradeToTls(socket: Socket, config: SmtpConfig) {
-  const secureSocket = tls.connect({
-    socket,
-    host: config.host,
-    servername: config.host,
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    secureSocket.once("secureConnect", resolve);
-    secureSocket.once("error", reject);
-  });
-
-  secureSocket.setTimeout(30000);
-  return secureSocket;
-}
-
-async function sendViaSmtp(message: EmailMessage, config: SmtpConfig) {
-  let socket = await connectSmtp(config);
-  let readResponse = createSmtpReader(socket);
-
-  try {
-    await expectSmtpResponse(readResponse, [220], "SMTP greeting");
-
-    const ehlo = await writeCommand(
-      socket,
-      readResponse,
-      "EHLO drivo.local",
-      [250],
-      "SMTP EHLO"
-    );
-
-    if (!config.secure && ehlo.message.toUpperCase().includes("STARTTLS")) {
-      await writeCommand(socket, readResponse, "STARTTLS", [220], "SMTP STARTTLS");
-      socket = await upgradeToTls(socket as Socket, config);
-      readResponse = createSmtpReader(socket);
-      await writeCommand(socket, readResponse, "EHLO drivo.local", [250], "SMTP EHLO after STARTTLS");
-    }
-
-    await writeCommand(socket, readResponse, "AUTH LOGIN", [334], "SMTP auth");
-    await writeCommand(
-      socket,
-      readResponse,
-      Buffer.from(config.user, "utf8").toString("base64"),
-      [334],
-      "SMTP username"
-    );
-    await writeCommand(
-      socket,
-      readResponse,
-      Buffer.from(config.pass, "utf8").toString("base64"),
-      [235],
-      "SMTP password"
-    );
-
-    const fromAddress = extractEmailAddress(config.from);
-    await writeCommand(
-      socket,
-      readResponse,
-      `MAIL FROM:<${fromAddress}>`,
-      [250],
-      "SMTP MAIL FROM"
-    );
-
-    for (const recipient of normalizeRecipients(message.to)) {
-      await writeCommand(
-        socket,
-        readResponse,
-        `RCPT TO:<${recipient}>`,
-        [250, 251],
-        "SMTP RCPT TO"
-      );
-    }
-
-    await writeCommand(socket, readResponse, "DATA", [354], "SMTP DATA");
-    socket.write(`${dotStuff(buildMimeMessage(config.from, message))}\r\n.\r\n`);
-    await expectSmtpResponse(readResponse, [250], "SMTP message send");
-    socket.write("QUIT\r\n");
-  } finally {
-    socket.end();
-  }
-}
-
-async function deliverEmail(message: EmailMessage): Promise<EmailSendResult> {
-  const smtpConfig = getSmtpConfig();
-
-  if (smtpConfig) {
-    try {
-      await sendViaSmtp(message, smtpConfig);
-      return { success: true, provider: "smtp" };
-    } catch (error) {
-      const messageText = error instanceof Error ? error.message : String(error);
-      return { success: false, provider: "smtp", error: messageText };
-    }
-  }
-
-  if (hasPartialSmtpConfig()) {
-    console.warn(
-      "[email] SMTP configuration is incomplete. Required: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM."
-    );
-  }
-
-  if (resend) {
-    try {
-      await resend.emails.send({
-        from: getFromAddress(),
-        to: normalizeRecipients(message.to),
-        subject: message.subject,
-        html: message.html,
-        text: message.text,
-      });
-      return { success: true, provider: "resend" };
-    } catch (error) {
-      const messageText = error instanceof Error ? error.message : String(error);
-      return { success: false, provider: "resend", error: messageText };
-    }
-  }
-
-  return {
-    success: false,
-    provider: "console",
-    warning: "No email provider configured. Set SMTP_* variables or RESEND_API_KEY.",
-  };
-}
-
-function sanitizeEmailError(value: string | undefined) {
-  return String(value || "email_delivery_failed")
-    .replace(/(password|pass|token|secret|api[_-]?key|authorization)\s*[:=]\s*[^\s,;]+/gi, "$1=[redacted]")
-    .replace(/https?:\/\/[^\s]+/gi, "[url-redacted]")
-    .slice(0, 240);
-}
-async function deliverIdempotentEmail(logicalKey: string, kind: string, message: EmailMessage): Promise<EmailSendResult> {
-  let record = await prisma.emailDelivery.findUnique({ where: { logicalKey } });
-  if (!record) {
-    try { record = await prisma.emailDelivery.create({ data: { logicalKey, kind, recipient: normalizeRecipients(message.to).join(", ") } }); }
-    catch { record = await prisma.emailDelivery.findUnique({ where: { logicalKey } }); }
-  }
-  if (!record) return { success: false, provider: "none", error: "Email delivery record unavailable." };
-  const claimed = await prisma.emailDelivery.updateMany({ where: { logicalKey, status: { in: ["PENDING", "RETRY"] }, attempts: { lt: 3 } }, data: { status: "PROCESSING", attempts: { increment: 1 } } });
-  if (claimed.count !== 1) {
-    if (record.status === "SENT") return { success: true, provider: "none", warning: "Email already delivered." };
-    return { success: false, provider: "none", warning: "Email delivery is already in progress." };
-  }
-  const result = await deliverEmail(message);
-  await prisma.emailDelivery.updateMany({ where: { logicalKey, status: "PROCESSING" }, data: result.success ? { status: "SENT", sentAt: new Date(), lastError: null } : { status: record.attempts + 1 >= 3 ? "FAILED" : "RETRY", lastError: sanitizeEmailError(result.error || result.warning || "delivery_failed") } });
-  return result;
-}
-function logEmailResult(label: string, to: string, result: EmailSendResult) {
-  if (result.success) {
-    console.log(`[email] ${label} sent via ${result.provider} to ${to}`);
-    return;
-  }
-
-  console.warn(
-    `[email] ${label} was not sent via ${result.provider}: ${
-      sanitizeEmailError(result.error || result.warning || "unknown warning")
-    }`
-  );
-}
-
 export function bookingToEmailData(booking: Booking): BookingEmailData {
   return {
+    bookingId: booking.id, pickupAt: booking.pickupAt, marketTimezone: booking.marketTimezone,
     bookingRef: booking.bookingRef,
     serviceType: booking.serviceType,
     pickupAddress: booking.pickupAddress,
@@ -756,175 +112,64 @@ export function bookingToEmailData(booking: Booking): BookingEmailData {
   };
 }
 
-export async function notifyAdminNewBooking(
-  data: BookingEmailData
-): Promise<EmailSendResult> {
-  const adminEmail = getAdminEmail();
 
-  console.log("[email] Admin booking notification requested", {
-    bookingRef: data.bookingRef,
-    to: adminEmail,
-    customer: data.customerName,
-    customerPhone: maskPhone(data.customerPhone),
-    customerEmail: maskEmail(data.customerEmail),
-    paymentMethod: data.paymentMethod,
-  });
-
-  const result = await deliverEmail({
-    to: adminEmail,
-    subject: `New Drivo booking ${data.bookingRef} - ${serviceLabel(data.serviceType)}`,
-    html: buildAdminNotificationEmail(data),
-    text: buildAdminNotificationText(data),
-  });
-
-  logEmailResult("Admin booking notification", adminEmail, result);
-  return result;
+export function getAdminEmail() {
+  const recipient = process.env.ADMIN_BOOKING_EMAIL || process.env.BOOKING_NOTIFICATION_EMAIL || process.env.ADMIN_EMAIL;
+  if (!recipient) throw new EmailError("EMAIL_ADMIN_RECIPIENT_MISSING");
+  return emailAddress(recipient);
 }
-
-export async function sendSeniorAssistedBookingEmails(data: BookingEmailData) {
-  const adminEmail = getAdminEmail();
-  const siteUrl = getPublicSiteUrl(data.sourceDomain);
-  const adminTemplate = buildSeniorAssistedAdminEmail(data, {
-    siteUrl,
-    adminDashboardUrl: getAdminDashboardUrl(data),
-  });
-  const driverSafeTemplate = buildSeniorAssistedDriverSafeEmail(data, { siteUrl });
-
-  console.log("[email] Senior/assisted admin-only notification requested", {
-    bookingRef: data.bookingRef,
-    to: adminEmail,
-    customer: data.customerName,
-    customerPhone: maskPhone(data.customerPhone),
-    customerEmail: maskEmail(data.customerEmail),
-  });
-
-  const [adminFull, driverSafe] = await Promise.all([
-    deliverEmail({
-      to: adminEmail,
-      subject: adminTemplate.subject,
-      html: adminTemplate.html,
-      text: adminTemplate.text,
-    }),
-    deliverEmail({
-      to: adminEmail,
-      subject: `Driver-safe dispatch copy - safe to forward - ${driverSafeTemplate.subject}`,
-      html: driverSafeTemplate.html,
-      text: driverSafeTemplate.text,
-    }),
-  ]);
-
-  logEmailResult("Senior/assisted admin full booking email", adminEmail, adminFull);
-  logEmailResult("Senior/assisted driver-safe dispatch copy", adminEmail, driverSafe);
-
-  if (!adminFull.success || !driverSafe.success) {
-    console.warn(
-      `[email] Senior/assisted booking ${data.bookingRef} saved, but one or more admin-only emails failed.`
-    );
+export function isSeniorAssistedService(value?: string | null) { return ["SENIOR", "ACCESSIBLE"].includes(String(value || "").toUpperCase()); }
+export function bookingMail(data: BookingEmailData): BookingMail {
+  const pickup = data.pickupAt ? new Date(data.pickupAt) : parseMarketDateTime(data.scheduledDate, data.scheduledTime, data.marketTimezone || "Europe/Bratislava");
+  if (!pickup || !Number.isFinite(pickup.getTime())) throw new EmailError("EMAIL_PICKUP_INVALID");
+  return { bookingRef: data.bookingRef, pickupAt: pickup.toISOString(), marketTimezone: data.marketTimezone || "Europe/Bratislava", pickupAddress: data.pickupAddress, destination: data.dropoffAddress, serviceType: data.serviceType, amount: data.estimatedPrice, paymentMethod: data.paymentMethod };
+}
+function bookingRequest(data: BookingEmailData, type: "BOOKING_CONFIRMED" | "ADMIN_BOOKING_CREATED" | "ADMIN_ASSISTED_COPY" | "ADMIN_NO_DRIVER", recipient: string): TransactionalEmail {
+  // Preserve keys already recorded by the previous sender across deployment.
+  const idempotencyKey = type === "BOOKING_CONFIRMED" ? "BOOKING_CONFIRMATION_INVOICE:" + data.bookingRef
+    : type === "ADMIN_NO_DRIVER" ? "NO_DRIVER_ADMIN_ESCALATION:" + data.bookingRef
+    : type + ":" + (data.bookingId || data.bookingRef);
+  return { type, recipient, locale: emailLocale(data.languagePref), data: bookingMail(data), idempotencyKey, correlationId: data.bookingId || data.bookingRef };
+}
+async function sendBookingMail(data: BookingEmailData, type: Parameters<typeof bookingRequest>[1], recipient: () => string): Promise<DeliveryResult> {
+  try { return await sendTransactionalEmail(bookingRequest(data, type, recipient())); }
+  catch (error) {
+    const code = error instanceof EmailError ? error.code : "EMAIL_REQUEST_FAILED";
+    console.error("[email.request.failed]", { emailType: type, code });
+    return { success: false, provider: "none", error: code };
   }
-
+}
+export async function notifyAdminNewBooking(data: BookingEmailData) { return sendBookingMail(data, "ADMIN_BOOKING_CREATED", getAdminEmail); }
+export async function sendSeniorAssistedBookingEmails(data: BookingEmailData) {
+  const adminFull = await notifyAdminNewBooking(data);
+  const driverSafe = await sendBookingMail(data, "ADMIN_ASSISTED_COPY", getAdminEmail);
   return { adminFull, driverSafe };
 }
-export async function sendPassengerPasswordResetEmail(input: { to: string; resetToken: string; resetAttemptId: string; expiresAt: Date; sourceDomain?: string | null }): Promise<EmailSendResult> {
-  const siteUrl = getPublicSiteUrl(input.sourceDomain) || "http://localhost:3000";
-  const resetUrl = siteUrl + "/passenger/reset?token=" + encodeURIComponent(input.resetToken) + "&attempt=" + encodeURIComponent(input.resetAttemptId);
-  const body = "<p style=\"font:15px/1.6 Arial;color:#374151\">We received a request to reset your Drivo passenger password.</p><p style=\"font:14px/1.6 Arial;color:#374151\">This secure link expires in 10 minutes and can be used once.</p><p><a href=\"" + escapeHtml(resetUrl) + "\" style=\"display:inline-block;background:#11b8a6;color:#fff;padding:12px 18px;border-radius:6px;text-decoration:none;font-weight:700\">Reset password</a></p><p style=\"font:13px/1.6 Arial;color:#60707d\">If you did not request this, ignore this email. Drivo support: " + escapeHtml(EMAIL) + " / " + escapeHtml(PHONE_NUMBER) + ".</p>";
-  return deliverIdempotentEmail("PASSWORD_RESET_EMAIL:" + input.resetAttemptId, "PASSWORD_RESET", { to: input.to, subject: "Reset your Drivo passenger password", html: buildEmailShell("Reset your Drivo password", "Secure password reset for your Drivo account.", body, input.sourceDomain), text: ["Reset your Drivo passenger password", "", "This link expires in 10 minutes and can be used once:", resetUrl, "", "If you did not request this, ignore this email.", "Drivo support: " + EMAIL + " / " + PHONE_NUMBER].join("\\n") });
-}
-
 export async function sendBookingConfirmationInvoice(data: BookingEmailData): Promise<EmailSendResult> {
-  if (data.status !== "CONFIRMED") return { success: false, provider: "none", warning: "Booking is not confirmed." };
-  if (!data.customerEmail) return { success: false, provider: "none", warning: "Customer email is missing." };
-  return deliverIdempotentEmail("BOOKING_CONFIRMATION_INVOICE:" + data.bookingRef, "BOOKING_CONFIRMATION_INVOICE", { to: data.customerEmail, subject: "Drivo booking confirmation / invoice - " + data.bookingRef, html: buildCustomerConfirmationEmail(data), text: buildCustomerConfirmationText(data) });
+  if (data.status !== "CONFIRMED" || !data.customerEmail) return { success: false, provider: "none", warning: "EMAIL_INELIGIBLE" };
+  return sendBookingMail(data, "BOOKING_CONFIRMED", () => data.customerEmail);
 }
-
-export async function sendDispatchPaymentLinkEmail(input: {
-  to: string; bookingRef: string; amount: string; url: string; expiresAt: Date; language?: string | null; paymentId: string;
-}): Promise<EmailSendResult> {
-  const copy: Record<string, { subject: string; title: string; intro: string; pay: string; expires: string; security: string }> = {
-    en: { subject: "Secure payment for Drivo booking", title: "Complete your Drivo payment", intro: "Use the secure hosted payment page to pay for booking", pay: "Pay securely", expires: "This link expires in 30 minutes.", security: "Enter card details only on the secure payment provider page." },
-    sk: { subject: "Bezpečná platba za jazdu Drivo", title: "Dokončite platbu Drivo", intro: "Na bezpečnej platobnej stránke uhraďte rezerváciu", pay: "Bezpečne zaplatiť", expires: "Tento odkaz vyprší o 30 minút.", security: "Údaje o karte zadávajte iba na zabezpečenej stránke poskytovateľa platby." },
-    de: { subject: "Sichere Zahlung für Ihre Drivo-Fahrt", title: "Drivo-Zahlung abschließen", intro: "Bezahlen Sie Ihre Buchung über die sichere Zahlungsseite", pay: "Sicher bezahlen", expires: "Dieser Link läuft in 30 Minuten ab.", security: "Geben Sie Kartendaten ausschließlich auf der sicheren Zahlungsseite ein." },
-    uk: { subject: "Безпечна оплата поїздки Drivo", title: "Завершіть оплату Drivo", intro: "Оплатіть бронювання на захищеній платіжній сторінці", pay: "Безпечно оплатити", expires: "Посилання дійсне 30 хвилин.", security: "Вводьте дані картки лише на захищеній сторінці платіжного провайдера." },
-  };
-  const locale = (input.language || "sk").toLowerCase().slice(0, 2);
-  const text = copy[locale] || copy.sk;
-  const body = `<p style="font:15px/1.6 Arial;color:#374151">${escapeHtml(text.intro)} <strong>${escapeHtml(input.bookingRef)}</strong>.</p><p style="font:20px/1.5 Arial;color:#10202f;font-weight:700">${escapeHtml(input.amount)}</p><p><a href="${escapeHtml(input.url)}" style="display:inline-block;background:#087f73;color:#fff;padding:13px 20px;border-radius:8px;text-decoration:none;font-weight:700">${escapeHtml(text.pay)}</a></p><p style="font:14px/1.6 Arial;color:#60707d">${escapeHtml(text.expires)} ${escapeHtml(text.security)}</p>`;
-  return deliverIdempotentEmail("DISPATCH_PAYMENT_LINK:" + input.paymentId, "DISPATCH_PAYMENT_LINK", { to: input.to, subject: text.subject + " - " + input.bookingRef, html: buildEmailShell(text.title, text.intro, body), text: [text.title, "", text.intro + " " + input.bookingRef + ".", input.amount, input.url, "", text.expires, text.security].join("\n") });
-}
-
-export async function sendNoDriverAdminEscalation(data: BookingEmailData): Promise<EmailSendResult> {
-  const adminEmail = getAdminEmail();
-  const rows = [["Booking reference", data.bookingRef], ["Service", serviceLabel(data.serviceType)], ["Ride type", data.scheduledDate ? "Scheduled" : "Immediate"], ["Pickup time", data.scheduledDate + " " + data.scheduledTime], ["Pickup", data.pickupAddress], ["Destination", data.dropoffAddress], ["Passengers", String(data.passengerCount)], ["Luggage", data.luggageType], ["Accessibility", data.wheelchairNeeded ? "Wheelchair capability required" : "No wheelchair requirement recorded"], ["Booking status", data.status || "UNKNOWN"], ["Dispatch status", "DISPATCH_EXHAUSTED"]].map(([label,value]) => "<tr><td style=\"padding:8px 0;color:#60707d;width:38%\">" + escapeHtml(label) + "</td><td style=\"padding:8px 0;font-weight:700;color:#10202f\">" + escapeHtml(value) + "</td></tr>").join("");
-  const siteUrl = getPublicSiteUrl(data.sourceDomain);
-  const adminLink = siteUrl ? siteUrl + "/admin/operations" : null;
-  const body = "<p style=\"font:15px/1.6 Arial;color:#374151\">Automatic dispatch is exhausted and a driver assignment is required.</p><table width=\"100%\">" + rows + "</table>" + (adminLink ? "<p><a href=\"" + escapeHtml(adminLink) + "\">Open Admin Operations</a></p>" : "") + "<p style=\"font:13px/1.6 Arial;color:#60707d\">Reason: no eligible driver accepted the dispatch cycle. Assign through the authorized Admin Operations flow.</p>";
-  return deliverIdempotentEmail("NO_DRIVER_ADMIN_ESCALATION:" + data.bookingRef, "NO_DRIVER_ADMIN_ESCALATION", { to: adminEmail, subject: "Driver Assignment Required - " + data.bookingRef, html: buildEmailShell("Driver Assignment Required", "Drivo dispatch requires manual driver assignment.", body, data.sourceDomain), text: ["Driver Assignment Required", "", "Booking: " + data.bookingRef, "Service: " + serviceLabel(data.serviceType), "Pickup: " + data.pickupAddress, "Destination: " + data.dropoffAddress, "Pickup time: " + data.scheduledDate + " " + data.scheduledTime, "Passengers: " + data.passengerCount, "Dispatch: DISPATCH_EXHAUSTED", "Reason: no eligible driver accepted.", adminLink || ""].filter(Boolean).join("\\n") });
-}
-export async function sendCustomerConfirmation(
-  data: BookingEmailData
-): Promise<EmailSendResult> {
-  if (!data.customerEmail) {
-    const result: EmailSendResult = {
-      success: false,
-      provider: "none",
-      warning: "Customer email is missing.",
-    };
-    logEmailResult("Customer booking confirmation", "missing customer email", result);
-    return result;
-  }
-
-  console.log("[email] Customer booking confirmation requested", {
-    bookingRef: data.bookingRef,
-    to: maskEmail(data.customerEmail),
-  });
-
-  const result = await deliverEmail({
-    to: data.customerEmail,
-    subject: `Booking confirmed - ${data.bookingRef} | Drivo`,
-    html: buildCustomerConfirmationEmail(data),
-    text: buildCustomerConfirmationText(data),
-  });
-
-  logEmailResult("Customer booking confirmation", maskEmail(data.customerEmail), result);
-  return result;
-}
-
+export async function sendCustomerConfirmation(data: BookingEmailData) { return sendBookingConfirmationInvoice(data); }
 export async function sendBookingCompletionEmails(data: BookingEmailData) {
-  if (data.status !== "CONFIRMED") return { admin: { success: true, provider: "none" as const, warning: "Booking is not confirmed." }, customer: { success: false, provider: "none" as const, warning: "Booking is not confirmed." }, skipped: true };
+  if (data.status !== "CONFIRMED") return { skipped: true, customer: { success: false, provider: "none" }, admin: { success: false, provider: "none" } };
   const customer = await sendBookingConfirmationInvoice(data);
-  if (isSeniorAssistedService(data.serviceType)) return { admin: { success: true, provider: "none" as const, warning: "Admin assisted notification is handled by the existing flow." }, customer, skipped: false };
   const admin = await notifyAdminNewBooking(data);
-  return { admin, customer, skipped: false };
-}export async function sendPaymentReceipt(
-  data: BookingEmailData & { amount: number; paymentId: string }
-): Promise<EmailSendResult> {
-  if (!data.customerEmail) {
-    const result: EmailSendResult = {
-      success: false,
-      provider: "none",
-      warning: "Customer email is missing.",
-    };
-    logEmailResult("Payment receipt", "missing customer email", result);
-    return result;
-  }
-
-  console.log("[email] Payment receipt requested", {
-    bookingRef: data.bookingRef,
-    to: maskEmail(data.customerEmail),
-    amount: data.amount,
-  });
-
-  const result = await deliverEmail({
-    to: data.customerEmail,
-    subject: `Payment receipt - ${data.bookingRef} | Drivo`,
-    html: buildPaymentReceiptHtml(data),
-    text: [
-      `Payment received for booking ${data.bookingRef}`,
-      `Amount paid: ${formatPrice(data.amount)}`,
-      `Payment ID: ${data.paymentId}`,
-    ].join("\n"),
-  });
-
-  logEmailResult("Payment receipt", maskEmail(data.customerEmail), result);
+  return { customer, admin, skipped: false };
+}
+export async function sendNoDriverAdminEscalation(data: BookingEmailData) { return sendBookingMail(data, "ADMIN_NO_DRIVER", getAdminEmail); }
+export async function sendPaymentReceipt(data: BookingEmailData & { amount: number; paymentId: string }) {
+  if (!data.customerEmail) return { success: false, provider: "none", warning: "EMAIL_RECIPIENT_MISSING" };
+  return sendTransactionalEmail({ type: "PAYMENT_RECEIPT", recipient: data.customerEmail, locale: emailLocale(data.languagePref), data: { bookingRef: data.bookingRef, amount: data.amount }, idempotencyKey: "PAYMENT_RECEIPT:" + data.paymentId, correlationId: data.bookingId || data.bookingRef });
+}
+export async function sendDispatchPaymentLinkEmail(input: { to: string; bookingRef: string; amount: string; url: string; expiresAt: Date; language?: string | null; paymentId: string }) {
+  const request: TransactionalEmail = { type: "DISPATCH_PAYMENT_LINK", recipient: input.to, locale: emailLocale(input.language), data: { bookingRef: input.bookingRef, amount: input.amount, url: input.url, expiresAt: input.expiresAt.toISOString() }, idempotencyKey: "DISPATCH_PAYMENT_LINK:" + input.paymentId, correlationId: input.paymentId };
+  // Preserve the operator's existing "emailed" result: queued is not delivered.
+  const result = await sendTransactionalEmail(request, { synchronous: true });
+  if (!result.success && result.retryable) await sendTransactionalEmail(request);
   return result;
+}
+export async function sendPassengerPasswordResetEmail(input: { to: string; resetToken: string; resetAttemptId: string; expiresAt: Date; sourceDomain?: string | null; language?: string | null }) {
+  // Reset tokens remain only in the synchronous message, never in outbox/Redis.
+  emailOrigin();
+  return sendTransactionalEmail({ type: "PASSWORD_RESET", recipient: input.to, locale: emailLocale(input.language), data: { token: input.resetToken, attemptId: input.resetAttemptId, expiresAt: input.expiresAt.toISOString() }, idempotencyKey: "PASSWORD_RESET_EMAIL:" + input.resetAttemptId, correlationId: "password-reset" }, { synchronous: true });
 }

@@ -30,7 +30,7 @@ async function handler(request: NextRequest) {
     await sendPassengerPasswordResetEmail({ to: email, resetToken: proof.proofToken, resetAttemptId, expiresAt: proof.expiresAt, sourceDomain: getSourceDomain(request) });
     return NextResponse.json(generic);
   } catch (error) {
-    console.error("Password reset email request failed:", error instanceof Error ? error.message : "unknown");
+    console.error("[email.password-reset.failed]", { code: "EMAIL_REQUEST_FAILED" });
     return NextResponse.json(generic);
   }
 }

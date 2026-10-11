@@ -1,3 +1,4 @@
+import { writeBookingAssignedEmail } from "@/lib/email/domain";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { writeOutboxEvent } from "@/lib/outbox";
@@ -129,6 +130,7 @@ export async function acceptDriverOfferAtomically(input: { offerId: string; driv
       await writeOutboxEvent(tx, { eventType: "DRIVER_OFFER_ACCEPTED", aggregateType: "Booking", aggregateId: offer.bookingId,
         payload: { bookingId: offer.bookingId, driverId: input.driverId, offerId: input.offerId },
         idempotencyKey: "offer-accepted:" + input.offerId });
+      await writeBookingAssignedEmail(tx, offer.bookingId, input.driverId, now);
       return { ok: true as const, bookingId: offer.bookingId, offerId: input.offerId };
     });
   } catch (error) { return transactionFailure(error); }

@@ -9,6 +9,7 @@
     "lint": "eslint",
     "security:phase3a": "node scripts/phase3a-security-check.js && node scripts/phase3a-runtime-check.js",
     "test:ux1": "node scripts/ux1-check.cjs",
+    "test:email": "tsx scripts/transactional-email-check.ts",
     "test:dispatch": "node scripts/dispatch-check.cjs",
     "seed:pricing": "node prisma/seed-pricing.js",
     "postinstall": "prisma generate",

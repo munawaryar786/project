@@ -1,3 +1,7 @@
+import { processBookingEmailEvent } from "@/lib/email/booking-events";
+import { processTransactionalEmail } from "@/lib/email/send";
+import type { TransactionalEmail } from "@/lib/email/types";
+import { EmailError } from "@/lib/email/config";
 import { Worker, type Job } from "bullmq";
 import { Emitter } from "@socket.io/redis-emitter";
 import { prisma } from "@/lib/prisma";
@@ -18,6 +22,9 @@ const emitter = new Emitter(redis as any);
 function payloadOf(event: any) { return (event.payload && typeof event.payload === "object" ? event.payload : {}) as Record<string, any>; }
 async function signal(event: any, recipientType: "DRIVER" | "ADMIN" | "PASSENGER", recipientId: string, stateHint?: string) { const type = eventTypeForDomain(event.eventType); emitter.of(`/${recipientType.toLowerCase()}`).to(`${recipientType.toLowerCase()}:${recipientId}`).emit(type, safeEvent({ eventId: event.id, type, entityId: event.aggregateId, stateHint, actorType: recipientType })); }
 async function routeEvent(event: any) {
+  if (event.eventType === "TRANSACTIONAL_EMAIL") { await processTransactionalEmail(event.payload as TransactionalEmail); return; }
+  if (["BOOKING_EMAIL_CREATED", "BOOKING_EMAIL_ASSIGNED", "BOOKING_EMAIL_PAYMENT"].includes(event.eventType)) { await processBookingEmailEvent(event); return; }
+
   const p = payloadOf(event); const bookingId = String(p.bookingId || event.aggregateId); const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
   if (event.eventType === "SCHEDULED_REMINDER_30" || event.eventType === "SCHEDULED_WARNING_20") return;
   if (event.eventType === "SCHEDULED_RIDE_REMINDER") {
@@ -53,7 +60,10 @@ async function routeEvent(event: any) {
       await createNotification({ recipientType: "ADMIN", recipientId: admin.id, type: "DISPATCH_EXHAUSTED", data: { bookingId, bookingRef: booking?.bookingRef || "", serviceType: booking?.serviceType || "", status: booking?.status || "", dispatchStatus: booking?.dispatchStatus || "DISPATCH_EXHAUSTED" }, dedupeKey: notificationDedupe(event.id, "ADMIN", admin.id) });
       await signal(event, "ADMIN", admin.id, "manual-attention");
     }
-    if (booking) await sendNoDriverAdminEscalation(bookingToEmailData(booking));
+    if (booking) {
+      const email = await sendNoDriverAdminEscalation(bookingToEmailData(booking));
+      if (email?.success === false) throw new EmailError("EMAIL_ESCALATION_ENQUEUE_FAILED", true);
+    }
     return;
   }
   if (booking?.driverId) await signal(event, "DRIVER", booking.driverId, event.eventType.toLowerCase());
@@ -64,8 +74,31 @@ async function routeEvent(event: any) {
 async function processOutbox(job: Job<{ outboxEventId: string }>) {
   const event = await prisma.outboxEvent.findUnique({ where: { id: job.data.outboxEventId } }); if (!event) return;
   if (event.state === OUTBOX_STATES.PUBLISHED) return;
-  try { await routeEvent(event); await prisma.outboxEvent.updateMany({ where: { id: event.id, state: { in: [OUTBOX_STATES.QUEUED, OUTBOX_STATES.PROCESSING, OUTBOX_STATES.RETRY] } }, data: { state: OUTBOX_STATES.PUBLISHED, publishedAt: new Date(), claimedAt: null, lastError: null } }); console.info("[worker.outbox.published]", { eventId: event.id, eventType: event.eventType }); }
-  catch (error) { await prisma.outboxEvent.updateMany({ where: { id: event.id }, data: { state: OUTBOX_STATES.RETRY, nextAttemptAt: new Date(Date.now() + 5000), lastError: "processing_failed" } }); throw error; }
+  // Claim attempts increment on every successful relay claim. Fence the
+  // worker's result to the version it read, so a stale worker cannot
+  // overwrite a newer claim or a published event. claimedAt also fences
+  // a renewed lease when present (legacy records may not have a value).
+  const ownerWhere = {
+    id: event.id,
+    attempts: event.attempts,
+    ...(event.claimedAt ? { claimedAt: event.claimedAt } : {}),
+    state: { in: [OUTBOX_STATES.QUEUED, OUTBOX_STATES.PROCESSING, OUTBOX_STATES.RETRY] },
+  };
+  try {
+    await routeEvent(event);
+    const changed = await prisma.outboxEvent.updateMany({
+      where: ownerWhere,
+      data: { state: OUTBOX_STATES.PUBLISHED, publishedAt: new Date(), claimedAt: null, lastError: null },
+    });
+    if (changed.count === 1) console.info("[worker.outbox.published]", { eventId: event.id, eventType: event.eventType });
+  } catch (error) {
+    const emailExhausted = event.eventType === "TRANSACTIONAL_EMAIL" && job.attemptsMade + 1 >= (job.opts.attempts || 1);
+    await prisma.outboxEvent.updateMany({
+      where: ownerWhere,
+      data: { state: emailExhausted ? OUTBOX_STATES.FAILED : OUTBOX_STATES.RETRY, nextAttemptAt: emailExhausted ? null : new Date(Date.now() + 5000), lastError: "processing_failed" },
+    });
+    throw error;
+  }
 }
 async function processExpiry(job: Job<{ offerId: string; bookingId: string }>) {
   const offer = await prisma.rideRequest.findUnique({ where: { id: job.data.offerId }, select: { status: true, expiresAt: true, bookingId: true } }); if (!offer || offer.status !== "PENDING") return;

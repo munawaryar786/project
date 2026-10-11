@@ -199,7 +199,13 @@ async function run() {
     assert.equal(queued.size, count, "direct scheduling and real reconciliation share IDs");
   }
   queued.clear(); rows = [ride()]; const beforeUnacceptedAttempts = queueAttempts;
-  await accept("DECLINE"); await accept("REJECT"); assert.equal(queued.size, 0);
+  for (const action of ["DECLINE", "REJECT"]) {
+    const response = await accept(action);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { success: true, action: "DECLINED", offerId: bookingId, dispatch: "UNCHANGED" }, "non-accept response stays unchanged and never reaches accepted-ride scheduling");
+    assert.equal(queueAttempts, beforeUnacceptedAttempts);
+  }
+  assert.equal(queued.size, 0);
   acceptOK = false; assert.equal((await accept()).status, 404); assert.equal(queued.size, 0); acceptOK = true;
   assert.equal(queueAttempts, beforeUnacceptedAttempts, "declined, rejected and failed offers never attempt reminder enqueueing");
   rows = [{ ...ride(), scheduledRide: false, pickupAt: new Date(now) }];
@@ -455,9 +461,11 @@ async function run() {
   // Also exercise T-1h/T-15m boundaries and ordinary immediate acceptance.
   const beforeBoundaryChecks = now;
   for (const [remaining, expectedKind, expectedDelay] of [
+    [30 + 20 / 60, "REMINDER_ADAPTIVE", 20_000],
     [30 + 15 / 60, "REMINDER_ADAPTIVE", 15_000],
     [30 + 10 / 60, "REMINDER_ADAPTIVE", 10_000],
     [60 + 10 / 60, "REMINDER_1H", 10_000],
+    [15 + 20 / 60, "REMINDER_15M", 20_000],
     [15 + 10 / 60, "REMINDER_15M", 10_000],
     [15 + 5 / 60, "REMINDER_15M", 5_000],
     [0, null, 0],
@@ -512,13 +520,16 @@ async function run() {
     const recoveryOfferId = "444444444444444444444444";
     offers = [{ id: recoveryOfferId, bookingId, driverId: otherDriver, status: "PENDING", expiresAt: new Date(now + 30_000) }];
     queueFailure = enqueueFails;
+    const attemptsBeforeRecoveryAccept = queueAttempts;
     const capturedErrors = [], savedConsoleError = console.error;
     console.error = (...args) => capturedErrors.push(args);
     let accepted;
     try {
       accepted = await recoveryAcceptRoute.PATCH(request("/api/driver/ride-requests/respond", "PATCH", { requestId: recoveryOfferId, action: "ACCEPT" }));
     } finally { queueFailure = false; console.error = savedConsoleError; }
-    assert.equal(accepted.status, 200); assert.equal((await accepted.json()).action, "ACCEPTED");
+    assert.equal(accepted.status, 200);
+    assert.deepEqual(await accepted.json(), { success: true, action: "ACCEPTED", offerId: recoveryOfferId, bookingId }, "post-commit enqueue failure preserves the entire successful acceptance response");
+    assert.ok(queueAttempts > attemptsBeforeRecoveryAccept, "real committed recovery acceptance attempts immediate enqueue even when Redis scheduling fails");
     assert.equal(offers[0].status, "ACCEPTED"); assert.equal(rows[0].driverId, otherDriver);
     assert.equal(rows[0].status, "ASSIGNED"); assert.equal(rows[0].dispatchStatus, "ACCEPTED");
     assert.equal(+rows[0].acceptedAt, now); assert.notEqual(+rows[0].acceptedAt, formerAssignment);
@@ -714,7 +725,7 @@ async function run() {
     retryRace = true; await relay.enqueueOutboxEvent(outbox[0]);
     assert.equal(retained.state, "waiting", "concurrent outbox repair shares the existing job");
   }
-  for (const eventType of ["DRIVER_OFFER_ACCEPTED"]) {
+  for (const eventType of ["DRIVER_OFFER_ACCEPTED", "TRANSACTIONAL_EMAIL"]) {
     queued.clear(); outbox = [{ id: bookingId, eventType, state: "PROCESSING" }];
     await relay.enqueueOutboxEvent(outbox[0]);
     const retained = queued.get(`outbox-${bookingId}`); retained.state = "failed"; outbox[0].state = "PROCESSING";

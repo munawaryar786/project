@@ -1,3 +1,4 @@
+import { writeBookingAssignedEmail } from "@/lib/email/domain";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { startAutomaticDispatch, startScheduledRecoveryDispatch } from "@/lib/automatic-dispatch";
@@ -276,7 +277,8 @@ export async function assignAdminDriver(input: { bookingId: string; driverId: st
       if (currentError) return operationError(currentError);
       const claimedDriver = await tx.driver.updateMany({ where: { id: input.driverId, status: "ACTIVE", isOnTrip: false }, data: { isOnTrip: true } });
       if (claimedDriver.count !== 1) return operationError(ADMIN_OPERATION_CODES.STATE_CONFLICT);
-      const changed = await tx.booking.updateMany({ where: { id: input.bookingId, driverId: null, status: { in: ASSIGNABLE_BOOKING_STATUSES } }, data: { driverId: input.driverId, dispatchStatus: "ACCEPTED", status: "ASSIGNED", acceptedAt: new Date() } });
+      const acceptedAt = new Date();
+      const changed = await tx.booking.updateMany({ where: { id: input.bookingId, driverId: null, status: { in: ASSIGNABLE_BOOKING_STATUSES } }, data: { driverId: input.driverId, dispatchStatus: "ACCEPTED", status: "ASSIGNED", acceptedAt } });
       if (changed.count !== 1) return operationError(ADMIN_OPERATION_CODES.STATE_CONFLICT);
       const pending = await tx.rideRequest.findMany({ where: { bookingId: input.bookingId, status: "PENDING" }, select: { id: true, driverId: true } });
       for (const offer of pending) {
@@ -284,6 +286,7 @@ export async function assignAdminDriver(input: { bookingId: string; driverId: st
         await writeOutboxEvent(tx, { eventType: "ADMIN_OFFER_CANCELLED", aggregateType: "Booking", aggregateId: input.bookingId, idempotencyKey: "admin-offer-cancelled:" + input.requestId + ":" + offer.id, payload: { bookingId: input.bookingId, offerId: offer.id, driverId: offer.driverId } });
       }
       await writeOutboxEvent(tx, { eventType: "ADMIN_MANUAL_ASSIGNMENT", aggregateType: "Booking", aggregateId: input.bookingId, idempotencyKey: "admin-assignment:" + input.requestId, payload: { bookingId: input.bookingId, driverId: input.driverId, adminId } });
+      await writeBookingAssignedEmail(tx, input.bookingId, input.driverId, acceptedAt);
       const audit = await recordAudit(tx, { adminId, action: "MANUAL_ASSIGNMENT", targetType: "Booking", targetId: input.bookingId, reason: input.reason, requestId: input.requestId, outcome: "SUCCESS", safeMetadata: { driverId: input.driverId } });
       return { ok: true as const, replayed: false, auditId: audit.id, status: "ASSIGNED" };
     });
