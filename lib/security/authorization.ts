@@ -79,3 +79,14 @@ export async function requireAdminRole(request: NextRequest, roles: string[]) {
   if (!auth.ok) return auth;
   return roles.includes(auth.actor.role) ? auth : reject(403, "Insufficient permissions");
 }
+
+// Existing Admin DISPATCHER is an operations role, not a dedicated
+// DISPATCH_OPERATOR session and not an authorization for financial mutations.
+export function hasBookingOperationsPermission(role: string) {
+  return ["SUPER_ADMIN", "DISPATCHER"].includes(role);
+}
+export async function authorizeBookingOperationsAdmin(request: NextRequest) {
+  const auth = await authorizeAdmin(request);
+  if (!auth.ok) return auth;
+  return hasBookingOperationsPermission(auth.actor.role) ? auth : reject(403, "Insufficient permissions");
+}

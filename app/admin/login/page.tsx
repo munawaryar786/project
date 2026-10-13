@@ -4,9 +4,10 @@ import { useState } from "react";
 import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import BrandLogo from "@/components/shared/BrandLogo";
+import { presentMessage } from "@/lib/i18n/message-catalog";
 
 export default function AdminLoginPage() {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -27,16 +28,15 @@ export default function AdminLoginPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.error || t("login.invalid"));
+        setError(typeof data.code === "string" ? data.code : "AUTH_INVALID_CREDENTIALS");
         return;
       }
 
 
 
       window.location.assign("/admin/dashboard");
-    } catch (err: unknown) {
-      setError(t("login.invalid"));
-      console.error("Login error:", err);
+    } catch {
+      setError("AUTH_INVALID_CREDENTIALS");
     } finally {
       setLoading(false);
     }
@@ -99,8 +99,8 @@ export default function AdminLoginPage() {
               </div>
 
               {error && (
-                <div className="rounded-[22px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
-                  {error}
+                <div role="alert" className="rounded-[22px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                  {presentMessage(error, locale)}
                 </div>
               )}
 

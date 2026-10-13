@@ -1,16 +1,11 @@
 import type { Metadata } from "next";
 import { LocalizedContactPage } from "@/components/shared/LocalizedPublicPages";
+import { requestLocale } from "@/lib/i18n/request-locale";
+import { publicPageMetadata } from "@/lib/i18n/metadata";
 
-export const metadata: Metadata = {
-  title: "Contact Us - 24/7 Support",
-  description: "Contact Drivo Bratislava 24/7. Call, WhatsApp or email us.",
-  alternates: { canonical: "/contact" },
-  openGraph: {
-    title: "Contact Drivo | Bratislava Mobility",
-    description: "24/7 contact. Phone, WhatsApp and email available.",
-    url: "https://drivo.sk/contact",
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return publicPageMetadata("/contact", await requestLocale());
+}
 
 export default function ContactPage() {
   return <LocalizedContactPage />;

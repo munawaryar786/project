@@ -1,17 +1,11 @@
 import type { Metadata } from "next";
 import { LocalizedFAQPage } from "@/components/shared/LocalizedPublicPages";
+import { requestLocale } from "@/lib/i18n/request-locale";
+import { publicPageMetadata } from "@/lib/i18n/metadata";
 
-export const metadata: Metadata = {
-  title: "FAQ - Frequently Asked Questions",
-  description:
-    "Everything you need to know about Drivo booking, accessible transport, payments, airport transfers and more.",
-  alternates: { canonical: "/faq" },
-  openGraph: {
-    title: "FAQ | Drivo Bratislava",
-    description: "Answers to common questions about booking, accessibility, payment, and our services.",
-    url: "https://drivo.sk/faq",
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return publicPageMetadata("/faq", await requestLocale());
+}
 
 export default function FAQPage() {
   return <LocalizedFAQPage />;

@@ -8,6 +8,7 @@ import WhatsAppFloat from "@/components/layout/WhatsAppFloat";
 import CookieBanner from "@/components/layout/CookieBanner";
 import { SERVICES, WHATSAPP_URL } from "@/lib/constants";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { formatNumber } from "@/lib/i18n/format";
 import { FEATURE_FLAGS, isCustomerServiceEnabled } from "@/lib/feature-flags";
 
 const HOME_IMAGES = {
@@ -27,9 +28,9 @@ const HOME_IMAGES = {
 } as const;
 
 function Hero() {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const stats = [
-    ["2,400+", t("home.stats.riders")],
+    [`${formatNumber(2400, locale)}+`, t("home.stats.riders")],
     ["50+", t("home.stats.drivers")],
     ["15+", t("home.stats.vehicles")],
     [FEATURE_FLAGS.childrenTransport ? "5" : "4", t("home.stats.services")],
@@ -108,7 +109,7 @@ function Hero() {
 
                 <div className="min-w-0">
                   <div className="text-[15px] font-bold leading-snug text-white [hyphens:auto] [overflow-wrap:break-word] sm:text-[16px]">
-                    2,400+ {t("home.stats.riders")}
+                    {formatNumber(2400, locale)}+ {t("home.stats.riders")}
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] font-semibold uppercase tracking-[0.12em] text-drivo-aqua">
                     <span className="h-1.5 w-1.5 rounded-full bg-drivo-aqua" />

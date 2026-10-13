@@ -15,6 +15,8 @@ import { requiresWav } from "@/lib/assisted-transport";
 import { startAutomaticDispatch } from "@/lib/automatic-dispatch";
 import { isScheduledBooking, parseMarketDateTime, SCHEDULED_MARKET_CONFIG } from "@/lib/scheduled-marketplace";
 import { recordDispatchAudit } from "@/lib/dispatch-audit";
+import { createPublicBookingAccess } from "@/lib/booking-access";
+import { writeBookingActivationIntent } from "@/lib/booking-activation";
 
 export type BookingCreateActor =
   | { kind: "PUBLIC" }
@@ -24,16 +26,20 @@ export class BookingCreateError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string, readonly details?: unknown, readonly response?: NextResponse) { super(message); }
 }
 
-export async function createBookingWithDrivoRules(request: NextRequest, data: BookingInput, actor: BookingCreateActor, options: { requestRecordId?: string; requestLeaseToken?: string } = {}) {
+export async function createBookingWithDrivoRules(request: NextRequest, data: BookingInput, actor: BookingCreateActor, options: { requestRecordId?: string; requestLeaseToken?: string; publicOperation?: { id: string; leaseToken: string; fingerprint: string; passengerId: string | null } } = {}) {
+  if (data.paymentMethod === "INVOICE") throw new BookingCreateError("Invoice requires approved corporate billing. Choose card or cash.", 409, "INVOICE_REQUIRES_CORPORATE_APPROVAL");
   const marketTimezone = SCHEDULED_MARKET_CONFIG.timezone;
   const pickupAt = parseMarketDateTime(data.pickupDate || data.scheduledDate, data.pickupTime || data.scheduledTime, marketTimezone);
   if (!pickupAt) throw new BookingCreateError("Invalid scheduled pickup date/time", 400, "INVALID_SCHEDULE_TIME");
   const scheduledIntent = data.scheduledRide || data.serviceType === "CHILDREN" || pickupAt.getTime() > Date.now() + 5 * 60 * 1000;
   if (!isCustomerServiceEnabled(data.serviceType)) throw new BookingCreateError("Children Transport is temporarily unavailable for new bookings.", 409);
 
-  let currentPassenger: { id: string; normalizedPhone: string | null } | null = null;
+  let currentPassenger: { id: string; normalizedPhone: string | null; phone: string; phoneVerified: boolean } | null = null;
   if (actor.kind === "PUBLIC") {
     currentPassenger = await getPassengerFromRequest(request);
+    if (options.publicOperation && (currentPassenger?.id || null) !== options.publicOperation.passengerId) {
+      throw new BookingCreateError("Passenger session changed.", 401, "BOOKING_OPERATION_AUTH_CHANGED");
+    }
     if (currentPassenger) {
       const auth = await authorizePassenger(request);
       if (!auth.ok) throw new BookingCreateError("Passenger authentication required", auth.response.status, undefined, undefined, auth.response);
@@ -69,7 +75,7 @@ export async function createBookingWithDrivoRules(request: NextRequest, data: Bo
     recurrenceCustom: data.recurrenceCustom, returnDate: data.returnDate, returnTime: data.returnTime,
   });
   const fare = quote.breakdown;
-  const samePassenger = actor.kind === "PUBLIC" && currentPassenger?.normalizedPhone === normalizedPhone;
+  const samePassenger = actor.kind === "PUBLIC" && currentPassenger?.phoneVerified === true && normalizePassengerPhone(currentPassenger.normalizedPhone || currentPassenger.phone) === normalizedPhone;
   const bookingRef = generateBookingRef();
   const bookingData = {
     bookingRef, status: "PENDING", serviceType: data.serviceType,
@@ -112,23 +118,43 @@ export async function createBookingWithDrivoRules(request: NextRequest, data: Bo
     fareMinimumAdjustment: fare.minimumFareAdjustment, fareTotalFare: fare.totalFare,
     fareBreakdown: { ...fare, serverPriceMac: signBookingPrice(bookingRef, fare.totalFare) } as unknown as Prisma.InputJsonValue,
   };
+  let guestAccess: Awaited<ReturnType<typeof createPublicBookingAccess>> | null = null;
   const booking = options.requestRecordId && actor.kind === "DISPATCH_OPERATOR"
     ? await prisma.$transaction(async (tx) => {
-        const claimed = await tx.dispatchBookingRequest.updateMany({ where: { id: options.requestRecordId, status: "PROCESSING", bookingId: null, leaseToken: options.requestLeaseToken }, data: { status: "CREATING" } });
+        const claimed = await tx.dispatchBookingRequest.updateMany({ where: { id: options.requestRecordId, status: "PROCESSING", OR: [{ bookingId: null }, { bookingId: { isSet: false } }], leaseToken: options.requestLeaseToken }, data: { status: "CREATING" } });
         if (claimed.count !== 1) throw new Error("PHONE_BOOKING_IDEMPOTENCY_LEASE_LOST");
         const created = await tx.booking.create({ data: bookingData });
-        await writeBookingCreatedEmail(tx, created.id);
+        await writeBookingCreatedEmail(tx, created.id, created.languagePref);
+        if (created.paymentMethod === "CASH") await writeBookingActivationIntent(tx, created.id);
         await tx.dispatchBookingRequest.update({ where: { id: options.requestRecordId }, data: { bookingId: created.id, status: "CREATED" } });
         await tx.dispatchAuditEvent.create({ data: { actorType: "DISPATCH_OPERATOR", actorId: actor.operatorId, action: "PHONE_BOOKING_CREATED", targetType: "Booking", targetId: created.id, bookingRef: created.bookingRef, requestId: randomUUID(), outcome: "SUCCESS", safeMetadata: { paymentMethod: created.paymentMethod, scheduledRide: created.scheduledRide } } });
         return created;
       })
     : await prisma.$transaction(async (tx) => {
+        if (options.publicOperation) {
+          const claimed = await tx.publicBookingOperation.updateMany({ where: {
+            id: options.publicOperation.id, state: "PROCESSING", leaseToken: options.publicOperation.leaseToken,
+            requestFingerprint: options.publicOperation.fingerprint, bookingId: null, revokedAt: null,
+            passengerId: options.publicOperation.passengerId,
+            recoveryExpiresAt: { gt: new Date() }, leaseUntil: { gt: new Date() },
+          }, data: { state: "CREATING" } });
+          if (claimed.count !== 1) throw new Error("PUBLIC_BOOKING_OPERATION_FENCE_LOST");
+        }
         const created = await tx.booking.create({ data: bookingData });
-        await writeBookingCreatedEmail(tx, created.id);
+        if (actor.kind === "PUBLIC" && !samePassenger) guestAccess = await createPublicBookingAccess(tx, created);
+        await writeBookingCreatedEmail(tx, created.id, created.languagePref);
+        if (created.paymentMethod === "CASH" && samePassenger) await writeBookingActivationIntent(tx, created.id);
+        if (options.publicOperation) {
+          const operation = await tx.publicBookingOperation.findUniqueOrThrow({ where: { id: options.publicOperation.id }, select: { issuedAt: true } });
+          await tx.publicBookingOperation.update({ where: { id: options.publicOperation.id }, data: {
+            state: "CREATED", bookingId: created.id, leaseToken: "", leaseUntil: null,
+            recoveryExpiresAt: new Date(operation.issuedAt.getTime() + 24 * 60 * 60 * 1000),
+          } });
+        }
         return created;
       });
 
-  if (!isScheduledBooking(booking) && booking.paymentMethod !== "CARD" && (actor.kind === "DISPATCH_OPERATOR" || Boolean(currentPassenger))) {
+  if (!isScheduledBooking(booking) && booking.paymentMethod !== "CARD" && (actor.kind === "DISPATCH_OPERATOR" || samePassenger)) {
     const dispatch = await startAutomaticDispatch(booking.id);
     if (!dispatch.ok) console.warn("[dispatch] immediate start deferred", { bookingId: booking.id, code: dispatch.code });
     if (actor.kind === "DISPATCH_OPERATOR") await recordDispatchAudit({ actorType: "DISPATCH_OPERATOR", actorId: actor.operatorId, action: "DISPATCH_STARTED", targetType: "Booking", targetId: booking.id, bookingRef: booking.bookingRef, outcome: dispatch.ok ? "SUCCESS" : "FAILURE", safeMetadata: { code: dispatch.ok ? null : dispatch.code || "DISPATCH_PENDING" } }).catch(() => undefined);
@@ -136,7 +162,7 @@ export async function createBookingWithDrivoRules(request: NextRequest, data: Bo
   // The committed creation event delivers localized Admin and passenger mail asynchronously.
   const seniorAssistedAdminEmailSent = false;
   const seniorAssistedDriverSafeEmailSent = false;
-  return { booking, estimate, quote, seniorAssistedAdminEmailSent, seniorAssistedDriverSafeEmailSent };
+  return { booking, guestAccess, estimate, quote, seniorAssistedAdminEmailSent, seniorAssistedDriverSafeEmailSent };
 }
 
 export const DispatchBookingSchema = BookingSchema.extend({

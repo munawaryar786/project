@@ -28,6 +28,14 @@ export const OFFER_BOOKING_SELECT = {
   returnDate: true, returnTime: true, scheduledRide: true, pickupDate: true, pickupTime: true, pickupAt: true, marketTimezone: true, distanceKm: true,
 } satisfies Prisma.BookingSelect;
 type OfferBooking = Prisma.BookingGetPayload<{ select: typeof OFFER_BOOKING_SELECT }>;
+// Internal only: never spread this result into an offer response.
+export const SCHEDULED_ELIGIBILITY_SELECT = {
+  ...OFFER_BOOKING_SELECT,
+  driverId: true, companionCount: true, pickupLat: true, pickupLng: true, dropoffLat: true, dropoffLng: true,
+  bookingSource: true, createdByDispatchOperatorId: true, passengerId: true,
+  phoneVerified: true, passengerAuthStatus: true, paymentMethod: true, cashAgreed: true,
+  fareTotalFare: true, estimatedPrice: true,
+} satisfies Prisma.BookingSelect;
 export function serializeOfferBooking(booking: OfferBooking) {
   // Do not guess locality by splitting a free-text address: arbitrary comma
   // layouts may still expose a street or building. No trusted locality exists.

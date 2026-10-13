@@ -6,7 +6,7 @@ export type DispatchConfig = {
 };
 
 function positiveInteger(value: string | undefined) {
-  if (!value || !/^\\d+$/.test(value)) return null;
+  if (!value || !/^\d+$/.test(value) || value.trim() !== value) return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }

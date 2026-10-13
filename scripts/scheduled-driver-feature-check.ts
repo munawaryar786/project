@@ -6,6 +6,7 @@ import { bookingPickupAt, isFutureScheduledBooking, parseMarketDateTime } from "
 import translations, { getTranslation, locales } from "../lib/i18n";
 import { driverScheduledReminderMessage } from "../lib/driver-reminder-message";
 import { downloadDriverCalendar } from "../lib/driver-calendar-download";
+import { scanScheduledMarketplace } from "../lib/scheduled-marketplace-list";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -421,4 +422,24 @@ async function verifyCalendarDownload() {
     if (savedWindow) Object.defineProperty(globalThis, "window", savedWindow); else Reflect.deleteProperty(globalThis, "window");
   }
 }
-void Promise.all([verifyCursorPagination(), verifyCalendarDownload()]).then(() => console.log("Scheduled Driver reminder/calendar checks passed.")).catch((error) => { console.error(error); process.exitCode = 1; });
+async function verifyMarketplaceCandidatePagination() {
+  const ids = Array.from({ length: 601 }, (_, index) => (index + 1).toString(16).padStart(24, "0"));
+  const input = (cursor: string | null) => ({
+    cursor,
+    fetchPage: async (after: string | null, take: number) => {
+      const start = after ? ids.indexOf(after) + 1 : 0;
+      assert.ok(start >= 0);
+      assert.equal(take, 100, "candidate queries remain bounded");
+      return ids.slice(start, start + take).map(id => ({ id }));
+    },
+    eligible: async (row: { id: string }) => row.id === ids[100] || row.id === ids[600],
+    present: (row: { id: string }) => ({ id: row.id }),
+  });
+  const first = await scanScheduledMarketplace(input(null));
+  assert.deepEqual(first.marketplace.map(row => row.id), [ids[100]], "candidate 101 is visible beyond the old first-page limit");
+  assert.equal(first.nextCursor, ids[499], "one request scans at most five pages");
+  const second = await scanScheduledMarketplace(input(first.nextCursor));
+  assert.deepEqual(second.marketplace.map(row => row.id), [ids[600]], "continuation reaches eligible rides beyond the bounded first request");
+  assert.equal(second.nextCursor, null);
+}
+void Promise.all([verifyCursorPagination(), verifyCalendarDownload(), verifyMarketplaceCandidatePagination()]).then(() => console.log("Scheduled Driver reminder/calendar checks passed.")).catch((error) => { console.error(error); process.exitCode = 1; });

@@ -1,3 +1,5 @@
+import { foundation } from "./foundation";
+
 const de = {
   "nav.home": "Startseite",
   "nav.services": "Dienstleistungen",
@@ -258,6 +260,15 @@ const de = {
   "contact.sent": "Nachricht gesendet. Wir antworten innerhalb von 24 Stunden.",
   "contact.sending": "Wird gesendet...",
   "payment.successTitle": "Zahlung erfolgreich!",
+  "payment.status.paidTitle": "Zahlung bestätigt",
+  "payment.status.pendingTitle": "Zahlung wird geprüft",
+  "payment.status.AWAITING_PAYMENT": "Die Zahlung wurde noch nicht abgeschlossen. Sie können zum Checkout zurückkehren.",
+  "payment.status.PROCESSING": "Wir prüfen Ihre Zahlung. Nach der Bestätigung wird Ihre Buchung aktualisiert.",
+  "payment.status.PAID": "Ihre Zahlung ist bestätigt und Ihre Buchung wurde bestätigt.",
+  "payment.status.EXPIRED": "Diese Zahlungssitzung ist abgelaufen. Sie können für dieselbe Buchung einen neuen Checkout anfordern.",
+  "payment.status.FAILED": "Diese Zahlung wurde nicht abgeschlossen. Sie können es erneut versuchen.",
+  "payment.status.RECONCILIATION_REQUIRED": "Wir können die Zahlung noch nicht bestätigen. Bitte kontaktieren Sie Drivo, bevor Sie erneut zahlen.",
+  "payment.status.noDispatchBeforeVerification": "Die Fahrersuche beginnt erst nach bestätigter Zahlung oder zum geplanten Zeitpunkt.",
   "payment.successMessage":
     "Ihre Buchung wurde bestaetigt und bezahlt. Wir senden Ihnen in Kuerze eine Bestaetigung per E-Mail.",
   "payment.driverSoon": "Sie erhalten bald eine WhatsApp-Nachricht mit den Fahrerdetails.",
@@ -479,10 +490,6 @@ const de = {
   "status.COMPLETED": "Abgeschlossen",
   "status.CANCELLED": "Storniert",
   "status.NO_SHOW": "Nicht erschienen",
-  "dispatch.NOT_STARTED": "Nicht gestartet",
-  "dispatch.SEARCHING_DRIVER": "Fahrer wird gesucht",
-  "dispatch.ACCEPTED": "Akzeptiert",
-  "dispatch.NO_DRIVER_AVAILABLE": "Kein Fahrer verfügbar",
   "service.STANDARD": "Taxi",
   "service.ACCESSIBLE": "Barrierefrei",
   "service.SENIOR": "Senior",
@@ -683,6 +690,9 @@ const de = {
   "booking.driverAssistanceRequired": "Fahrerassistenz erforderlich",
   "driverPortal.scheduledMarketplace": "Marktplatz für geplante Fahrten",
   "driverPortal.scheduledMarketplaceHelp": "Planen Sie voraus mit passenden zukünftigen Fahrten.",
+  "driverPortal.loadMoreScheduledRides": "Weitere geplante Fahrten laden",
+  "adminOperations.paymentReview": "Zahlungen zur Prüfung",
+  "adminOperations.paymentReviewHelp": "Prüfen Sie das Ergebnis beim Zahlungsanbieter, bevor Sie einen weiteren Zahlungslink erstellen oder eine Buchung ändern.",
   "driverPortal.noScheduledRides": "Keine geplanten Fahrten verfügbar.",
   "driverPortal.claimRide": "Fahrt übernehmen",
   "driverPortal.claiming": "Wird übernommen…",
@@ -902,7 +912,7 @@ const dispatchDe: Record<string, string> = {
   "dispatchAdmin.title": "Disponententeam", "dispatchAdmin.subtitle": "Disponentenkonten erstellen und verwalten.", "dispatchAdmin.create": "Disponentenkonto erstellen", "dispatchAdmin.edit": "Disponent bearbeiten", "dispatchAdmin.name": "Vollständiger Name", "dispatchAdmin.email": "E-Mail", "dispatchAdmin.phone": "Telefon (internationales Format)", "dispatchAdmin.temporaryPassword": "Temporäres Passwort (mindestens 12 Zeichen)", "dispatchAdmin.resetPassword": "Temporäres Passwort zurücksetzen (optional)", "dispatchAdmin.operators": "Disponenten", "dispatchAdmin.status": "Status", "dispatchAdmin.lastLogin": "Letzte Anmeldung", "dispatchAdmin.createdAt": "Erstellt", "dispatchAdmin.createdBy": "Erstellt von Admin", "dispatchAdmin.mustChange": "Passwortänderung erforderlich", "dispatchAdmin.disable": "Deaktivieren", "dispatchAdmin.enable": "Aktivieren", "dispatchAdmin.empty": "Noch keine Disponenten vorhanden.", "dispatchAdmin.loadError": "Disponenten konnten nicht geladen werden.", "dispatchAdmin.saveError": "Disponent konnte nicht gespeichert werden.", "dispatchAdmin.saved": "Disponent gespeichert.", "dispatchAdmin.active": "Aktiv", "dispatchAdmin.disabled": "Deaktiviert",
 };
 
-export default { ...de, ...dispatchDe, "dispatch.detail.linkCreatedCopyBlocked": "Der Zahlungslink wurde erstellt, aber das automatische Kopieren wurde blockiert. Nutzen Sie „Zahlungslink kopieren“.", "dispatch.detail.linkCreatedEmailCopyBlocked": "Der Zahlungslink wurde erstellt und per E-Mail gesendet, aber das automatische Kopieren wurde blockiert. Nutzen Sie „Zahlungslink kopieren“.", "dispatch.detail.linkCreatedEmailFailed": "Der Zahlungslink wurde erstellt und kopiert, aber der E-Mail-Versand ist fehlgeschlagen.", "dispatch.detail.linkCreatedEmailFailedCopyBlocked": "Der Zahlungslink wurde erstellt, der E-Mail-Versand ist fehlgeschlagen und das automatische Kopieren wurde blockiert. Nutzen Sie „Zahlungslink kopieren“.", "dispatch.detail.linkCreatedEmailNotProvided": "Der Zahlungslink wurde erstellt und kopiert. Eine Kunden-E-Mail-Adresse liegt nicht vor.", "dispatch.detail.linkCreatedEmailNotProvidedCopyBlocked": "Der Zahlungslink wurde erstellt, aber es liegt keine Kunden-E-Mail-Adresse vor und das automatische Kopieren wurde blockiert. Nutzen Sie „Zahlungslink kopieren“.",
+export default { ...de, ...dispatchDe, ...foundation.de, "dispatch.detail.linkCreatedCopyBlocked": "Der Zahlungslink wurde erstellt, aber das automatische Kopieren wurde blockiert. Nutzen Sie „Zahlungslink kopieren“.", "dispatch.detail.linkCreatedEmailCopyBlocked": "Der Zahlungslink wurde erstellt und per E-Mail gesendet, aber das automatische Kopieren wurde blockiert. Nutzen Sie „Zahlungslink kopieren“.", "dispatch.detail.linkCreatedEmailFailed": "Der Zahlungslink wurde erstellt und kopiert, aber der E-Mail-Versand ist fehlgeschlagen.", "dispatch.detail.linkCreatedEmailFailedCopyBlocked": "Der Zahlungslink wurde erstellt, der E-Mail-Versand ist fehlgeschlagen und das automatische Kopieren wurde blockiert. Nutzen Sie „Zahlungslink kopieren“.", "dispatch.detail.linkCreatedEmailNotProvided": "Der Zahlungslink wurde erstellt und kopiert. Eine Kunden-E-Mail-Adresse liegt nicht vor.", "dispatch.detail.linkCreatedEmailNotProvidedCopyBlocked": "Der Zahlungslink wurde erstellt, aber es liegt keine Kunden-E-Mail-Adresse vor und das automatische Kopieren wurde blockiert. Nutzen Sie „Zahlungslink kopieren“.",
   // Transactional email registry (all supported locales).
   "email.reference": "Buchungsnummer",
   "email.pickupTime": "Datum und Uhrzeit der Abholung",

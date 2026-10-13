@@ -1,6 +1,6 @@
-import { writeBookingAssignedEmail } from "@/lib/email/domain";
-import { postTripEarningLedger } from "@/lib/earnings-ledger";
-import { authorizeAdmin } from "@/lib/security/authorization";
+import { randomUUID } from "node:crypto";
+import { assignAdminDriver } from "@/lib/admin-operations";
+import { authorizeAdmin, authorizeBookingOperationsAdmin } from "@/lib/security/authorization";
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -8,26 +8,14 @@ import { prisma } from "@/lib/prisma";
 import { scheduleScheduledRideJobs } from "@/lib/scheduled-marketplace";
 import {
   calculateBookingFinancialBreakdown,
-  createOrUpdateDriverEarningForBooking,
 } from "@/lib/commission-engine";
-
-const VALID_STATUSES = [
-  "PENDING",
-  "CONFIRMED",
-  "ASSIGNED",
-  "DRIVER_ENROUTE",
-  "IN_PROGRESS",
-  "COMPLETED",
-  "CANCELLED",
-  "NO_SHOW",
-];
-
-const TERMINAL_STATUSES = ["COMPLETED", "CANCELLED", "NO_SHOW"];
 
 const AdminBookingPatchSchema = z.object({
   bookingId: z.string().regex(/^[a-f0-9]{24}$/i),
   status: z.enum(["PENDING", "CONFIRMED", "ASSIGNED", "DRIVER_ENROUTE", "IN_PROGRESS", "COMPLETED", "CANCELLED", "NO_SHOW"]).optional(),
   driverId: z.string().regex(/^[a-f0-9]{24}$/i).optional(),
+  requestId: z.string().uuid().optional(),
+  reason: z.string().trim().min(3).max(500).optional(),
 }).strict();
 
 const adminBookingInclude = {
@@ -125,164 +113,21 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeBookingOperationsAdmin(request);
   if (!auth.ok) return auth.response;
+  const parsed = AdminBookingPatchSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: "Invalid booking update" }, { status: 400 });
+  const { bookingId, driverId, status } = parsed.data;
+  if (!driverId || (status && status !== "ASSIGNED")) return NextResponse.json({ error: "Use an authoritative booking action", code: "STATUS_ACTION_REQUIRES_DOMAIN_ENDPOINT" }, { status: 409 });
+  const requestId = parsed.data.requestId || randomUUID();
+  const result = await assignAdminDriver({ bookingId, driverId, requestId, reason: parsed.data.reason || "Assignment from Admin booking desk" }, auth.actor.id);
+  if (!result.ok) return NextResponse.json({ error: "Driver assignment was not allowed", code: result.code }, { status: 409 });
+  try { await scheduleScheduledRideJobs(bookingId); }
+  catch { console.error("[admin.bookings.scheduled-reminders.schedule-failed]", { code: "SCHEDULED_REMINDER_ENQUEUE_FAILED" }); }
+  let booking: BookingForFinancialBreakdown | null = null;
   try {
-    const parsed = AdminBookingPatchSchema.safeParse(await request.json());
-    if (!parsed.success) return NextResponse.json({ error: "Invalid booking update" }, { status: 400 });
-    const { bookingId, status, driverId } = parsed.data;
-
-    // Lifecycle transitions stay in domain endpoints; this compatibility route only permits assignment.
-    const requestedLifecycleStatus = status as string | undefined;
-    if (requestedLifecycleStatus && (!driverId || requestedLifecycleStatus !== "ASSIGNED")) {
-      return NextResponse.json({ error: "Lifecycle changes require the authoritative domain action", code: "STATUS_ACTION_REQUIRES_DOMAIN_ENDPOINT" }, { status: 409 });
-    }
-
-    if (!bookingId) {
-      return NextResponse.json(
-        { error: "Booking ID required" },
-        { status: 400 }
-      );
-    }
-
-    if (status && !VALID_STATUSES.includes(status)) {
-      return NextResponse.json(
-        { error: `Invalid booking status: ${status}` },
-        { status: 400 }
-      );
-    }
-
-    const currentBooking = await prisma.booking.findUnique({
-      where: { id: bookingId },
-      include: { driver: { omit: { passwordHash: true, authVersion: true } } },
-    });
-
-    if (!currentBooking) {
-      return NextResponse.json(
-        { error: "Booking not found" },
-        { status: 404 }
-      );
-    }
-
-    const updateData: any = {};
-
-    if (status) {
-      updateData.status = status;
-
-      if (TERMINAL_STATUSES.includes(status)) {
-        updateData.dispatchStatus =
-          status === "COMPLETED" ? "ACCEPTED" : "NOT_STARTED";
-      }
-    }
-
-    const updatedBooking = await prisma.$transaction(async (tx) => {
-      const currentBooking = await tx.booking.findUnique({ where: { id: bookingId } });
-      if (!currentBooking) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
-      if (driverId) {
-        const driver = await tx.driver.findUnique({
-          where: { id: driverId },
-        });
-
-        if (!driver) {
-          return NextResponse.json(
-            { error: "Driver not found" },
-            { status: 404 }
-          );
-        }
-
-        if (driver.status !== "ACTIVE") {
-          return NextResponse.json(
-            { error: "Driver is not active" },
-            { status: 400 }
-          );
-        }
-
-        if (driver.isOnTrip && currentBooking.driverId !== driverId) {
-          return NextResponse.json(
-            { error: "Driver is already on trip" },
-            { status: 400 }
-          );
-        }
-
-        updateData.driverId = driverId;
-        updateData.status = "ASSIGNED";
-        updateData.dispatchStatus = "ACCEPTED";
-        updateData.acceptedAt = currentBooking.driverId === driverId ? currentBooking.acceptedAt || new Date() : new Date();
-
-        await tx.driver.update({
-          where: { id: driverId },
-          data: { isOnTrip: true },
-        });
-
-        await tx.rideRequest.updateMany({
-          where: {
-            bookingId,
-            status: "PENDING",
-          },
-          data: {
-            status: "EXPIRED",
-            respondedAt: new Date(),
-          },
-        });
-      }
-
-      const committedBooking = await tx.booking.update({
-        where: { id: bookingId },
-        data: updateData,
-        include: { driver: { omit: { passwordHash: true, authVersion: true } }, earning: true },
-      });
-
-      if (driverId && currentBooking.driverId !== driverId && committedBooking.acceptedAt) await writeBookingAssignedEmail(tx, bookingId, driverId, committedBooking.acceptedAt);
-      return committedBooking;
-    });
-    if (updatedBooking instanceof NextResponse) return updatedBooking;
-
-    if (driverId) {
-      // Assignment is committed; reconciliation recovers any temporary queue failure.
-      try { await scheduleScheduledRideJobs(updatedBooking.id); }
-      catch { console.error("[admin.bookings.scheduled-reminders.schedule-failed]", { code: "SCHEDULED_REMINDER_ENQUEUE_FAILED" }); }
-    }
-
-    if (
-      status &&
-      TERMINAL_STATUSES.includes(status) &&
-      currentBooking.driverId
-    ) {
-      await prisma.driver.update({
-        where: { id: currentBooking.driverId },
-        data: { isOnTrip: false },
-      });
-    }
-
-    if (status === "COMPLETED" && updatedBooking.driverId) {
-      await createOrUpdateDriverEarningForBooking(updatedBooking.id);
-      await postTripEarningLedger(updatedBooking.id);
-    }
-
-    const bookingWithFinancials = await prisma.booking.findUnique({
-      where: { id: updatedBooking.id },
-      include: bookingFinancialInclude,
-    });
-
-    console.log("Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â");
-    console.log("Ã°Å¸â€œâ€¹ ADMIN BOOKING UPDATED");
-    console.log(`Ref: ${updatedBooking.bookingRef}`);
-    console.log(`Status: ${currentBooking.status} Ã¢â€ â€™ ${updatedBooking.status}`);
-    console.log(`Dispatch: ${updatedBooking.dispatchStatus || "NOT_STARTED"}`);
-    console.log(`Driver: ${updatedBooking.driver?.fullName || "None"}`);
-    console.log("Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â");
-
-    return NextResponse.json({
-      success: true,
-      booking: bookingWithFinancials
-        ? await withFinancialBreakdown(bookingWithFinancials)
-        : updatedBooking,
-    });
-  } catch (error) {
-    console.error("Ã¢ÂÅ’ Admin booking update error:", error);
-    return NextResponse.json(
-      { error: "Failed to update booking" },
-      { status: 500 }
-    );
-  }
+    const committed = await prisma.booking.findUnique({ where: { id: bookingId }, include: bookingFinancialInclude });
+    booking = await withFinancialBreakdown(committed);
+  } catch { console.error("[admin.bookings.assignment.response-deferred]", { code: "ASSIGNMENT_RESPONSE_READ_FAILED" }); }
+  return NextResponse.json({ success: true, booking, requestId }, { headers: { "Cache-Control": "private, no-store" } });
 }

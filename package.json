@@ -27,7 +27,11 @@
     "test:homepage-priority": "node scripts/homepage-priority-check.cjs",
     "test:phase3i": "node scripts/phase3i-check.cjs",
     "test:phase3j": "node scripts/phase3j-check.cjs",
-    "test:phase3l": "node scripts/phase3l-check.cjs"
+    "test:phase3l": "node scripts/phase3l-check.cjs",
+    "test:phase1": "node scripts/phase1-containment-check.cjs",
+    "test:phase1:mongo": "node scripts/phase1-mongo-check.cjs",
+    "test:phase2:mongo": "node scripts/phase2-mongo-check.cjs",
+    "test:i18n": "tsx scripts/i18n-check.ts"
   },
   "dependencies": {
     "@googlemaps/google-maps-services-js": "^3.4.2",

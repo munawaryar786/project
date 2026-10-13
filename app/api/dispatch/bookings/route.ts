@@ -45,7 +45,7 @@ async function createPhoneBooking(request: NextRequest) {
   const keyHash = hashDispatchIdempotencyKey(idempotencyKey.data);
   let requestRow: any; let leaseToken = randomUUID();
   try {
-    requestRow = await prisma.dispatchBookingRequest.create({ data: { dispatchOperatorId: auth.actor.id, idempotencyKeyHash: keyHash, leaseToken, status: "PROCESSING" } });
+    requestRow = await prisma.dispatchBookingRequest.create({ data: { dispatchOperatorId: auth.actor.id, idempotencyKeyHash: keyHash, leaseToken, status: "PROCESSING", bookingId: null } });
   } catch (error: any) {
     if (error?.code !== "P2002") return NextResponse.json({ error: "Booking request could not be reserved" }, { status: 503 });
     const existing = await prisma.dispatchBookingRequest.findFirst({ where: { dispatchOperatorId: auth.actor.id, idempotencyKeyHash: keyHash } });
@@ -57,7 +57,7 @@ async function createPhoneBooking(request: NextRequest) {
     const staleBefore = new Date(Date.now() - 2 * 60 * 1000);
     if (existing.status === "PROCESSING" && existing.updatedAt < staleBefore) {
       leaseToken = randomUUID();
-      const claimed = await prisma.dispatchBookingRequest.updateMany({ where: { id: existing.id, status: "PROCESSING", bookingId: null, leaseToken: existing.leaseToken, updatedAt: existing.updatedAt }, data: { leaseToken } });
+      const claimed = await prisma.dispatchBookingRequest.updateMany({ where: { id: existing.id, status: "PROCESSING", OR: [{ bookingId: null }, { bookingId: { isSet: false } }], leaseToken: existing.leaseToken, updatedAt: existing.updatedAt }, data: { leaseToken } });
       if (claimed.count === 1) requestRow = { ...existing, leaseToken };
     }
     if (!requestRow) return NextResponse.json({ success: false, processing: true, requestId: existing.id }, { status: 202 });
@@ -66,7 +66,7 @@ async function createPhoneBooking(request: NextRequest) {
     const result = await createBookingWithDrivoRules(request, parsed.data as any, { kind: "DISPATCH_OPERATOR", operatorId: auth.actor.id }, { requestRecordId: requestRow.id, requestLeaseToken: leaseToken });
     return NextResponse.json({ success: true, booking: { id: result.booking.id, bookingRef: result.booking.bookingRef, status: result.booking.status, dispatchStatus: result.booking.dispatchStatus, paymentMethod: result.booking.paymentMethod, estimatedPrice: result.booking.estimatedPrice, scheduledRide: result.booking.scheduledRide, fareBreakdown: result.booking.fareBreakdown } }, { status: 201 });
   } catch (error: any) {
-    await prisma.dispatchBookingRequest.deleteMany({ where: { id: requestRow.id, bookingId: null, status: "PROCESSING", leaseToken } }).catch(() => undefined);
+    await prisma.dispatchBookingRequest.deleteMany({ where: { id: requestRow.id, OR: [{ bookingId: null }, { bookingId: { isSet: false } }], status: "PROCESSING", leaseToken } }).catch(() => undefined);
     if (error instanceof BookingCreateError) return error.response || NextResponse.json({ error: error.message, ...(error.code ? { code: error.code } : {}) }, { status: error.status });
     console.error("[dispatch.booking.create.failed]", { category: error instanceof Error ? error.name : "unknown" });
     return NextResponse.json({ error: "Phone Booking could not be created" }, { status: 503 });

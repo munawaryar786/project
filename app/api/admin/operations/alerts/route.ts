@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   if (!auth.ok) return auth.response;
   try {
     const overview = await getOperationsOverview();
-    return NextResponse.json({ success: true, alerts: overview.alerts, timestamp: overview.timestamp });
+    return NextResponse.json({ success: true, alerts: overview.alerts, paymentReviewItems: overview.paymentReviewItems, timestamp: overview.timestamp });
   } catch {
     return NextResponse.json({ success: false, error: "Operations alerts unavailable", code: "ALERTS_FETCH_FAILED" }, { status: 500 });
   }

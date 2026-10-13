@@ -1,23 +1,14 @@
 import type { Metadata } from "next";
 import { LocalizedServicePage } from "@/components/shared/LocalizedPublicPages";
+import { requestLocale } from "@/lib/i18n/request-locale";
+import { publicPageMetadata } from "@/lib/i18n/metadata";
 
-export const metadata: Metadata = {
-  title: "Taxi & Delivery Car Rental for Drivers | Bratislava",
-  description:
-    "Rent a taxi or food-delivery vehicle from Drivo on a weekly basis. Well-maintained vehicles for Bratislava drivers.",
-  keywords: [
-    "taxi car rental Bratislava",
-    "driver vehicle rental Slovakia",
-    "weekly car rental taxi",
-    "food delivery car rent",
-  ],
-  openGraph: {
-    title: "Car Rental for Drivers | Drivo Bratislava",
-    description: "Weekly vehicle rental for taxi and delivery drivers.",
-    url: "https://drivo.sk/car-rental",
-  },
-  alternates: { canonical: "/car-rental" },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    ...publicPageMetadata("/car-rental", await requestLocale()),
+    keywords: ["taxi car rental Bratislava", "driver vehicle rental Slovakia", "weekly car rental taxi", "food delivery car rent"],
+  };
+}
 
 export default function CarRentalPage() {
   return (

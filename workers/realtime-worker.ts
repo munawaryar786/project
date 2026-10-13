@@ -16,12 +16,23 @@ import { getOfferExpiryQueue, getScheduledRideQueue, closeQueues } from "@/lib/r
 import { relayOutboxOnce } from "@/lib/outbox-relay";
 import { bookingToEmailData, sendNoDriverAdminEscalation } from "@/lib/email";
 import { isScheduledReminderDeliveryCurrent } from "@/lib/scheduled-reminder-delivery";
+import { activePassengerRealtimeRooms } from "@/lib/security/passenger-session";
+import { isBookingActivationEvent, processBookingActivation } from "@/lib/booking-activation";
+import { reconcilePaymentOperationsOnce } from "@/lib/payment-checkout";
 
 const redis = createRedisConnection("worker-emitter");
 const emitter = new Emitter(redis as any);
 function payloadOf(event: any) { return (event.payload && typeof event.payload === "object" ? event.payload : {}) as Record<string, any>; }
-async function signal(event: any, recipientType: "DRIVER" | "ADMIN" | "PASSENGER", recipientId: string, stateHint?: string) { const type = eventTypeForDomain(event.eventType); emitter.of(`/${recipientType.toLowerCase()}`).to(`${recipientType.toLowerCase()}:${recipientId}`).emit(type, safeEvent({ eventId: event.id, type, entityId: event.aggregateId, stateHint, actorType: recipientType })); }
+async function signal(event: any, recipientType: "DRIVER" | "ADMIN" | "PASSENGER", recipientId: string, stateHint?: string) {
+  const type = eventTypeForDomain(event.eventType);
+  const rooms = recipientType === "PASSENGER" ? await activePassengerRealtimeRooms(recipientId) : [`${recipientType.toLowerCase()}:${recipientId}`];
+  if (rooms.length) emitter.of(`/${recipientType.toLowerCase()}`).to(recipientType === "PASSENGER" ? rooms : rooms[0]).emit(type, safeEvent({ eventId: event.id, type, entityId: event.aggregateId, stateHint, actorType: recipientType }));
+}
 async function routeEvent(event: any) {
+  if (isBookingActivationEvent(event.eventType)) {
+    await processBookingActivation(String(event.aggregateId));
+    return;
+  }
   if (event.eventType === "TRANSACTIONAL_EMAIL") { await processTransactionalEmail(event.payload as TransactionalEmail); return; }
   if (["BOOKING_EMAIL_CREATED", "BOOKING_EMAIL_ASSIGNED", "BOOKING_EMAIL_PAYMENT"].includes(event.eventType)) { await processBookingEmailEvent(event); return; }
 
@@ -115,6 +126,6 @@ scheduledWorker.on("failed", (job, error) => console.error("[worker.scheduled.fa
 console.info("[worker.start]", { queues: Object.values(REALTIME_QUEUES) });
 const relayTimer = setInterval(() => void relayOutboxOnce().catch((error) => console.error("[worker.relay.failed]", { message: "relay_failed" })), 2000);
 const reconcileTimer = setInterval(() => void reconcileExpired().catch((error) => console.error("[worker.expiry-reconcile.failed]", { message: "expiry_reconcile_failed" })), 30000);
-async function reconcileExpired() { await reconcileScheduledRideJobs().catch(() => 0); const rows = await prisma.rideRequest.findMany({ where: { status: "PENDING", expiresAt: { lte: new Date() } }, select: { bookingId: true }, take: 100 }); for (const row of rows) await advanceDispatch(row.bookingId); await relayOutboxOnce(100); }
+async function reconcileExpired() { await reconcileScheduledRideJobs().catch(() => 0); await reconcilePaymentOperationsOnce().catch(() => console.error("[payment.operation.reconcile-failed]", { code: "RECONCILE_UNAVAILABLE" })); const rows = await prisma.rideRequest.findMany({ where: { status: "PENDING", expiresAt: { lte: new Date() } }, select: { bookingId: true }, take: 100 }); for (const row of rows) await advanceDispatch(row.bookingId); await relayOutboxOnce(100); }
 async function shutdown(signal: string) { console.info("[worker.stop]", { signal }); clearInterval(relayTimer); clearInterval(reconcileTimer); await outboxWorker.close(); await expiryWorker.close(); await scheduledWorker.close(); await closeQueues(); await closeRedis(redis); process.exit(0); }
 process.once("SIGTERM", () => void shutdown("SIGTERM")); process.once("SIGINT", () => void shutdown("SIGINT"));

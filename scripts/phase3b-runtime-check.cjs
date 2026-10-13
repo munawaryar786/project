@@ -14,15 +14,15 @@ const OA = "555555555555555555555555", OB = "666666666666666666666666";
 let state, revision = 0, failAt, authorized = true, actorId = A, passes = 0;
 function reset() {
   revision = 0; failAt = null; authorized = true; actorId = A;
-  state = { driver: [A,B].map(id => ({id, status:"ACTIVE", fullName:"Driver", isOnline:true, isOnTrip:false,
+  state = { driver: [A,B].map(id => ({id, vehicleType:"STANDARD", vehicleCapacity:4, status:"ACTIVE", fullName:"Driver", isOnline:true, isOnTrip:false,
       currentLat:48.1,currentLng:17.1,lastLocationReceivedAt:new Date(),lastLocationUpdate:new Date()})),
-    booking: [{id:X,bookingRef:"TEST",driverId:null,status:"CONFIRMED",paymentMethod:"CASH",cashAgreed:true,
+    booking: [{passengerId:Y,phoneVerified:true,pickupLat:48.1,pickupLng:17.1,dropoffLat:48.2,dropoffLng:17.2,passengerCount:1,companionCount:0,luggageType:"NONE",id:X,bookingRef:"TEST",driverId:null,status:"CONFIRMED",paymentMethod:"CASH",cashAgreed:true,
       estimatedPrice:125,fareTotalFare:123,serviceType:"STANDARD",scheduledDate:"2000-01-01",scheduledTime:"10:00",
       pickupAddress:"Secret apartment, Secret building, Secret street",dropoffAddress:"Other secret",
-      customerPhone:"private-phone",customerName:"Rider",passengerAuthStatus:"PRIVATE_AUTH",specialNotes:"PRIVATE_ADMIN"}],
+      customerPhone:"private-phone",customerName:"Rider",passengerAuthStatus:"AUTHENTICATED",specialNotes:"PRIVATE_ADMIN"}],
     rideRequest: [{id:OA,driverId:A,bookingId:X,status:"PENDING",expiresAt:new Date(Date.now()+60000)},
       {id:OB,driverId:B,bookingId:X,status:"PENDING",expiresAt:new Date(Date.now()+60000)}],
-    outboxEvent:[],driverEarning:[],commissionConfig:[],pricingSettings:[] };
+    outboxEvent:[],driverEarning:[],cashCollection:[],commissionConfig:[],pricingSettings:[] };
 }
 function matches(row, where={}) {
   return Object.entries(where).every(([k,v]) => {
@@ -71,6 +71,7 @@ function dbFor(data, write=()=>{}) {
       if(failAt===model+".create") throw Error("injected failure");
       if(model==="outboxEvent" && data[model].some(e=>e.idempotencyKey===args.data.idempotencyKey))throw Error("duplicate event");
       if(model==="rideRequest" && data[model].some(e=>e.bookingId===args.data.bookingId && e.driverId===args.data.driverId))throw Error("duplicate pair");
+      if(model==="cashCollection" && data[model].some(e=>e.bookingId===args.data.bookingId || e.operationKey===args.data.operationKey))throw Object.assign(Error("duplicate cash collection"),{code:"P2002"});
       write();const row={id:"fake-"+data[model].length,...structuredClone(args.data)};data[model].push(row);return row;
     },
     upsert: async args=>{
@@ -106,6 +107,11 @@ function load(file){
   mod.require=name=>{
     if(name in mocks)return mocks[name];
     if(name.startsWith("@/"))return load(name.slice(2)+".ts");
+    if(name.startsWith(".")){
+      const candidate=path.resolve(path.dirname(full),name);
+      const source=[candidate+".ts",candidate+".tsx",path.join(candidate,"index.ts")].find(file=>fs.existsSync(file));
+      if(source)return load(source);
+    }
     return Module.prototype.require.call(mod,name);
   };
   mod._compile(ts.transpileModule(fs.readFileSync(full,"utf8"),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,full);
@@ -186,7 +192,8 @@ await check("complete atomically writes existing earning model and preserves off
   state.booking[0].driverId=A;state.booking[0].status="IN_PROGRESS";state.driver[0].isOnline=false;state.driver[0].isOnTrip=true;
   assert.equal((await command("COMPLETE")).ok,true);assert.equal(state.driver[0].isOnTrip,false);
   assert.equal((await ops.getDriverPresence(A)).state,"OFFLINE");assert.equal(state.driverEarning[0].totalFare,123);
-  assert.equal(state.driverEarning[0].driverAmount,98.4);assert.equal(state.outboxEvent.length,1);
+  assert.equal(state.driverEarning[0].driverAmount,98.4);assert.equal(state.driverEarning[0].cashCollected,false);
+  assert.match(state.driverEarning[0].notes,/LEGACY_UNKNOWN_UNVERIFIED/);assert.equal(state.outboxEvent.length,1);
   assert.equal((await command("COMPLETE")).ok,false);assert.equal(state.driverEarning.length,1);
 });
 await check("earning failure rolls back completion and remains retryable",async()=>{
@@ -200,7 +207,34 @@ await check("completion outbox failure rolls back financial insert",async()=>{
   assert.equal((await command("COMPLETE")).ok,false);assert.equal(state.driverEarning.length,0);assert.equal(state.booking[0].status,"IN_PROGRESS");
 });
 for(const [status,c] of [["DRIVER_ENROUTE","ARRIVED"],["ARRIVED","START"]])await check("duplicate "+c+" creates one logical event",async()=>{
-  state.booking[0].driverId=A;state.booking[0].status=status;await command(c);assert.equal((await command(c)).ok,false);assert.equal(state.outboxEvent.length,1);
+  state.booking[0].driverId=A;state.booking[0].status=status;const first=await command(c);const repeat=await command(c);
+  assert.equal(first.ok,true);assert.equal(repeat.ok,c==="START");assert.equal(state.outboxEvent.length,1);
+  assert.equal(state.cashCollection.length,c==="START"?1:0);
+});
+await check("CASH START atomically records server-priced collection and preserves consent",async()=>{
+  state.booking[0].driverId=A;state.booking[0].acceptedAt=new Date(Date.now()-60000);state.booking[0].status="ARRIVED";
+  assert.equal((await command("START")).ok,true);assert.equal(state.booking[0].status,"IN_PROGRESS");assert.equal(state.booking[0].cashAgreed,true);
+  assert.equal(state.cashCollection.length,1);assert.equal(state.cashCollection[0].amountMinor,12300);assert.equal(state.cashCollection[0].currency,"EUR");
+  assert.equal(state.cashCollection[0].driverId,A);assert.equal(state.cashCollection[0].status,"COLLECTED");
+  assert.equal(state.outboxEvent[0].payload.cashCollectionId,state.cashCollection[0].id);
+});
+await check("CASH START collection failure rolls back trip state and event",async()=>{
+  state.booking[0].driverId=A;state.booking[0].status="ARRIVED";failAt="cashCollection.create";
+  assert.equal((await command("START")).ok,false);assert.equal(state.booking[0].status,"ARRIVED");assert.equal(state.cashCollection.length,0);assert.equal(state.outboxEvent.length,0);
+});
+await check("CASH completion trusts collection evidence rather than customer consent",async()=>{
+  state.booking[0].driverId=A;state.booking[0].status="ARRIVED";await command("START");await command("COMPLETE");
+  assert.equal(state.driverEarning[0].cashCollected,true);assert.match(state.driverEarning[0].notes,/VERIFIED_COLLECTED/);
+});
+await check("CASH collection cannot be replayed against a different assignment identity",async()=>{
+  state.booking[0].driverId=A;state.booking[0].status="ARRIVED";state.booking[0].acceptedAt=new Date(Date.now()-60000);
+  assert.equal((await command("START")).ok,true);
+  state.booking[0].acceptedAt=new Date();
+  assert.equal((await command("START")).ok,false);
+  assert.equal(state.cashCollection.length,1);
+  assert.equal((await command("COMPLETE")).ok,true);
+  assert.equal(state.driverEarning[0].cashCollected,false);
+  assert.match(state.driverEarning[0].notes,/LEGACY_UNKNOWN_UNVERIFIED/);
 });
 await check("creation refuses historical pair and does not retry",async()=>{
   state.rideRequest[0].status="DECLINED";assert.equal((await ops.createDriverOffer({bookingId:X,driverId:A})).code,"OFFER_ALREADY_EXISTS");

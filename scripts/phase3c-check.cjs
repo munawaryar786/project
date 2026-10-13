@@ -3,11 +3,36 @@ require.extensions[".ts"]=(m,f)=>m._compile(ts.transpileModule(fs.readFileSync(f
 const resolve=Module._resolveFilename;Module._resolveFilename=function(r,p,i,o){return r.startsWith("@/")?path.join(process.cwd(),r.slice(2)+".ts"):resolve.call(this,r,p,i,o)};
 const m=require("../lib/dispatch-matching.ts"),c=require("../lib/dispatch-config.ts");const checks=[];
 function ok(label,value){assert.ok(value,label);checks.push(label)}
-delete process.env.DRIVO_DISPATCH_OFFER_TTL_SECONDS;delete process.env.DRIVO_DISPATCH_LOCATION_MAX_AGE_SECONDS;
-ok("missing config fails closed",c.getDispatchConfig().code==="DISPATCH_CONFIG_MISSING");
-ok("test config accepted",c.getDispatchConfig({offerTtlSeconds:30,locationMaxAgeSeconds:60}).ok);
-ok("zero config rejected",!c.getDispatchConfig({offerTtlSeconds:0,locationMaxAgeSeconds:60}).ok);
-const b={id:"b",status:"CONFIRMED",dispatchStatus:"NOT_STARTED",driverId:null,scheduledRide:false,paymentMethod:"CASH",pickupLat:48.1,pickupLng:17.1,passengerCount:2,companionCount:0,luggageType:"NONE",smallBags:0,largeBags:0,serviceType:"STANDARD",wavRequired:false,wheelchairNeeded:false};
+const dispatchEnvKeys=["DRIVO_DISPATCH_OFFER_TTL_SECONDS","DRIVO_DISPATCH_LOCATION_MAX_AGE_SECONDS"];
+const dispatchEnvBeforeTests=dispatchEnvKeys.map(name=>({present:Object.prototype.hasOwnProperty.call(process.env,name),value:process.env[name]}));
+function withDispatchEnv(ttl,locationAge,test){
+  const previous=dispatchEnvKeys.map(name=>({name,present:Object.prototype.hasOwnProperty.call(process.env,name),value:process.env[name]}));
+  try{
+    for(const [name,value] of [[dispatchEnvKeys[0],ttl],[dispatchEnvKeys[1],locationAge]]){
+      if(value===undefined)delete process.env[name];else process.env[name]=value;
+    }
+    return test();
+  }finally{
+    for(const {name,present,value} of previous){
+      if(present&&value!==undefined)process.env[name]=value;else delete process.env[name];
+    }
+  }
+}
+withDispatchEnv(undefined,undefined,()=>ok("missing config fails closed",c.getDispatchConfig().code==="DISPATCH_CONFIG_MISSING"));
+withDispatchEnv(undefined,undefined,()=>ok("test config accepted",c.getDispatchConfig({offerTtlSeconds:30,locationMaxAgeSeconds:60}).ok));
+withDispatchEnv(undefined,undefined,()=>ok("zero config rejected",!c.getDispatchConfig({offerTtlSeconds:0,locationMaxAgeSeconds:60}).ok));
+for(const value of ["30","3600"]){
+  withDispatchEnv(value,value,()=>{
+    const result=c.getDispatchConfig();
+    ok("numeric environment "+value+" accepted",result.ok===true&&result.config.offerTtlSeconds===Number(value)&&result.config.locationMaxAgeSeconds===Number(value));
+  });
+}
+for(const [label,value] of [["zero","0"],["negative","-1"],["decimal","1.5"],["non-numeric","thirty"],["unsafe integer","9007199254740992"],["suffix","30s"],["leading space"," 30"],["trailing space","30 "],["trailing newline","30\n"]]){
+  withDispatchEnv(value,"60",()=>ok(label+" offer TTL rejected",c.getDispatchConfig().code==="DISPATCH_CONFIG_MISSING"));
+  withDispatchEnv("60",value,()=>ok(label+" location age rejected",c.getDispatchConfig().code==="DISPATCH_CONFIG_MISSING"));
+}
+ok("dispatch environment restored",dispatchEnvKeys.every((name,i)=>Object.prototype.hasOwnProperty.call(process.env,name)===dispatchEnvBeforeTests[i].present&&process.env[name]===dispatchEnvBeforeTests[i].value));
+const b={passengerId:"verified-passenger",phoneVerified:true,passengerAuthStatus:"AUTHENTICATED",cashAgreed:true,dropoffLat:48.2,dropoffLng:17.2,id:"b",status:"CONFIRMED",dispatchStatus:"NOT_STARTED",driverId:null,scheduledRide:false,paymentMethod:"CASH",pickupLat:48.1,pickupLng:17.1,passengerCount:2,companionCount:0,luggageType:"NONE",smallBags:0,largeBags:0,serviceType:"STANDARD",wavRequired:false,wheelchairNeeded:false};
 ok("confirmed eligible",m.bookingDispatchEligibility(b).eligible);ok("cancelled rejected",m.bookingDispatchEligibility({...b,status:"CANCELLED"}).reason==="BOOKING_NOT_DISPATCHABLE");ok("completed rejected",m.bookingDispatchEligibility({...b,status:"COMPLETED"}).eligible===false);ok("assigned rejected",m.bookingDispatchEligibility({...b,driverId:"d"}).reason==="BOOKING_ALREADY_ASSIGNED");ok("scheduled rejected",m.bookingDispatchEligibility({...b,scheduledRide:true}).reason==="SCHEDULED_RIDE");ok("card pending rejected",m.bookingDispatchEligibility({...b,status:"PENDING",paymentMethod:"CARD"}).reason==="PAYMENT_NOT_CONFIRMED");ok("missing pickup rejected",m.bookingDispatchEligibility({...b,pickupLat:null}).reason==="NO_PICKUP_COORDINATES");ok("unknown status rejected",!m.bookingDispatchEligibility({...b,status:"NO_SHOW"}).eligible);
 const d={id:"d",status:"ACTIVE",isOnline:true,isOnTrip:false,currentLat:48.11,currentLng:17.11,lastLocationReceivedAt:new Date(),vehicleType:"STANDARD",vehicleCapacity:4,vehicle:null};const input={booking:b,driver:d,hasConflictingTrip:false,attempted:false,now:new Date(),locationMaxAgeSeconds:60};
 ok("eligible driver",m.driverCompatibility(input).eligible);ok("offline excluded",m.driverCompatibility({...input,driver:{...d,isOnline:false}}).reason==="DRIVER_OFFLINE");ok("missing location excluded",m.driverCompatibility({...input,driver:{...d,currentLat:null}}).reason==="DRIVER_LOCATION_MISSING");ok("stale excluded",m.driverCompatibility({...input,driver:{...d,lastLocationReceivedAt:new Date(Date.now()-120000)}}).reason==="DRIVER_LOCATION_STALE");ok("busy excluded",m.driverCompatibility({...input,driver:{...d,isOnTrip:true}}).reason==="DRIVER_BUSY");ok("conflict excluded",m.driverCompatibility({...input,hasConflictingTrip:true}).reason==="DRIVER_BUSY");ok("inactive excluded",m.driverCompatibility({...input,driver:{...d,status:"SUSPENDED"}}).reason==="DRIVER_INACTIVE");ok("unknown vehicle excluded",m.driverCompatibility({...input,driver:{...d,vehicleType:null,vehicleCapacity:null}}).reason==="VEHICLE_INCOMPATIBLE");ok("capacity excluded",m.driverCompatibility({...input,booking:{...b,passengerCount:5}}).reason==="CAPACITY_EXCEEDED");ok("luggage excluded",m.driverCompatibility({...input,booking:{...b,passengerCount:5,luggageType:"LARGE",largeBags:1},driver:{...d,vehicleCapacity:6}}).reason==="LUGGAGE_INCOMPATIBLE");ok("wav excludes regular",m.driverCompatibility({...input,booking:{...b,wavRequired:true}}).reason==="WAV_REQUIRED");ok("wav capability accepted",m.driverCompatibility({...input,booking:{...b,wavRequired:true},driver:{...d,vehicleType:"WAV"}}).eligible);ok("no-transfer excludes regular",m.driverCompatibility({...input,booking:{...b,wheelchairNeeded:true,canTransferToSeat:false}}).reason==="ACCESSIBILITY_INCOMPATIBLE");ok("attempted excluded",m.driverCompatibility({...input,attempted:true}).reason==="ALREADY_OFFERED");ok("children capacity enforced",m.driverCompatibility({...input,booking:{...b,serviceType:"CHILDREN",passengerCount:5}}).reason==="CAPACITY_EXCEEDED");

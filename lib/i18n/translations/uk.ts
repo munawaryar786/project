@@ -1,3 +1,5 @@
+import { foundation } from "./foundation";
+
 const uk = {
   "nav.home": "Головна",
   "nav.services": "Послуги",
@@ -258,6 +260,15 @@ const uk = {
   "contact.sent": "Повідомлення надіслано. Ми відповімо протягом 24 годин.",
   "contact.sending": "Надсилаємо...",
   "payment.successTitle": "Оплата успішна!",
+  "payment.status.paidTitle": "Оплату підтверджено",
+  "payment.status.pendingTitle": "Перевіряємо оплату",
+  "payment.status.AWAITING_PAYMENT": "Оплату ще не завершено. Ви можете повернутися до сторінки оплати.",
+  "payment.status.PROCESSING": "Ми перевіряємо оплату. Після підтвердження бронювання оновиться.",
+  "payment.status.PAID": "Оплату перевірено, а бронювання підтверджено.",
+  "payment.status.EXPIRED": "Термін цієї платіжної сесії минув. Ви можете запросити нову оплату для того самого бронювання.",
+  "payment.status.FAILED": "Оплату не завершено. Спробуйте ще раз.",
+  "payment.status.RECONCILIATION_REQUIRED": "Ми поки не можемо підтвердити оплату. Перш ніж платити знову, зверніться до підтримки Drivo.",
+  "payment.status.noDispatchBeforeVerification": "Пошук водія починається лише після підтвердження оплати або у запланований час.",
   "payment.successMessage":
     "Ваше бронювання підтверджено й оплачено. Незабаром ми надішлемо підтвердження email.",
   "payment.driverSoon": "Незабаром ви отримаєте WhatsApp з деталями водія.",
@@ -479,10 +490,6 @@ const uk = {
   "status.COMPLETED": "Завершено",
   "status.CANCELLED": "Скасовано",
   "status.NO_SHOW": "Не з'явився",
-  "dispatch.NOT_STARTED": "Не розпочато",
-  "dispatch.SEARCHING_DRIVER": "Пошук водія",
-  "dispatch.ACCEPTED": "Прийнято",
-  "dispatch.NO_DRIVER_AVAILABLE": "Немає доступного водія",
   "service.STANDARD": "Таксі",
   "service.ACCESSIBLE": "Доступний транспорт",
   "service.SENIOR": "Сеньйор",
@@ -683,6 +690,9 @@ const uk = {
   "booking.driverAssistanceRequired": "Driver assistance required",
   "driverPortal.scheduledMarketplace": "Доступні заплановані поїздки",
   "driverPortal.scheduledMarketplaceHelp": "Плануйте роботу заздалегідь, обираючи відповідні майбутні поїздки.",
+  "driverPortal.loadMoreScheduledRides": "Завантажити ще заплановані поїздки",
+  "adminOperations.paymentReview": "Платежі, що потребують перевірки",
+  "adminOperations.paymentReviewHelp": "Перевірте результат у платіжного провайдера, перш ніж створювати нове платіжне посилання або змінювати бронювання.",
   "driverPortal.noScheduledRides": "Немає доступних запланованих поїздок.",
   "driverPortal.claimRide": "Взяти поїздку",
   "driverPortal.claiming": "Прийняття поїздки…",
@@ -902,7 +912,7 @@ const dispatchUk: Record<string, string> = {
   "dispatchAdmin.title": "Диспетчерська команда", "dispatchAdmin.subtitle": "Створення облікових записів диспетчерів і керування ними.", "dispatchAdmin.create": "Створити обліковий запис диспетчера", "dispatchAdmin.edit": "Редагувати диспетчера", "dispatchAdmin.name": "Повне ім’я", "dispatchAdmin.email": "Електронна пошта", "dispatchAdmin.phone": "Телефон (міжнародний формат)", "dispatchAdmin.temporaryPassword": "Тимчасовий пароль (від 12 символів)", "dispatchAdmin.resetPassword": "Скинути тимчасовий пароль (необов’язково)", "dispatchAdmin.operators": "Диспетчери", "dispatchAdmin.status": "Статус", "dispatchAdmin.lastLogin": "Останній вхід", "dispatchAdmin.createdAt": "Створено", "dispatchAdmin.createdBy": "Створив адміністратор", "dispatchAdmin.mustChange": "Потрібно змінити пароль", "dispatchAdmin.disable": "Вимкнути", "dispatchAdmin.enable": "Увімкнути", "dispatchAdmin.empty": "Диспетчерів поки немає.", "dispatchAdmin.loadError": "Не вдалося завантажити список диспетчерів.", "dispatchAdmin.saveError": "Не вдалося зберегти дані диспетчера.", "dispatchAdmin.saved": "Дані диспетчера збережено.", "dispatchAdmin.active": "Активний", "dispatchAdmin.disabled": "Вимкнений",
 };
 
-export default { ...uk, ...dispatchUk, "dispatchAdmin.createdBy": "Створив адміністратор", "dispatch.detail.linkCreatedCopyBlocked": "Посилання для оплати створено, але автоматичне копіювання заблоковано. Скористайтеся кнопкою «Скопіювати посилання для оплати».", "dispatch.detail.linkCreatedEmailCopyBlocked": "Посилання для оплати створено й надіслано електронною поштою, але автоматичне копіювання заблоковано. Скористайтеся кнопкою «Скопіювати посилання для оплати».", "dispatch.detail.linkCreatedEmailFailed": "Посилання для оплати створено й скопійовано, але не вдалося надіслати електронний лист.", "dispatch.detail.linkCreatedEmailFailedCopyBlocked": "Посилання для оплати створено, не вдалося надіслати електронний лист, а автоматичне копіювання заблоковано. Скористайтеся кнопкою «Скопіювати посилання для оплати».", "dispatch.detail.linkCreatedEmailNotProvided": "Посилання для оплати створено й скопійовано. Електронна адреса клієнта відсутня.", "dispatch.detail.linkCreatedEmailNotProvidedCopyBlocked": "Посилання для оплати створено, електронна адреса клієнта відсутня, а автоматичне копіювання заблоковано. Скористайтеся кнопкою «Скопіювати посилання для оплати».",
+export default { ...uk, ...dispatchUk, ...foundation.uk, "dispatch.detail.linkCreatedCopyBlocked": "Посилання для оплати створено, але автоматичне копіювання заблоковано. Скористайтеся кнопкою «Скопіювати посилання для оплати».", "dispatch.detail.linkCreatedEmailCopyBlocked": "Посилання для оплати створено й надіслано електронною поштою, але автоматичне копіювання заблоковано. Скористайтеся кнопкою «Скопіювати посилання для оплати».", "dispatch.detail.linkCreatedEmailFailed": "Посилання для оплати створено й скопійовано, але не вдалося надіслати електронний лист.", "dispatch.detail.linkCreatedEmailFailedCopyBlocked": "Посилання для оплати створено, не вдалося надіслати електронний лист, а автоматичне копіювання заблоковано. Скористайтеся кнопкою «Скопіювати посилання для оплати».", "dispatch.detail.linkCreatedEmailNotProvided": "Посилання для оплати створено й скопійовано. Електронна адреса клієнта відсутня.", "dispatch.detail.linkCreatedEmailNotProvidedCopyBlocked": "Посилання для оплати створено, електронна адреса клієнта відсутня, а автоматичне копіювання заблоковано. Скористайтеся кнопкою «Скопіювати посилання для оплати».",
   // Transactional email registry (all supported locales).
   "email.reference": "Номер бронювання",
   "email.pickupTime": "Дата й час подачі",

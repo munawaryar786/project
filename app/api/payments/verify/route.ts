@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     if (!bookingId) return NextResponse.json({ error: "Payment session is invalid" }, { status: 400 });
     const booking = await prisma.booking.findFirst({
       where: { id: bookingId, passengerId: auth.actor.id },
-      select: { id: true, bookingRef: true, estimatedPrice: true, fareBreakdown: true, paymentMethod: true },
+      select: { id: true, bookingRef: true, estimatedPrice: true, fareBreakdown: true, paymentMethod: true, status: true },
     });
     if (!booking || result.session.metadata?.bookingRef !== booking.bookingRef) {
       return NextResponse.json({ error: "Payment session not found" }, { status: 404 });
@@ -34,11 +34,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Payment session amount mismatch" }, { status: 409 });
     }
 
-    return NextResponse.json({
-      success: result.status === "paid",
-      paymentStatus: result.status,
-      message: result.status === "paid" ? "Payment verified successfully" : "Payment not yet completed",
-    });
+    const operationId = result.session.metadata?.operationId;
+    const operation = typeof operationId === "string" && /^[a-f0-9]{24}$/i.test(operationId)
+      ? await prisma.paymentOperation.findUnique({ where: { id: operationId } }) : null;
+    if (operationId && (!operation || operation.bookingId !== booking.id || operation.providerSessionId !== result.session.id)) {
+      return NextResponse.json({ error: "Payment session binding mismatch" }, { status: 409 });
+    }
+    const receipt = await prisma.paymentWebhookEvent.findFirst({ where: {
+      bookingId: booking.id, provider: "STRIPE", eventType: "checkout.session.completed",
+      providerSessionId: result.session.id, processingStatus: "PROCESSED",
+      ...(operation ? { operationId: operation.id } : {}),
+    }, select: { id: true, amountMinor: true, currency: true } });
+    const settled = result.status === "paid" && booking.status !== "PENDING" && !!receipt &&
+      (operation ? receipt.amountMinor === expected : receipt.amountMinor === null || receipt.amountMinor === expected) &&
+      (operation ? receipt.currency === "EUR" : receipt.currency === null || receipt.currency === "EUR") &&
+      (!operation || operation.status === "PAID");
+    const paymentStatus = settled ? "PAID" :
+      operation?.status === "RECONCILIATION_REQUIRED" ? "RECONCILIATION_REQUIRED" :
+      result.session.status === "expired" ? "EXPIRED" :
+      result.status === "paid" ? "PROCESSING" :
+      result.session.status === "open" ? "AWAITING_PAYMENT" : "FAILED";
+    return NextResponse.json({ success: settled, paymentStatus }, { headers: { "Cache-Control": "private, no-store" } });
   } catch {
     return NextResponse.json({ error: "Payment verification failed" }, { status: 500 });
   }

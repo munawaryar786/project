@@ -7,6 +7,8 @@ import { postTripEarningLedger } from "@/lib/earnings-ledger";
 import { ACTIVE_TRIP_STATUSES, canTransitionTrip, DRIVER_ERROR_CODES, evaluateDriverPresence, isLocationFresh } from "@/lib/driver-state";
 import { driverCompatibility } from "@/lib/dispatch-matching";
 import { getDispatchConfig } from "@/lib/dispatch-config";
+import { authoritativeAssignmentEligibility } from "@/lib/booking-eligibility";
+import { authoritativeCashAmountMinor, isMatchingCashCollection, recordCashCollectionForTripStart } from "@/lib/cash-collection";
 
 type Db = Prisma.TransactionClient;
 const ACCEPTABLE_BOOKING_STATUSES = ["PENDING", "CONFIRMED", "SEARCHING_DRIVER"];
@@ -62,10 +64,15 @@ export async function createDriverOfferInTransaction(tx: Db, input: { bookingId:
   const now = new Date();
   const expiresAt = input.expiresAt || new Date(now.getTime() + 30_000);
   if (!Number.isFinite(expiresAt.getTime()) || expiresAt <= now) return { ok: false as const, code: DRIVER_ERROR_CODES.OFFER_EXPIRED };
-  const driver = await tx.driver.findUnique({ where: { id: input.driverId } });
+  const driver = await tx.driver.findUnique({ where: { id: input.driverId }, include: { vehicle: true } });
   if (!driver || driver.status !== "ACTIVE" || !driver.isOnline || driver.isOnTrip || await findConflictingActiveTrip(input.driverId, undefined, tx)) return { ok: false as const, code: DRIVER_ERROR_CODES.DRIVER_NOT_AVAILABLE };
   const booking = await tx.booking.findFirst({ where: { id: input.bookingId, ...ELIGIBLE, ...(input.dispatchState ? { dispatchStatus: input.dispatchState } : {}) } });
   if (!booking) return { ok: false as const, code: DRIVER_ERROR_CODES.BOOKING_ALREADY_CLAIMED };
+  const eligible = await authoritativeAssignmentEligibility(booking, tx);
+  if (!eligible.eligible) return { ok: false as const, code: eligible.reason };
+  const dispatchConfig = getDispatchConfig();
+  const compatibility = driverCompatibility({ booking, driver, hasConflictingTrip: false, attempted: false, now, locationMaxAgeSeconds: dispatchConfig.ok ? dispatchConfig.config.locationMaxAgeSeconds : 120 });
+  if (!compatibility.eligible) return { ok: false as const, code: compatibility.reason };
   const existing = await tx.rideRequest.findFirst({ where: { bookingId: input.bookingId, driverId: input.driverId } });
   if (existing) {
     if (existing.status === "PENDING" && existing.expiresAt > now) return { ok: true as const, offer: existing, reused: true };
@@ -94,7 +101,7 @@ export async function acceptDriverOfferAtomically(input: { offerId: string; driv
         await expireDriverOffers(input.driverId, new Date(), tx);
         return { ok: false as const, code: DRIVER_ERROR_CODES.OFFER_EXPIRED };
       }
-      const driver = await tx.driver.findUnique({ where: { id: input.driverId } });
+      const driver = await tx.driver.findUnique({ where: { id: input.driverId }, include: { vehicle: true } });
       if (!driver || driver.status !== "ACTIVE" || !driver.isOnline || driver.isOnTrip) {
         return { ok: false as const, code: DRIVER_ERROR_CODES.DRIVER_NOT_AVAILABLE };
       }
@@ -102,16 +109,13 @@ export async function acceptDriverOfferAtomically(input: { offerId: string; driv
         return { ok: false as const, code: DRIVER_ERROR_CODES.CONFLICTING_ACTIVE_TRIP };
       }
       const acceptanceBooking = await tx.booking.findUnique({ where: { id: offer.bookingId } });
+      if (!acceptanceBooking) return { ok: false as const, code: "BOOKING_NOT_DISPATCHABLE" };
+      if (acceptanceBooking.driverId) return { ok: false as const, code: DRIVER_ERROR_CODES.BOOKING_ALREADY_CLAIMED };
+      const eligibility = await authoritativeAssignmentEligibility(acceptanceBooking, tx);
+      if (!eligibility.eligible) return { ok: false as const, code: eligibility.reason };
       const dispatchConfig = getDispatchConfig();
-      if (acceptanceBooking?.dispatchStatus === "SEARCHING_DRIVER" && dispatchConfig.ok) {
-        const compatibility = driverCompatibility({
-          booking: acceptanceBooking, driver, hasConflictingTrip: false, attempted: false,
-          now: new Date(), locationMaxAgeSeconds: dispatchConfig.config.locationMaxAgeSeconds,
-        });
-        if (!compatibility.eligible) {
-          return { ok: false as const, code: compatibility.reason === "DRIVER_BUSY" ? DRIVER_ERROR_CODES.CONFLICTING_ACTIVE_TRIP : DRIVER_ERROR_CODES.DRIVER_NOT_AVAILABLE };
-        }
-      }
+      const available = driverCompatibility({ booking: acceptanceBooking, driver, hasConflictingTrip: false, attempted: false, now: new Date(), locationMaxAgeSeconds: dispatchConfig.ok ? dispatchConfig.config.locationMaxAgeSeconds : 120 });
+      if (!available.eligible) return { ok: false as const, code: available.reason === "DRIVER_BUSY" ? DRIVER_ERROR_CODES.CONFLICTING_ACTIVE_TRIP : DRIVER_ERROR_CODES.DRIVER_NOT_AVAILABLE };
       const now = new Date();
       const claimedOffer = await tx.rideRequest.updateMany({
         where: { id: input.offerId, driverId: input.driverId, status: "PENDING", expiresAt: { gt: now } },
@@ -130,7 +134,7 @@ export async function acceptDriverOfferAtomically(input: { offerId: string; driv
       await writeOutboxEvent(tx, { eventType: "DRIVER_OFFER_ACCEPTED", aggregateType: "Booking", aggregateId: offer.bookingId,
         payload: { bookingId: offer.bookingId, driverId: input.driverId, offerId: input.offerId },
         idempotencyKey: "offer-accepted:" + input.offerId });
-      await writeBookingAssignedEmail(tx, offer.bookingId, input.driverId, now);
+      await writeBookingAssignedEmail(tx, offer.bookingId, input.driverId, now, acceptanceBooking.languagePref);
       return { ok: true as const, bookingId: offer.bookingId, offerId: input.offerId };
     });
   } catch (error) { return transactionFailure(error); }
@@ -164,14 +168,25 @@ export async function transitionDriverBooking(input: {
       const booking = await tx.booking.findUnique({ where: { id: input.bookingId } });
       if (!booking || booking.driverId !== input.driverId) return { ok: false as const, code: DRIVER_ERROR_CODES.BOOKING_NOT_FOUND };
       const target = targetByCommand[input.command];
+      if (input.command === "START" && booking.status === "IN_PROGRESS" && booking.paymentMethod === "CASH" && input.cashConfirmed) {
+        const collection = await tx.cashCollection.findUnique({ where: { bookingId: booking.id } });
+        if (isMatchingCashCollection(collection, booking, input.driverId)) {
+          return { ok: true as const, status: target, replayed: true as const };
+        }
+      }
       if (!canTransitionTrip(booking.status, target)) return { ok: false as const, code: DRIVER_ERROR_CODES.INVALID_TRANSITION };
       if (input.command === "START" && booking.paymentMethod === "CASH" && !input.cashConfirmed) {
         return { ok: false as const, code: DRIVER_ERROR_CODES.INVALID_REQUEST };
       }
+      if (input.command === "START" && booking.paymentMethod === "CASH" && authoritativeCashAmountMinor(booking) === null) {
+        return { ok: false as const, code: DRIVER_ERROR_CODES.INVALID_REQUEST };
+      }
       const changed = await tx.booking.updateMany({ where: { id: input.bookingId, driverId: input.driverId, status: booking.status },
-        data: { status: target, dispatchStatus: "ACCEPTED",
-          ...(input.command === "START" && booking.paymentMethod === "CASH" && input.cashConfirmed ? { cashAgreed: true } : {}) } });
+        data: { status: target, dispatchStatus: "ACCEPTED" } });
       if (changed.count !== 1) throw new DriverConflict(DRIVER_ERROR_CODES.INVALID_TRANSITION);
+      const cashCollection = input.command === "START" && booking.paymentMethod === "CASH"
+        ? (await recordCashCollectionForTripStart(booking, input.driverId, new Date(), tx)).collection
+        : null;
       if (input.command === "COMPLETE") {
         // Financial failure must roll back completion, busy release and event together.
         await createOrUpdateDriverEarningForBooking(input.bookingId, tx);
@@ -187,9 +202,24 @@ export async function transitionDriverBooking(input: {
         await tx.driver.update({ where: { id: input.driverId }, data: { isOnTrip: true } });
       }
       await writeOutboxEvent(tx, { eventType: "DRIVER_TRIP_" + input.command, aggregateType: "Booking", aggregateId: input.bookingId,
-        payload: { bookingId: input.bookingId, driverId: input.driverId, status: target },
+        payload: { bookingId: input.bookingId, driverId: input.driverId, status: target,
+          ...(cashCollection ? { cashCollectionId: cashCollection.id, cashCollectionStatus: cashCollection.status } : {}) },
         idempotencyKey: "driver-trip:" + input.command.toLowerCase() + ":" + input.bookingId });
       return { ok: true as const, status: target };
     });
-  } catch (error) { return transactionFailure(error); }
+  } catch (error) {
+    // A concurrent identical START may have committed while this transaction
+    // lost its write race. Only exact durable collection evidence can turn the
+    // retry into success; unrelated failures remain failures.
+    if (input.command === "START" && input.cashConfirmed) {
+      const booking = await prisma.booking.findUnique({ where: { id: input.bookingId } }).catch(() => null);
+      if (booking?.status === "IN_PROGRESS" && booking.paymentMethod === "CASH" && booking.driverId === input.driverId) {
+        const collection = await prisma.cashCollection.findUnique({ where: { bookingId: booking.id } }).catch(() => null);
+        if (isMatchingCashCollection(collection, booking, input.driverId)) {
+          return { ok: true as const, status: "IN_PROGRESS", replayed: true as const };
+        }
+      }
+    }
+    return transactionFailure(error);
+  }
 }

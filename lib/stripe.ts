@@ -25,6 +25,9 @@ export interface PaymentSessionParams {
   description: string;
   expiresAt?: number;
   idempotencyKey?: string;
+  operationId?: string;
+  operationGeneration?: number;
+  paymentChannel?: "PUBLIC" | "PHONE_DISPATCH";
 }
 
 /**
@@ -42,7 +45,7 @@ export async function createPaymentSession(params: PaymentSessionParams) {
   try {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
-      customer_email: params.customerEmail,
+      ...(params.customerEmail ? { customer_email: params.customerEmail } : {}),
       line_items: [
         {
           price_data: {
@@ -67,6 +70,7 @@ export async function createPaymentSession(params: PaymentSessionParams) {
       metadata: {
         bookingId: params.bookingId,
         bookingRef: params.bookingRef,
+        ...(params.operationId ? { operationId: params.operationId, operationGeneration: String(params.operationGeneration), paymentChannel: params.paymentChannel || "" } : {}),
       },
     }, params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : undefined);
 
@@ -76,7 +80,7 @@ export async function createPaymentSession(params: PaymentSessionParams) {
       sessionUrl: session.url,
     };
   } catch (error: any) {
-    console.error("❌ Stripe session creation error:", error.message);
+    console.error("[payment.provider.create.failed]", { code: "PROVIDER_CREATE_FAILED" });
     throw error;
   }
 }
@@ -109,7 +113,7 @@ export async function getPaymentSession(sessionId: string) {
       amount: session.amount_total,
     };
   } catch (error: any) {
-    console.error("❌ Stripe session retrieval error:", error.message);
+    console.error("[payment.provider.retrieve.failed]", { code: "PROVIDER_RETRIEVE_FAILED" });
     return {
       success: false,
       error: error.message,

@@ -4,6 +4,7 @@ import {
   clearPassengerCookies,
   revokePassengerSessions,
 } from "@/lib/passenger-auth";
+import { finishGuestOperationTransition } from "@/lib/public-booking-operation";
 
 export async function POST(request: NextRequest) {
   const auth = await authorizePassenger(request);
@@ -11,5 +12,5 @@ export async function POST(request: NextRequest) {
   await revokePassengerSessions(auth.actor.id);
   const response = NextResponse.json({ success: true });
   clearPassengerCookies(response);
-  return response;
+  return finishGuestOperationTransition(request, response);
 }

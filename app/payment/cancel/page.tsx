@@ -63,7 +63,7 @@ export default function PaymentCancelPage() {
     <Suspense
       fallback={
         <div className="min-h-screen bg-drivo-bg-soft flex items-center justify-center">
-          <div className="text-drivo-text-secondary">Loading...</div>
+          <div className="text-drivo-text-secondary" aria-hidden="true" />
         </div>
       }
     >

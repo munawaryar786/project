@@ -1,11 +1,13 @@
 import { getTranslation, type Locale } from "../i18n/index";
 import { emailHeader, emailOrigin, hostedPaymentUrl, EmailError } from "./config";
 import type { BookingMail, EmailType, RenderedEmail, TransactionalEmail } from "./types";
+import { normalizeStoredLocale } from "../i18n/locale-resolution";
+import { presentStatus } from "../i18n/status-catalog";
 
 export const EMAIL_TYPES: EmailType[] = ["BOOKING_RECEIVED", "BOOKING_CONFIRMED", "ADMIN_BOOKING_CREATED", "ADMIN_ASSISTED_COPY", "DRIVER_CONFIRMED", "ADMIN_DRIVER_CONFIRMED", "PAYMENT_RECEIPT", "DISPATCH_PAYMENT_LINK", "PASSWORD_RESET", "ADMIN_NO_DRIVER"];
 export function emailLocale(value?: string | null): Locale {
   const aliases: Record<string, Locale> = { en: "en", english: "en", sk: "sk", slovak: "sk", de: "de", german: "de", uk: "uk", ukrainian: "uk" };
-  return aliases[String(value || "").toLowerCase()] || "sk";
+  return normalizeStoredLocale(value) || aliases[String(value || "").toLowerCase()] || "sk";
 }
 export function escapeEmailHtml(value: unknown): string {
   return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -25,10 +27,10 @@ export function renderTransactionalEmail(input: TransactionalEmail, env: Readonl
   let action: { label: string; url: string } | undefined;
   const data = input.data;
   if ("bookingRef" in data) rows.push([t("reference"), data.bookingRef]);
-  if (input.type === "ADMIN_NO_DRIVER") rows.push([getTranslation(input.locale, "dispatch.status"), "DISPATCH_EXHAUSTED"]);
+  if (input.type === "ADMIN_NO_DRIVER") rows.push([getTranslation(input.locale, "dispatch.status"), presentStatus("dispatch", "DISPATCH_EXHAUSTED", input.locale)]);
   if ("pickupAt" in data) {
-    rows.push([t("pickupTime"), localPickup(data, input.locale)], [t("pickup"), data.pickupAddress], [t("destination"), data.destination], [t("service"), getTranslation(input.locale, "service." + data.serviceType.toUpperCase(), data.serviceType)]);
-    if (data.paymentMethod) rows.push([t("payment"), getTranslation(input.locale, "booking.payment" + ({ CASH: "Cash", CARD: "Card", INVOICE: "Invoice" }[data.paymentMethod] || ""), data.paymentMethod)]);
+    rows.push([t("pickupTime"), localPickup(data, input.locale)], [t("pickup"), data.pickupAddress], [t("destination"), data.destination], [t("service"), getTranslation(input.locale, "service." + data.serviceType.toUpperCase())]);
+    if (data.paymentMethod) rows.push([t("payment"), getTranslation(input.locale, "booking.payment" + ({ CASH: "Cash", CARD: "Card", INVOICE: "Invoice" }[data.paymentMethod] || ""))]);
   }
   if ("driverName" in data) {
     intro = intro.replace("{driver}", () => data.driverName);
@@ -37,7 +39,10 @@ export function renderTransactionalEmail(input: TransactionalEmail, env: Readonl
     if (data.registration) rows.push([t("registration"), data.registration]);
   }
   if ("amount" in data && data.amount != null) {
-    const amount = typeof data.amount === "number" ? new Intl.NumberFormat(input.locale, { style: "currency", currency: "EUR" }).format(data.amount) : data.amount;
+    const numericAmount = typeof data.amount === "number" ? data.amount
+      : /^EUR \d+(?:\.\d{2})?$/.test(data.amount) ? Number(data.amount.slice(4)) : null;
+    const amount = numericAmount !== null && Number.isFinite(numericAmount)
+      ? new Intl.NumberFormat(input.locale, { style: "currency", currency: "EUR" }).format(numericAmount) : String(data.amount);
     rows.push([t("amount"), amount]);
   }
   if (input.type === "DISPATCH_PAYMENT_LINK") {

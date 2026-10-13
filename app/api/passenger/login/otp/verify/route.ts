@@ -9,6 +9,8 @@ import {
 } from "@/lib/passenger-auth";
 import { prisma } from "@/lib/prisma";
 import { authRateLimitResponse, enforceAuthRateLimit, rateLimits, resolveClientIp } from "@/lib/rate-limit";
+import { isAllowedOrigin } from "@/lib/env";
+import { finishGuestOperationTransition } from "@/lib/public-booking-operation";
 
 const VerifySchema = z.object({
   phone: z.string().trim().min(6),
@@ -19,6 +21,7 @@ const VerifySchema = z.object({
 });
 
 async function handler(request: NextRequest) {
+  if (!isAllowedOrigin(request.headers.get("origin"))) return NextResponse.json({ error: "Request origin is not allowed" }, { status: 403 });
   try {
     const parsed = VerifySchema.safeParse(await request.json());
     if (!parsed.success) {
@@ -76,17 +79,8 @@ async function handler(request: NextRequest) {
       data: { phoneVerified: true, phoneVerifiedAt: new Date(), lastLoginAt: new Date() },
     });
 
-    if (parsed.data.bookingId) {
-      await prisma.booking.updateMany({
-        where: { id: parsed.data.bookingId, normalizedPhone },
-        data: {
-          passengerId: passenger.id,
-          passengerAuthStatus: "AUTHENTICATED",
-          passengerAuthCompletedAt: new Date(),
-          phoneVerified: true,
-        },
-      });
-    }
+    // Legacy step-up authenticates only; the same capability/owner-authorized
+    // continuation endpoint handles any booking association.
 
     const token = await createPassengerSession(updated);
     const response = NextResponse.json({
@@ -99,7 +93,7 @@ async function handler(request: NextRequest) {
     }
 
     console.log(`Passenger step-up login success: ${passenger.id}`);
-    return response;
+    return finishGuestOperationTransition(request, response);
   } catch (error) {
     console.error("Passenger login OTP verify error:", error);
     return NextResponse.json({ error: "Could not verify login." }, { status: 500 });

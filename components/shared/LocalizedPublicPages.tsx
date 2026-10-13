@@ -43,6 +43,9 @@ export function LocalizedServicePage({
   bookingLabelFallback,
 }: ServicePageProps) {
   const { t } = useLanguage();
+  const badgeKey = badge === 'Taxi' ? 'services.taxi.title'
+    : badge === 'Drivers' ? 'rental.forDrivers'
+    : badge === 'Children' ? 'services.children.title' : null;
   const bookingLabel = bookingLabelKey ? t(bookingLabelKey, bookingLabelFallback) : t("nav.book");
   const ctaBookingLabel = bookingLabelKey ? t(bookingLabelKey, bookingLabelFallback) : t("cta.bookNow");
   const benefits = [
@@ -64,7 +67,7 @@ export function LocalizedServicePage({
             <div className="absolute inset-0 bg-drivo-navy/70" />
           </div>
           <div className="relative container-main">
-            <span className="pill-green mb-4 inline-flex">{badge}</span>
+            <span className="pill-green mb-4 inline-flex">{badgeKey ? t(badgeKey) : badge}</span>
             <h1 className="text-[36px] md:text-[48px] font-extrabold text-white tracking-tight mb-4">
               {t(titleKey)}
             </h1>
@@ -241,7 +244,7 @@ export function LocalizedContactPage() {
               <Info title={t("common.callUs")} value={PHONE_NUMBER} />
               <Info title={t("common.whatsapp")} value={WHATSAPP_URL.replace("https://", "")} />
               <Info title={t("common.email")} value="info@drivo.sk" />
-              <Info title={t("footer.company")} value="Bratislava, Slovakia" />
+              <Info title={t("footer.company")} value={t('public.bratislavaSlovakia')} />
             </div>
             <div className="card">
               <h2 className="text-[20px] font-bold text-drivo-navy mb-5">{t("contact.sendMessage")}</h2>

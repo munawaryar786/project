@@ -3,6 +3,8 @@ import { Server } from "socket.io";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { createRedisConnection, closeRedis, safeRedisStatus } from "@/lib/realtime/redis";
 import { authenticateHandshake, originAllowed } from "@/lib/realtime/auth";
+import { protectPassengerSocket } from "@/lib/realtime/passenger-socket";
+import { passengerSessionRoom } from "@/lib/security/passenger-session";
 import { REALTIME_EVENTS } from "@/lib/realtime/constants";
 
 const port = Number(process.env.DRIVO_REALTIME_PORT || 3101);
@@ -10,7 +12,29 @@ const httpServer = http.createServer((req, res) => { if (req.url === "/healthz")
 const pub = createRedisConnection("socket-pub");
 const sub = createRedisConnection("socket-sub");
 const io = new Server(httpServer, { transports: ["websocket"], allowRequest: (req, callback) => { const origin = req.headers.origin; callback(null, originAllowed(typeof origin === "string" ? origin : undefined)); }, cors: { origin: false }, adapter: createAdapter(pub, sub) });
-for (const [path, actor] of [["/driver", "DRIVER"], ["/admin", "ADMIN"], ["/passenger", "PASSENGER"]] as const) { const namespace = io.of(path); namespace.use(async (socket, next) => { try { const row = await authenticateHandshake(socket.handshake, actor); socket.data.actorId = row.id; socket.data.actor = actor; next(); } catch (error) { next(new Error(error instanceof Error ? error.message : "REALTIME_AUTH_REJECTED")); } }); namespace.on("connection", (socket) => { const room = `${actor.toLowerCase()}:${socket.data.actorId}`; socket.join(room); if (actor === "ADMIN") socket.join("admins"); socket.emit(REALTIME_EVENTS.CONNECTION, { eventId: `connection:${socket.id}`, type: REALTIME_EVENTS.CONNECTION, entityId: socket.data.actorId, occurredAt: new Date().toISOString(), stateHint: "connected" }); }); }
+for (const [path, actor] of [["/driver", "DRIVER"], ["/admin", "ADMIN"], ["/passenger", "PASSENGER"]] as const) {
+  const namespace = io.of(path);
+  namespace.use(async (socket, next) => {
+    try {
+      const row = await authenticateHandshake(socket.handshake, actor);
+      socket.data.actorId = row.id; socket.data.actor = actor;
+      if (actor === "PASSENGER" && "realtimeSessionId" in row) {
+        socket.data.realtimeSessionId = row.realtimeSessionId;
+        socket.data.realtimeExpiresAt = row.realtimeExpiresAt;
+      }
+      next();
+    } catch { next(new Error("REALTIME_AUTH_REJECTED")); }
+  });
+  namespace.on("connection", socket => {
+    const room = actor === "PASSENGER"
+      ? passengerSessionRoom(socket.data.actorId, socket.data.realtimeSessionId)
+      : actor.toLowerCase() + ":" + socket.data.actorId;
+    socket.join(room);
+    if (actor === "ADMIN") socket.join("admins");
+    if (actor === "PASSENGER") protectPassengerSocket(socket);
+    socket.emit(REALTIME_EVENTS.CONNECTION, { eventId: "connection:" + socket.id, type: REALTIME_EVENTS.CONNECTION, entityId: socket.data.actorId, occurredAt: new Date().toISOString(), stateHint: "connected" });
+  });
+}
 httpServer.listen(port, "127.0.0.1", () => console.log("[realtime.start]", { port }));
 async function shutdown(signal: string) { console.log("[realtime.stop]", { signal }); await new Promise<void>((resolve) => io.close(() => resolve())); await closeRedis(pub); await closeRedis(sub); httpServer.close(() => process.exit(0)); }
 process.once("SIGTERM", () => void shutdown("SIGTERM")); process.once("SIGINT", () => void shutdown("SIGINT"));

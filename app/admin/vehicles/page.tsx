@@ -4,6 +4,7 @@ import { csrfFetch } from "@/lib/client/csrf-fetch";
 
 import { useEffect, useMemo, useState } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { formatEuro, formatMarketDate, formatNumber } from "@/lib/i18n/format";
 
 interface Vehicle {
   id: string;
@@ -60,12 +61,9 @@ function toDateInput(value: string | null) {
   return value.slice(0, 10);
 }
 
-function money(value: number | null | undefined) {
-  return value == null ? "-" : `EUR ${Number(value).toFixed(2)}`;
-}
-
 export default function AdminVehiclesPage() {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
+  const money = (value: number | null | undefined) => value == null ? "-" : formatEuro(Number(value), locale);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -81,10 +79,10 @@ export default function AdminVehiclesPage() {
     try {
       const res = await csrfFetch("admin","/api/admin/vehicles", { cache: "no-store" });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t("adminVehicles.errors.fetch"));
+      if (!res.ok) throw new Error("adminVehicles.errors.fetch");
       setVehicles(data.vehicles || []);
     } catch (err: any) {
-      setError(err?.message || t("adminVehicles.errors.fetch"));
+      setError("adminVehicles.errors.fetch");
     } finally {
       setLoading(false);
     }
@@ -155,7 +153,7 @@ export default function AdminVehiclesPage() {
     setError("");
 
     if (!form.plateNumber.trim() || !form.type || !form.model.trim()) {
-      setError(t("adminVehicles.errors.required"));
+      setError("adminVehicles.errors.required");
       return;
     }
 
@@ -181,13 +179,13 @@ export default function AdminVehiclesPage() {
         }
       );
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t("adminVehicles.errors.save"));
+      if (!res.ok) throw new Error("adminVehicles.errors.save");
 
       setShowForm(false);
       setEditing(null);
       await fetchVehicles();
     } catch (err: any) {
-      setError(err?.message || t("adminVehicles.errors.save"));
+      setError("adminVehicles.errors.save");
     } finally {
       setSaving(false);
     }
@@ -209,8 +207,8 @@ export default function AdminVehiclesPage() {
       </div>
 
       {error && (
-        <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-          {error}
+        <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          {t(error)}
         </div>
       )}
 
@@ -236,7 +234,7 @@ export default function AdminVehiclesPage() {
           <option value="ALL">{t("adminVehicles.allTypes")}</option>
           {VEHICLE_TYPES.map((type) => (
             <option key={type} value={type}>
-              {type}
+              {t(`m4.vehicleType.${type}`, t("m4.common.unknownState"))}
             </option>
           ))}
         </select>
@@ -274,14 +272,14 @@ export default function AdminVehiclesPage() {
                         {vehicle.brand} {vehicle.model}
                       </div>
                       <div className="text-xs text-gray-500">
-                        {vehicle.type} · {vehicle.year || "-"} · {vehicle.maxPassengers} seats
+                        {t(`m4.vehicleType.${vehicle.type}`, t("m4.common.unknownState"))} · {vehicle.year || "-"} · {t("m4.vehicle.seats").replace("{count}", formatNumber(vehicle.maxPassengers, locale))}
                       </div>
                     </td>
-                    <td className="px-4 py-3">{vehicle.currentMileageKm ?? "-"} km</td>
+                    <td className="px-4 py-3">{vehicle.currentMileageKm == null ? "-" : formatNumber(vehicle.currentMileageKm, locale)} km</td>
                     <td className="px-4 py-3 text-xs text-gray-600">
                       <div>{vehicle.serviceNotes || "-"}</div>
-                      <div>{t("adminVehicles.nextService")}: {toDateInput(vehicle.nextServiceDate) || "-"}</div>
-                      <div>{t("adminVehicles.stk")}: {toDateInput(vehicle.stkValidUntil) || "-"}</div>
+                      <div>{t("adminVehicles.nextService")}: {vehicle.nextServiceDate ? formatMarketDate(vehicle.nextServiceDate, locale) : "-"}</div>
+                      <div>{t("adminVehicles.stk")}: {vehicle.stkValidUntil ? formatMarketDate(vehicle.stkValidUntil, locale) : "-"}</div>
                     </td>
                     <td className="px-4 py-3 text-xs">
                       <div>{t("adminVehicles.weekly")}: {money(vehicle.weeklyRentalPrice ?? vehicle.weeklyRate)}</div>
@@ -295,7 +293,7 @@ export default function AdminVehiclesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-700">
-                        {vehicle.status}
+                        {t(`m4.vehicleStatus.${vehicle.status}`, t("m4.common.unknownState"))}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -332,7 +330,7 @@ export default function AdminVehiclesPage() {
               </Field>
               <Field label={t("adminVehicles.type")} required>
                 <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className={inputClass}>
-                  {VEHICLE_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+                  {VEHICLE_TYPES.map((type) => <option key={type} value={type}>{t(`m4.vehicleType.${type}`, t("m4.common.unknownState"))}</option>)}
                 </select>
               </Field>
               <Field label={t("adminVehicles.brand")}>
@@ -349,7 +347,7 @@ export default function AdminVehiclesPage() {
               </Field>
               <Field label={t("adminVehicles.status")}>
                 <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className={inputClass}>
-                  {STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                  {STATUSES.map((status) => <option key={status} value={status}>{t(`m4.vehicleStatus.${status}`, t("m4.common.unknownState"))}</option>)}
                 </select>
               </Field>
               <Field label={t("adminVehicles.mileage")}>
@@ -372,7 +370,7 @@ export default function AdminVehiclesPage() {
               </Field>
               <Field label={t("adminVehicles.rentalStatus")}>
                 <select value={form.rentalStatus} onChange={(e) => setForm({ ...form, rentalStatus: e.target.value })} className={inputClass}>
-                  {RENTAL_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                  {RENTAL_STATUSES.map((status) => <option key={status} value={status}>{t(`m4.rentalStatus.${status}`, t("m4.common.unknownState"))}</option>)}
                 </select>
               </Field>
               <div className="md:col-span-2">

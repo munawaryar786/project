@@ -103,7 +103,12 @@ const distanceRouteSource = fs.readFileSync(path.join(root, "app/api/bookings/di
 if (!distanceRouteSource.includes('assistanceLevel: z.enum(["LIGHT", "DOOR_TO_DOOR", "BOARDING_HELP"]).optional().nullable()')) throw new Error("Estimate route assistance-level schema does not match booking flow");
 if (!distanceRouteSource.includes("assistanceLevel: data.assistanceLevel")) throw new Error("Estimate route does not forward assistance level unchanged");
 const estimateComponentSource = fs.readFileSync(path.join(root, "components/booking/PriceEstimate.tsx"), "utf8");
-if (!estimateComponentSource.includes('assistedTransport: "Driver Assistance"') || !estimateComponentSource.includes('label="Additional Services"') || !estimateComponentSource.includes("optionalServices.map")) {
+const m3Translations = fs.readFileSync(path.join(root, "lib/i18n/translations/m3.ts"), "utf8");
+if (!estimateComponentSource.includes("label={t('booking.additionalServices')}") ||
+    !estimateComponentSource.includes("optionalServices.map(([key, value])") ||
+    !estimateComponentSource.includes("t(`booking.charge.${key}`)") ||
+    (m3Translations.match(/"booking\.additionalServices":/g) || []).length !== 4 ||
+    (m3Translations.match(/"booking\.charge\.assistedTransport":/g) || []).length !== 4) {
   throw new Error("PriceEstimate no longer displays assistedTransport under Additional Services");
 }
 function must(file, value) { if (!fs.readFileSync(path.join(root, file), "utf8").includes(value)) throw new Error(`${file} missing ${value}`); }

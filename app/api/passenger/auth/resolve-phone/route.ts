@@ -4,10 +4,14 @@ import { isValidE164Phone, normalizePassengerPhone } from "@/lib/passenger-auth"
 import { prisma } from "@/lib/prisma";
 import { authRateLimitResponse, enforceAuthRateLimit, rateLimits, resolveClientIp } from "@/lib/rate-limit";
 import { maskPhone } from "@/lib/utils";
+import { publicBookingAccess, validBookingId } from "@/lib/booking-access";
+import { getPassengerFromRequest } from "@/lib/passenger-auth";
+import { isAllowedOrigin } from "@/lib/env";
 
 const ResolvePhoneSchema = z.object({ phone: z.string().trim().min(6), bookingId: z.string().optional().nullable(), draftId: z.string().optional().nullable() });
 
 async function handler(request: NextRequest) {
+  if (!isAllowedOrigin(request.headers.get("origin"))) return NextResponse.json({ success: false, error: "Request origin is not allowed" }, { status: 403 });
   try {
     const parsed = ResolvePhoneSchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ success: false, error: "Invalid request" }, { status: 400 });
@@ -19,8 +23,10 @@ async function handler(request: NextRequest) {
     ] });
     if (!distributedLimit.allowed) return authRateLimitResponse(distributedLimit, "Too many phone checks. Please wait and try again.");
     if (parsed.data.bookingId) {
+      if (!validBookingId(parsed.data.bookingId)) return NextResponse.json({ error: "Booking unavailable" }, { status: 404 });
       const booking = await prisma.booking.findUnique({ where: { id: parsed.data.bookingId } });
-      if (!booking) return NextResponse.json({ success: false, error: "Booking not found" }, { status: 404 });
+      const passengerActor = booking?.passengerId ? await getPassengerFromRequest(request) : null;
+      if (!booking || !(await publicBookingAccess(request, booking, passengerActor?.id)).allowed) return NextResponse.json({ success: false, error: "Booking unavailable. Restart your booking." }, { status: 404 });
       const bookingPhone = booking.normalizedPhone || normalizePassengerPhone(`${booking.customerPhoneCode}${booking.customerPhone}`, booking.customerPhoneCode);
       if (bookingPhone !== normalizedPhone) return NextResponse.json({ success: false, error: "Phone number does not match booking" }, { status: 400 });
     }

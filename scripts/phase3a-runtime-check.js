@@ -36,6 +36,8 @@ let event;
 let emails = 0;
 let webhookEvents = [];
 let emailIntents = [];
+let webhookReceiptFailure = false;
+let transactionSerial = Promise.resolve();
 let bookingSequence = 0;
 let adminAuditEvents = [];
 let dispatchOperatorRecord = { id: sid, fullName: "Existing Operator", email: "old@example.com", phone: "+421900000001", normalizedPhone: "+421900000001", status: "ACTIVE", mustChangePassword: false, authVersion: 0 };
@@ -54,13 +56,24 @@ const prisma = {
     update: async ({ data }) => { dispatchOperatorRecord = { ...dispatchOperatorRecord, ...data, authVersion: data.authVersion?.increment ? dispatchOperatorRecord.authVersion + data.authVersion.increment : (data.authVersion ?? dispatchOperatorRecord.authVersion) }; return dispatchOperatorRecord; },
   },
   adminAuditEvent: { create: async ({ data }) => { adminAuditEvents.push(data); return data; } },
-  outboxEvent: { create: async ({data}) => {
+  outboxEvent: {
+    findUnique: async ({where}) => emailIntents.find(item => item.idempotencyKey === where.idempotencyKey) || null,
+    create: async ({data}) => {
     assert.ok(!emailIntents.some(item => item.idempotencyKey === data.idempotencyKey), "duplicate durable email intent");
     emailIntents.push(data); return data;
   } },
-  $transaction: async (callback) => callback(prisma),
+  $transaction: (callback) => {
+    const run=transactionSerial.then(async()=>{
+      const snapshot={booking:structuredClone(booking),webhookEvents:structuredClone(webhookEvents),emailIntents:structuredClone(emailIntents),writes};
+      try{return await callback(prisma);}catch(error){booking=snapshot.booking;webhookEvents=snapshot.webhookEvents;emailIntents=snapshot.emailIntents;writes=snapshot.writes;throw error;}
+    });
+    transactionSerial=run.catch(()=>{});
+    return run;
+  },
+  passengerVerificationProof: { create: async ({data})=>({id:sid,...data}) },
   booking: {
     findUnique: async () => {bookingReads++; return booking;},
+    findUniqueOrThrow: async () => { assert.ok(booking); return booking; },
     findFirst: async ({where}) => { if (!booking || booking.id !== where.id) return null; for (const key of ["passengerId","status","paymentMethod","driverId","dispatchStatus"]) if (key in where && booking[key] !== where[key]) return null; return booking; },
     findMany: async () => booking ? [booking] : [],
     updateMany: async ({where, data}) => { if (!booking || booking.status !== where.status) return {count:0}; writes++; Object.assign(booking, data); return {count:1}; },
@@ -70,9 +83,10 @@ const prisma = {
   rideRequest: { findFirst: async () => activeRequest, findMany: async () => [], updateMany: async () => {writes++;return {count:0};}, create: async () => {writes++;return {};} },
   bookingPayment: { findUnique: async () => null },
   paymentWebhookEvent: {
-    findUnique: async ({where}) => webhookEvents.find(row => row.providerEventId === where.providerEventId) || null,
-    create: async ({data}) => { if (webhookEvents.some(row => row.providerEventId === data.providerEventId)) throw Object.assign(new Error("duplicate"), {code:"P2002"}); const row={id:"event-"+webhookEvents.length,...data}; webhookEvents.push(row); return row; },
-    update: async ({where,data}) => { const row=webhookEvents.find(item=>item.id===where.id); if(!row) throw new Error("missing webhook receipt"); Object.assign(row,data); return row; },
+    findFirst: async () => null,
+    findUnique: async ({where}) => webhookEvents.find(row => where.providerEventId ? row.providerEventId === where.providerEventId : row.id === where.id) || null,
+    create: async ({data}) => { if (webhookEvents.some(row => row.providerEventId === data.providerEventId)) throw Object.assign(new Error("duplicate"), {code:"P2002"}); const row={id:"event-"+webhookEvents.length,provider:"STRIPE",processingStatus:"RECEIVED",bookingId:null,paymentId:null,...data}; webhookEvents.push(row); return row; },
+    update: async ({where,data}) => { if(webhookReceiptFailure)throw new Error("injected receipt failure");const row=webhookEvents.find(item=>item.id===where.id); if(!row) throw new Error("missing webhook receipt"); Object.assign(row,data); return row; },
     updateMany: async ({where,data}) => { const rows=webhookEvents.filter(row=>row.providerEventId===where.providerEventId && row.processingStatus!=="PROCESSED"); rows.forEach(row=>Object.assign(row,data)); return {count:rows.length}; },
   },
 };
@@ -85,6 +99,14 @@ const mocks = {
     getPaymentSession: async () => ({success:true,session:paymentSession,status:paymentSession.payment_status}),
     verifyWebhookSignature: (_, signature) => ({valid:signature==="test-valid",event}),
   },
+  // This gate isolates route authorization and the legacy signed-receipt path.
+  // The shared operation and activation transactions run against disposable
+  // MongoDB in test:phase2:mongo.
+  "@/lib/payment-checkout": { createOrReusePaymentCheckout: async p => {
+    stripeParams = {...p, amount: Math.round(booking.estimatedPrice * 100), currency: "EUR", bookingRef: booking.bookingRef};
+    return {state: "READY", sessionId: "cs_test", sessionUrl: "https://checkout.example", reused: false};
+  } },
+  "@/lib/booking-activation": { writeBookingActivationIntent: async () => ({id: "synthetic-activation"}) },
   "@/lib/automatic-dispatch": { startAutomaticDispatch: async () => { dispatchStarts++; return booking?.paymentMethod === "CARD" && booking?.status === "PENDING" ? ({ok:false,code:"PAYMENT_NOT_CONFIRMED"}) : !["PENDING","CONFIRMED","SEARCHING_DRIVER"].includes(booking?.status) ? ({ok:false,code:"BOOKING_NOT_DISPATCHABLE"}) : ({ok:true}); }, advanceExpiredOffersForDriver: async () => ({}) },
   "@/lib/driver-operations": { expireDriverOffers: async () => ({}), getDriverPresence: async () => null },
   "@/lib/scheduled-marketplace": { isScheduledBooking: () => false, SCHEDULED_MARKET_CONFIG: { timezone: "Europe/Bratislava" }, parseMarketDateTime: (date, time) => new Date(`${date}T${time}:00+02:00`) },
@@ -224,8 +246,41 @@ await test("webhook signature rejection, atomic duplicate guard, no ride status 
   assert.equal((await webhook(request("POST",undefined,"PASSENGER",{}))).status,400);
   const invoke=()=>webhook(request("POST",undefined,"PASSENGER",{},{"stripe-signature":"test-valid"}));
   await Promise.all([invoke(),invoke()]);assert.equal(writes,1);assert.equal(emails,0,"payment HTTP response does not call SMTP");assert.equal(emailIntents.length,1);assert.equal(emailIntents[0].eventType,"BOOKING_EMAIL_PAYMENT");assert.equal(emailIntents[0].payload.amount,25);assert.equal(booking.status,"CONFIRMED");assert.equal(dispatchStarts,1,"genuine public card checkout keeps the legacy flow");
+  assert.equal(webhookEvents[0].bookingId,other);assert.equal(webhookEvents[0].providerSessionId,"cs_test");assert.equal(webhookEvents[0].providerPaymentId,"pi_test");
+  assert.equal(webhookEvents[0].amountMinor,2500);assert.equal(webhookEvents[0].currency,"EUR");assert.equal(webhookEvents[0].processingStatus,"PROCESSED");
   for(const state of ["ASSIGNED","DRIVER_ENROUTE","IN_PROGRESS","NO_SHOW","COMPLETED","CANCELLED"]){booking.status=state;assert.equal((await invoke()).status,200);assert.equal(booking.status,state);}
   assert.equal(writes,1);assert.equal(emails,0,"payment HTTP response does not call SMTP");assert.equal(emailIntents.length,1);assert.equal(emailIntents[0].eventType,"BOOKING_EMAIL_PAYMENT");assert.equal(emailIntents[0].payload.amount,25);
+});
+await test("public Stripe confirmation, receipt binding and payment email roll back and retry atomically",async()=>{
+  const webhook=load("app/api/payments/webhook/route.ts").POST;
+  booking=paidBooking();writes=0;dispatchStarts=0;webhookEvents=[];emailIntents=[];
+  paymentSession={id:"cs_atomic",payment_intent:"pi_atomic",metadata:{bookingId:other,bookingRef:booking.bookingRef},payment_status:"paid",amount_total:2500,currency:"eur"};
+  event={id:"evt_atomic",type:"checkout.session.completed",created:Math.floor(Date.now()/1000),data:{object:paymentSession}};
+  webhookReceiptFailure=true;
+  const failed=await webhook(request("POST",undefined,"PASSENGER",{}, {"stripe-signature":"test-valid"}));
+  assert.equal(failed.status,500);assert.equal(booking.status,"PENDING");assert.equal(emailIntents.length,0);assert.equal(dispatchStarts,0);
+  assert.equal(webhookEvents[0].processingStatus,"FAILED");assert.equal(webhookEvents[0].bookingId,null);
+  webhookReceiptFailure=false;
+  const retried=await webhook(request("POST",undefined,"PASSENGER",{}, {"stripe-signature":"test-valid"}));
+  assert.equal(retried.status,200);assert.equal(booking.status,"CONFIRMED");assert.equal(emailIntents.length,1);assert.equal(dispatchStarts,1);
+  assert.equal(webhookEvents[0].processingStatus,"PROCESSED");assert.equal(webhookEvents[0].bookingId,other);assert.equal(webhookEvents[0].amountMinor,2500);
+});
+await test("public Stripe webhook rejects wrong reference, amount, currency and missing provider session",async()=>{
+  const webhook=load("app/api/payments/webhook/route.ts").POST;
+  for(const [name,change] of [
+    ["reference",{metadata:{bookingId:other,bookingRef:"DRIVO-WRONG"}}],
+    ["amount",{amount_total:2499}],
+    ["currency",{currency:"usd"}],
+    ["provider session",{id:null}],
+  ]){
+    booking=paidBooking();writes=0;dispatchStarts=0;webhookEvents=[];emailIntents=[];
+    paymentSession={id:"cs_invalid",payment_intent:"pi_invalid",metadata:{bookingId:other,bookingRef:booking.bookingRef},payment_status:"paid",amount_total:2500,currency:"eur",...change};
+    event={id:"evt_invalid_"+name,type:"checkout.session.completed",created:Math.floor(Date.now()/1000),data:{object:paymentSession}};
+    const response=await webhook(request("POST",undefined,"PASSENGER",{}, {"stripe-signature":"test-valid"}));
+    assert.equal(response.status,500,name);assert.equal(booking.status,"PENDING",name);
+    assert.equal(emailIntents.length,0,name);assert.equal(dispatchStarts,0,name);
+    assert.equal(webhookEvents[0].processingStatus,"FAILED",name);
+  }
 });
 await test("missing Dispatch BookingPayment fails closed while public legacy checkout remains available",async()=>{
   const webhook=load("app/api/payments/webhook/route.ts").POST;
@@ -243,7 +298,7 @@ await test("processed duplicate webhook only recovers an untouched immediate Dis
     booking={...paidBooking(),bookingSource:"PHONE_DISPATCH",status:"CONFIRMED",dispatchStatus,driverId:null,scheduledRide:false};
     dispatchStarts=0;activeRequest=pendingOffer?{id:sid}:null;
     const id="evt_duplicate_"+dispatchStatus+"_"+pendingOffer;
-    webhookEvents=[{id:"receipt-duplicate",providerEventId:id,eventType:"checkout.session.completed",processingStatus:"PROCESSED"}];
+    webhookEvents=[{id:"receipt-duplicate",provider:"STRIPE",providerEventId:id,eventType:"checkout.session.completed",bookingId:other,processingStatus:"PROCESSED"}];
     event={id,type:"checkout.session.completed",created:Math.floor(Date.now()/1000),data:{object:{id:"cs_duplicate",metadata:{bookingId:other,bookingRef:booking.bookingRef}}}};
     const response=await webhook(request("POST",undefined,"PASSENGER",{},{"stripe-signature":"test-valid"}));
     assert.equal(response.status,200);assert.equal((await response.json()).duplicate,true);
@@ -353,26 +408,45 @@ await test("profile completion reissues canonical cookie and reset proof replay 
   const profile=await load("app/api/passenger/profile/complete/route.ts").POST(request("POST",t,"PASSENGER",{fullName:"Test Profile",email:"profile@example.com",password:"long-test-password"}));
   assert.equal(profile.status,200);assert.ok(profile.cookies.get(session.csrfCookieName("PASSENGER")));
   let consumed=false,updates=0;
-  prisma.passengerVerificationProof={findFirst:async()=>({id:sid}),updateMany:async()=>{if(consumed)return {count:0};consumed=true;return {count:1};}};
+  const proofToken = "test-proof-never-production";
+  const resetAttemptId = "test-reset-attempt";
+  prisma.passengerVerificationProof={
+    findFirst:async({where})=>{
+      assert.equal(where.proofTokenHash,passenger.hashSecret(proofToken));
+      assert.equal(where.purpose,"PASSENGER_PASSWORD_RESET");
+      assert.equal(where.resetAttemptId,resetAttemptId);
+      assert.equal(where.normalizedPhone,actor.normalizedPhone);
+      return consumed?null:{id:sid,passengerId:actor.id};
+    },
+    updateMany:async({where})=>{
+      assert.equal(where.id,sid);
+      assert.equal(where.proofTokenHash,passenger.hashSecret(proofToken));
+      assert.equal(where.resetAttemptId,resetAttemptId);
+      assert.equal(where.consumedAt,null);
+      assert.ok(where.expiresAt.gt instanceof Date);
+      if(consumed)return {count:0};consumed=true;return {count:1};
+    },
+  };
   prisma.passengerTrustedDevice={updateMany:async()=>({count:0})};
   const originalUpdate=prisma.passenger.update;
   prisma.passenger.update=async({data})=>{updates++;return {...actor,...data};};
   const reset=load("app/api/passenger/password-reset/complete/route.ts").POST;
-  const input={phone:actor.phone,passwordResetProofToken:"test-proof-never-production",resetAttemptId:"test-reset-attempt",password:"long-test-password",confirmPassword:"long-test-password",rememberDevice:false};
+  const input={phone:actor.phone,passwordResetProofToken:proofToken,resetAttemptId,password:"long-test-password",confirmPassword:"long-test-password",rememberDevice:false};
   const res=await reset(request("POST",undefined,"PASSENGER",input));assert.equal(res.status,200);assert.ok(res.cookies.get(session.sessionCookieName("PASSENGER")));
   assert.equal((await reset(request("POST",undefined,"PASSENGER",input))).status,400);assert.equal(updates,1);
   prisma.passenger.findFirst=originalFind;prisma.passenger.update=originalUpdate;
+  prisma.passengerVerificationProof.create=async ({data})=>({id:sid,...data});
 });
-await test("cash/invoice continuation forwards cookies only to configured origin",async()=>{
+await test("owned CASH continuation activates through shared service; historical Invoice stays unchanged",async()=>{
   const token=await passenger.createPassengerSession(actor),deniedNetwork=globalThis.fetch;
   try{
-    let calls=0;
-    globalThis.fetch=async(url,init)=>{assert.equal(url,"https://gate.example/api/dispatch/start");assert.equal(init.headers.Origin,"https://gate.example");assert.equal(init.headers["X-Drivo-CSRF"],token.csrfToken);calls++;return new Response("{}");};
+    const before=dispatchStarts;
     for(const method of ["CASH","INVOICE"]){
-      booking={...paidBooking(),paymentMethod:method,normalizedPhone:actor.phone};
+      booking={...paidBooking(),paymentMethod:method,normalizedPhone:actor.phone,dispatchStatus:"NOT_STARTED"};
       const res=await load("app/api/passenger/booking/continue/route.ts").POST(request("POST",token,"PASSENGER",{bookingId:other}));assert.equal(res.status,200);
+      assert.equal(booking.paymentMethod,method);
     }
-    assert.equal(calls,2);
+    assert.equal(dispatchStarts-before,1);
   }finally{globalThis.fetch=deniedNetwork;}
 });
 await test("new bookings ignore browser prices and match Pricing Engine V1 preview",async()=>{
@@ -380,19 +454,19 @@ await test("new bookings ignore browser prices and match Pricing Engine V1 previ
   const oldLog=console.log;console.log=()=>{};
   try{
     for(const serviceType of ["STANDARD","AIRPORT","SENIOR","ACCESSIBLE"]){
-      const input={serviceType,pickupAddress:"Test pickup",dropoffAddress:"Test destination",scheduledDate:"2026-10-01",scheduledTime:"12:00",passengerCount:1,customerName:"Test Customer",customerEmail:"test@example.com",customerPhone:"900000000",paymentMethod:"INVOICE",estimatedPrice:0.01,fareBreakdown:{totalFare:0.01}};
+      const input={serviceType,pickupAddress:"Test pickup",dropoffAddress:"Test destination",scheduledDate:"2026-10-01",scheduledTime:"12:00",passengerCount:1,customerName:"Test Customer",customerEmail:"test@example.com",customerPhone:"900000000",paymentMethod:"CARD",estimatedPrice:0.01,fareBreakdown:{totalFare:0.01}};
       const res=await create(request("POST",undefined,"PASSENGER",input));
       assert.equal(res.status,201,serviceType);assert.notEqual(booking.estimatedPrice,0.01);assert.ok(price.hasAuthoritativeBookingPrice(booking));
       const shown=await preview(request("POST",undefined,"PASSENGER",input));assert.equal(shown.status,200);assert.equal((await shown.json()).pricing.estimatedPrice,booking.estimatedPrice);
     }
     writes=0;
-    const res=await create(request("POST",undefined,"PASSENGER",{serviceType:"CHILDREN",pickupAddress:"Test pickup",dropoffAddress:"Test school",scheduledDate:"2026-10-01",scheduledTime:"12:00",passengerCount:1,customerName:"Test Parent",customerEmail:"parent@example.com",customerPhone:"900000000",paymentMethod:"INVOICE"}));
+    const res=await create(request("POST",undefined,"PASSENGER",{serviceType:"CHILDREN",pickupAddress:"Test pickup",dropoffAddress:"Test school",scheduledDate:"2026-10-01",scheduledTime:"12:00",passengerCount:1,customerName:"Test Parent",customerEmail:"parent@example.com",customerPhone:"900000000",paymentMethod:"CARD"}));
     assert.equal(res.status,409);assert.equal(writes,0);
   }finally{console.log=oldLog;}
 });
 await test("disabled Children booking is rejected for public and Dispatch actors",async()=>{
   const create=load("app/api/bookings/route.ts").POST;
-  const input={serviceType:"CHILDREN",pickupAddress:"Test pickup",dropoffAddress:"Test school",scheduledDate:"2026-10-01",scheduledTime:"12:00",passengerCount:1,customerName:"Test Parent",customerEmail:"parent@example.com",customerPhone:"900000000",paymentMethod:"INVOICE"};
+  const input={serviceType:"CHILDREN",pickupAddress:"Test pickup",dropoffAddress:"Test school",scheduledDate:"2026-10-01",scheduledTime:"12:00",passengerCount:1,customerName:"Test Parent",customerEmail:"parent@example.com",customerPhone:"900000000",paymentMethod:"CARD"};
   writes=0;
   const publicResponse=await create(request("POST",undefined,"PASSENGER",input));
   assert.equal(publicResponse.status,409);assert.equal(writes,0);

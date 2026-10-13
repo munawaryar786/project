@@ -1,3 +1,5 @@
+import { foundation } from "./foundation";
+
 const en = {
   // Navigation
   "nav.home": "Home",
@@ -208,7 +210,7 @@ const en = {
   "common.bookNow": "Book now",
   "common.callUs": "Call us",
   "common.whatsapp": "WhatsApp",
-  "common.comingSoon": "",
+  "common.comingSoon": "Coming soon",
   "common.required": "required",
   "common.optional": "optional",
   "common.yes": "Yes",
@@ -228,7 +230,7 @@ const en = {
   "booking.badgeInstant": "Instant",
   "booking.badgeAccessible": "Accessible",
   "booking.routePreview": "Route preview",
-  "booking.trackingComing": "",
+  "booking.trackingComing": "Live tracking coming soon",
   "booking.popularRoutes": "Popular routes",
   "booking.needHelp": "Need help booking?",
   "booking.support247": "Our team is available 24/7",
@@ -276,6 +278,15 @@ const en = {
   "contact.sent": "Message sent. We will reply within 24 hours.",
   "contact.sending": "Sending...",
   "payment.successTitle": "Payment Successful!",
+  "payment.status.paidTitle": "Payment verified",
+  "payment.status.pendingTitle": "Checking your payment",
+  "payment.status.AWAITING_PAYMENT": "Payment has not been completed yet. You can return to Checkout.",
+  "payment.status.PROCESSING": "We are verifying your payment. Your booking will update when confirmation arrives.",
+  "payment.status.PAID": "Your payment is verified and your booking is confirmed.",
+  "payment.status.EXPIRED": "This payment session expired. You can request a new checkout for the same booking.",
+  "payment.status.FAILED": "This payment was not completed. You can try again.",
+  "payment.status.RECONCILIATION_REQUIRED": "We cannot confirm this payment yet. Please contact Drivo support before paying again.",
+  "payment.status.noDispatchBeforeVerification": "A driver is sought only after payment is verified, or at the scheduled stage.",
   "payment.successMessage":
     "Your booking has been confirmed and paid. We will send you a confirmation email shortly.",
   "payment.driverSoon": "You will receive a WhatsApp message with your driver details soon.",
@@ -700,6 +711,9 @@ const en = {
   "passenger.backToLogin": "Back to login",
   "driverPortal.scheduledMarketplace": "Scheduled ride marketplace",
   "driverPortal.scheduledMarketplaceHelp": "Plan ahead with suitable upcoming rides.",
+  "driverPortal.loadMoreScheduledRides": "Load more scheduled rides",
+  "adminOperations.paymentReview": "Payments needing review",
+  "adminOperations.paymentReviewHelp": "Verify the provider outcome before creating another payment link or changing a booking.",
   "driverPortal.noScheduledRides": "No scheduled rides available.",
   "driverPortal.claimRide": "Claim ride",
   "driverPortal.claiming": "Claiming…",
@@ -917,7 +931,7 @@ const en = {
   "dispatchAdmin.title": "Dispatch Team", "dispatchAdmin.subtitle": "Create and manage Dispatch Operator accounts.", "dispatchAdmin.create": "Create Dispatch Operator", "dispatchAdmin.edit": "Edit operator", "dispatchAdmin.name": "Full name", "dispatchAdmin.email": "Email", "dispatchAdmin.phone": "Phone (international format)", "dispatchAdmin.temporaryPassword": "Temporary password (12+ characters)", "dispatchAdmin.resetPassword": "Reset temporary password (optional)", "dispatchAdmin.operators": "Operators", "dispatchAdmin.status": "Status", "dispatchAdmin.lastLogin": "Last login", "dispatchAdmin.createdAt": "Created", "dispatchAdmin.mustChange": "Password change required", "dispatchAdmin.disable": "Disable", "dispatchAdmin.enable": "Enable", "dispatchAdmin.empty": "No operators yet.", "dispatchAdmin.loadError": "Could not load operators.", "dispatchAdmin.saveError": "Could not save operator.", "dispatchAdmin.saved": "Dispatch Operator saved.", "dispatchAdmin.active": "Active", "dispatchAdmin.disabled": "Disabled",
 };
 
-export default { ...en, "dispatchAdmin.createdBy": "Created by admin", "dispatch.form.processing": "This booking request is still processing. Retry shortly; the same request key will prevent a duplicate.", "dispatch.detail.linkCreatedCopyBlocked": "Payment link was created, but automatic copy was blocked. Use ‘Copy Payment Link’.", "dispatch.detail.linkCreatedEmailCopyBlocked": "Payment link was created and emailed, but automatic copy was blocked. Use ‘Copy Payment Link’.", "dispatch.detail.linkCreatedEmailFailed": "Payment link created and copied, but email delivery failed.", "dispatch.detail.linkCreatedEmailFailedCopyBlocked": "Payment link was created, email delivery failed, and automatic copy was blocked. Use ‘Copy Payment Link’.", "dispatch.detail.linkCreatedEmailNotProvided": "Payment link created and copied. No customer email was available.", "dispatch.detail.linkCreatedEmailNotProvidedCopyBlocked": "Payment link was created, but no customer email was available and automatic copy was blocked. Use ‘Copy Payment Link’.",
+export default { ...en, ...foundation.en, "dispatchAdmin.createdBy": "Created by admin", "dispatch.form.processing": "This booking request is still processing. Retry shortly; the same request key will prevent a duplicate.", "dispatch.detail.linkCreatedCopyBlocked": "Payment link was created, but automatic copy was blocked. Use ‘Copy Payment Link’.", "dispatch.detail.linkCreatedEmailCopyBlocked": "Payment link was created and emailed, but automatic copy was blocked. Use ‘Copy Payment Link’.", "dispatch.detail.linkCreatedEmailFailed": "Payment link created and copied, but email delivery failed.", "dispatch.detail.linkCreatedEmailFailedCopyBlocked": "Payment link was created, email delivery failed, and automatic copy was blocked. Use ‘Copy Payment Link’.", "dispatch.detail.linkCreatedEmailNotProvided": "Payment link created and copied. No customer email was available.", "dispatch.detail.linkCreatedEmailNotProvidedCopyBlocked": "Payment link was created, but no customer email was available and automatic copy was blocked. Use ‘Copy Payment Link’.",
   // Transactional email registry (all supported locales).
   "email.reference": "Booking reference",
   "email.pickupTime": "Pickup date/time",

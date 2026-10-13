@@ -1,24 +1,14 @@
 import type { Metadata } from "next";
 import { LocalizedServicePage } from "@/components/shared/LocalizedPublicPages";
+import { requestLocale } from "@/lib/i18n/request-locale";
+import { publicPageMetadata } from "@/lib/i18n/metadata";
 
-export const metadata: Metadata = {
-  title: "Airport Transfer BTS & Vienna | Bratislava",
-  description:
-    "Fixed-price airport transfers from Bratislava (BTS) and Vienna (VIE). Flight tracking and simple online booking.",
-  keywords: [
-    "airport transfer Bratislava",
-    "BTS taxi",
-    "Vienna airport taxi",
-    "letisko transfer",
-    "airport taxi Slovakia",
-  ],
-  openGraph: {
-    title: "Airport Transfers BTS & VIE | Drivo Bratislava",
-    description: "Reliable airport transfers to/from Bratislava and Vienna airports.",
-    url: "https://drivo.sk/airport",
-  },
-  alternates: { canonical: "/airport" },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    ...publicPageMetadata("/airport", await requestLocale()),
+    keywords: ["airport transfer Bratislava", "BTS taxi", "Vienna airport taxi", "letisko transfer", "airport taxi Slovakia"],
+  };
+}
 
 export default function AirportPage() {
   return (

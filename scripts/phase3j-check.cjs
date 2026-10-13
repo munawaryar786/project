@@ -43,9 +43,9 @@ check("email reset route exists", exists("app/api/passenger/password-reset/email
 check("email reset is enumeration safe", has("app/api/passenger/password-reset/email/route.ts", "If an account exists for this email"));
 check("legacy phone reset is deprecated", has("app/api/passenger/password-reset/send/route.ts", "email-only"));
 check("reset completion has email purpose", has("app/api/passenger/password-reset/complete/route.ts", "PASSENGER_PASSWORD_RESET_EMAIL"));
-check("reset proof is atomically consumed", has("app/api/passenger/password-reset/complete/route.ts", "consumeVerificationProofById"));
+check("reset proof is atomically consumed", has("app/api/passenger/password-reset/complete/route.ts", "prisma.$transaction(async tx =>") && has("app/api/passenger/password-reset/complete/route.ts", "tx.passengerVerificationProof.updateMany") && has("app/api/passenger/password-reset/complete/route.ts", "expiresAt: { gt: now }, consumedAt: null") && has("app/api/passenger/password-reset/complete/route.ts", "if (consumed.count !== 1) return null"));
 check("reset hashes password", has("app/api/passenger/password-reset/complete/route.ts", "bcrypt.hash"));
-check("reset revokes sessions", has("app/api/passenger/password-reset/complete/route.ts", "revokePassengerSessions"));
+check("reset revokes sessions", has("app/api/passenger/password-reset/complete/route.ts", "tx.passengerSession.updateMany({ where: { passengerId: passenger.id") && has("app/api/passenger/password-reset/complete/route.ts", "tx.passenger.findUnique({ where: { id: proof.passengerId } })"));
 check("reset increments authVersion", has("app/api/passenger/password-reset/complete/route.ts", "authVersion: { increment: 1 }"));
 check("reset UI has no phone field", no("app/passenger/reset/page.tsx", "otpCode") && no("app/passenger/reset/page.tsx", "phone"));
 check("reset request is rate limited", has("app/api/passenger/password-reset/email/route.ts", "passengerPasswordResetEmailSend"));

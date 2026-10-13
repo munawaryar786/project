@@ -4,6 +4,7 @@ import { writeOutboxEvent } from "@/lib/outbox";
 import { createDriverOfferInTransaction } from "@/lib/driver-operations";
 import { getDispatchConfig, type DispatchConfig } from "@/lib/dispatch-config";
 import { bookingDispatchEligibility, driverCompatibility, rankDrivers, DISPATCH_REASON } from "@/lib/dispatch-matching";
+import { authoritativeAssignmentEligibility } from "@/lib/booking-eligibility";
 
 const TERMINAL_OFFER_STATUSES = ["DECLINED", "REJECTED", "EXPIRED", "CANCELLED", "ACCEPTED"];
 const DRIVER_SELECT = {
@@ -78,6 +79,8 @@ async function runCycle(tx: Db, bookingId: string, config: DispatchConfig, allow
   if (!booking) return { ok: false as const, code: "BOOKING_NOT_FOUND" };
   const eligibility = bookingDispatchEligibility(booking, { allowScheduled });
   if (!eligibility.eligible) return { ok: false as const, code: eligibility.reason };
+  const authoritative = await authoritativeAssignmentEligibility(booking, tx);
+  if (!authoritative.eligible) return { ok: false as const, code: authoritative.reason };
   const pending = await tx.rideRequest.findFirst({
     where: { bookingId, status: "PENDING", expiresAt: { gt: now } },
     select: { id: true, driverId: true, expiresAt: true },

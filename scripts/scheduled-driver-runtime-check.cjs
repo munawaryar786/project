@@ -41,6 +41,7 @@ function match(row, where = {}) {
 }
 const copy = (value) => value && structuredClone(value);
 const prisma = {
+  passenger: { findUnique: async()=>({status:"ACTIVE"}) }, passengerSession: {findMany:async()=>[]},
   booking: {
     findUnique: async ({ where }) => copy(rows.find((row) => match(row, where)) || null),
     findFirst: async ({ where }) => copy(rows.find((row) => match(row, where)) || null),
@@ -178,7 +179,7 @@ global.setInterval = (_callback, delay) => { intervals.push(delay); return { unr
 try { load("workers/realtime-worker.ts"); } finally { global.setInterval = originalSetInterval; }
 const outboxProcessor = processors.get(load("lib/realtime/constants.ts").REALTIME_QUEUES.OUTBOX);
 function ride(remaining = 40) {
-  return { id: bookingId, bookingRef: "DR-TEST", driverId, acceptedAt: new Date(now), createdAt: new Date(now - 86400000), status: "ASSIGNED", scheduledRide: true, pickupAt: new Date(now + remaining * minute), pickupDate: null, pickupTime: null, scheduledDate: "2026-01-10", scheduledTime: "10:00", marketTimezone: "Europe/Bratislava", pickupAddress: "Žilina, 4; A\\B\nUnit", dropoffAddress: "Україна für destination", serviceType: "STANDARD", customerName: "PRIVATE_NAME", customerPhone: "PRIVATE_PHONE", customerEmail: "PRIVATE_EMAIL", specialNotes: "PRIVATE_NOTES", medicalAppointment: "PRIVATE_MEDICAL", paymentMethod: "PRIVATE_PAYMENT" };
+  return { passengerId: "888888888888888888888888", phoneVerified: true, passengerAuthStatus: "AUTHENTICATED", cashAgreed: true, pickupLat:48.1,pickupLng:17.1,dropoffLat:48.2,dropoffLng:17.2, id: bookingId, bookingRef: "DR-TEST", driverId, acceptedAt: new Date(now), createdAt: new Date(now - 86400000), status: "ASSIGNED", scheduledRide: true, pickupAt: new Date(now + remaining * minute), pickupDate: null, pickupTime: null, scheduledDate: "2026-01-10", scheduledTime: "10:00", marketTimezone: "Europe/Bratislava", pickupAddress: "Žilina, 4; A\\B\nUnit", dropoffAddress: "Україна für destination", serviceType: "STANDARD", customerName: "PRIVATE_NAME", customerPhone: "PRIVATE_PHONE", customerEmail: "PRIVATE_EMAIL", specialNotes: "PRIVATE_NOTES", medicalAppointment: "PRIVATE_MEDICAL", paymentMethod: "PRIVATE_PAYMENT" };
 }
 const request = (url, method = "GET", body, authenticated = true) => new NextRequest(`https://test.invalid${url}`, {
   method, headers: { ...(authenticated ? { cookie: "driver-session=valid; csrf=token" } : {}), "x-drivo-csrf": "token", "Content-Type": "application/json", origin: "https://test.invalid" }, ...(body ? { body: JSON.stringify(body) } : {}),
