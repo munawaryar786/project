@@ -70,16 +70,20 @@ try {
   const stagedDiff = cp.execFileSync("git", ["diff", "--cached", "--", "prisma/schema.prisma"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   currentSchemaDiff = workingDiff + stagedDiff;
   dispatchSchemaDiff = currentSchemaDiff;
-  // Later additive schema work need not repeat the original Dispatch models.
-  // In that case inspect the schema-changing commit that introduced them.
+  // Later additive schema changes need not repeat the original Dispatch models.
+  // Search complete Git history for their introduction, not the latest schema commit.
   if (!dispatchSchemaDiff.includes("+model DispatchOperator") ||
       !dispatchSchemaDiff.includes("+model BookingPayment") ||
       !dispatchSchemaDiff.includes("+model DispatchAuditEvent")) {
-    dispatchSchemaDiffSource = "latest committed schema change";
-    const schemaCommit = cp.execFileSync("git", ["log", "-1", "--format=%H", "--", "prisma/schema.prisma"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-    if (!schemaCommit) throw new Error("Git history contains no commit for prisma/schema.prisma");
-    dispatchSchemaDiff = cp.execFileSync("git", ["diff", `${schemaCommit}^`, schemaCommit, "--", "prisma/schema.prisma"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    if (!dispatchSchemaDiff.trim()) throw new Error(`Git returned an empty schema diff for commit ${schemaCommit}`);
+    dispatchSchemaDiffSource = "committed Dispatch-model introduction";
+    const dispatchCommit = cp.execFileSync("git", [
+      "log", "--reverse", "--format=%H", "-S", "model DispatchOperator", "--", "prisma/schema.prisma"
+    ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim().split(/\r?\n/).filter(Boolean)[0];
+    if (!dispatchCommit) throw new Error("Git history contains no introduction for model DispatchOperator");
+    dispatchSchemaDiff = cp.execFileSync("git", [
+      "show", "--format=", "--unified=0", dispatchCommit, "--", "prisma/schema.prisma"
+    ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    if (!dispatchSchemaDiff.trim()) throw new Error(`Git returned an empty schema diff for commit ${dispatchCommit}`);
   }
 } catch (error) {
   const detail = error && typeof error === "object" && "stderr" in error && error.stderr
