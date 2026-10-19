@@ -63,3 +63,26 @@ jobs:
 
       - name: Check Phase 3L Redis and historical additive-schema assertions
         run: npm run test:phase3l
+
+      # Package only the output of the preceding successful build and tests.
+      # The real DB is never contacted: build used the dummy CI DATABASE_URL.
+      - name: Package validated Next.js build for isolated VPS preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .next/BUILD_ID
+          mkdir -p "$RUNNER_TEMP/drivo-artifact"
+          tar -czf "$RUNNER_TEMP/drivo-artifact/drivo-next-build.tar.gz" \
+            --exclude='.next/cache' --exclude='./.next/cache' .next
+          printf '%s\n' '${{ github.event.pull_request.head.sha }}' > "$RUNNER_TEMP/drivo-artifact/source-commit.txt"
+          (cd "$RUNNER_TEMP/drivo-artifact" && sha256sum drivo-next-build.tar.gz > SHA256SUMS)
+          ls -lh "$RUNNER_TEMP/drivo-artifact/"
+
+      - name: Upload verified build archive (no deployment)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: drivo-next-preview-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/drivo-artifact/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
