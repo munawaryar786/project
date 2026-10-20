@@ -1,0 +1,101 @@
+name: Drivo Isolated Preview Validation
+
+# Validation only. Runs exclusively for the dedicated preview PR.
+# No deployment, live services, provider credentials, or DB migrations.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - phase-3l-redis-auth-rate-limiting
+
+permissions:
+  contents: read
+
+concurrency:
+  group: drivo-preview-validation-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: >-
+      github.event.pull_request.head.repo.full_name == 'munawaryar786/project' &&
+      github.head_ref == 'drivo-preview-validation-20261019' &&
+      github.base_ref == 'phase-3l-redis-auth-rate-limiting'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+      NEXT_TELEMETRY_DISABLED: '1'
+      DATABASE_URL: mongodb://127.0.0.1:1/drivo_preview_ci_no_database
+      NODE_OPTIONS: --max-old-space-size=4096
+
+    steps:
+      - name: Checkout validation commit (no stored Git credentials)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # Full history required for historical additive schema assertion
+
+      - name: Configure Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Install exact reviewed dependencies
+        run: npm ci --ignore-scripts --include=optional --no-audit --no-fund
+
+      - name: Generate Prisma Client without database connection
+        run: ./node_modules/.bin/prisma generate --schema=prisma/schema.prisma
+
+      - name: Verify TypeScript
+        run: ./node_modules/.bin/tsc --noEmit --incremental false --pretty false
+
+      - name: Verify production build with Google Maps
+        env:
+          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY" ]; then
+            echo "ERROR: Google Maps browser key is missing"
+            exit 1
+          fi
+          npm run build
+          if ! grep -RFq "$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY" .next/static; then
+            echo "ERROR: Google Maps key missing from browser build"
+            exit 1
+          fi
+          echo "GOOGLE MAPS BROWSER BUILD: PASS"
+
+      - name: Run six previously passing source-level regression suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test in test:phase3j test:phase3i test:phase3h test:phase3g test:phase3f test:phase3e; do
+            npm run "$test"
+          done
+
+      - name: Check Phase 3L Redis and historical additive-schema assertions
+        run: npm run test:phase3l
+
+      # Package only the output of the preceding successful build and tests.
+      # The real DB is never contacted: build used the dummy CI DATABASE_URL.
+      - name: Package validated Next.js build for isolated VPS preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s .next/BUILD_ID
+          mkdir -p "$RUNNER_TEMP/drivo-artifact"
+          tar -czf "$RUNNER_TEMP/drivo-artifact/drivo-next-build.tar.gz" \
+            --exclude='.next/cache' --exclude='./.next/cache' .next
+          printf '%s\n' '${{ github.event.pull_request.head.sha }}' > "$RUNNER_TEMP/drivo-artifact/source-commit.txt"
+          (cd "$RUNNER_TEMP/drivo-artifact" && sha256sum drivo-next-build.tar.gz > SHA256SUMS)
+          ls -lh "$RUNNER_TEMP/drivo-artifact/"
+
+      - name: Upload verified build archive (no deployment)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: drivo-next-preview-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/drivo-artifact/
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

@@ -1,4 +1,5 @@
 import Redis from "ioredis";
+import { readFileSync } from "node:fs";
 
 const globalForDrivoRedis = globalThis as typeof globalThis & {
   __drivoAuthRateLimitRedis?: Redis;
@@ -14,7 +15,7 @@ export function assertProductionRedis() {
 }
 export function createRedisConnection(role: string) {
   const url = assertProductionRedis();
-  const client = new Redis(url, { maxRetriesPerRequest: null, enableReadyCheck: true, lazyConnect: true, connectionName: `drivo-${role}` });
+  const client = new Redis(url, { tls: url.startsWith("rediss://") ? { servername: new URL(url).hostname, ca: process.env.REDIS_CA_CERT_PATH ? readFileSync(process.env.REDIS_CA_CERT_PATH) : undefined } : undefined, maxRetriesPerRequest: null, enableReadyCheck: true, lazyConnect: true, connectionName: `drivo-${role}` });
   client.on("error", (error) => console.error("[realtime.redis.error]", { role, message: "redis_connection_error" }));
   return client;
 }

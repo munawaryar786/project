@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { sendWhatsAppVerification } from "@/lib/twilio";
+import { sendWhatsAppMessagingOtp, sendWhatsAppVerification } from "@/lib/twilio";
+import { createMessagingOtpChallenge, registrationOtpProvider } from "@/lib/otp-challenge";
 import { isValidE164Phone, normalizePassengerPhone } from "@/lib/passenger-auth";
 import { authRateLimitResponse, enforceAuthRateLimit, rateLimits, resolveClientIp } from "@/lib/rate-limit";
 import { publicBookingAccess, validBookingId } from "@/lib/booking-access";
@@ -57,7 +58,15 @@ async function handler(request: NextRequest) {
     const latest = await prisma.oTP.findFirst({ where: { bookingId, phone: normalizedPhone, purpose, used: false }, orderBy: { createdAt: "desc" } });
     if (latest && Date.now() - latest.createdAt.getTime() < 30_000) return otpError("RESEND_COOLDOWN", "Please wait before requesting another code.", 429);
 
-    const provider = await sendWhatsAppVerification(normalizedPhone, isUiLocale(parsed.data.locale) ? parsed.data.locale : undefined);
+    // Never silently downgrade on a Verify failure. Switching providers is explicit.
+    // The Messaging HMAC key must be present before any provider call.
+    const providerMode = registrationOtpProvider();
+    const messagingChallenge = providerMode === "messaging"
+      ? createMessagingOtpChallenge({ bookingId, phone: normalizedPhone, purpose })
+      : null;
+    const provider = messagingChallenge
+      ? await sendWhatsAppMessagingOtp(normalizedPhone, messagingChallenge.otp)
+      : await sendWhatsAppVerification(normalizedPhone, isUiLocale(parsed.data.locale) ? parsed.data.locale : undefined);
     if (!provider.success) return otpError("PROVIDER_UNAVAILABLE", provider.error, 503);
 
     await prisma.$transaction(async tx => {
@@ -66,8 +75,8 @@ async function handler(request: NextRequest) {
       await tx.oTP.updateMany({ where: { bookingId, phone: normalizedPhone, purpose, used: false }, data: { used: true } });
       await tx.oTP.create({
         data: {
-          // Legacy field retained for backward-compatible records; Twilio Verify owns the real code.
-          code: "TWILIO_VERIFY",
+          // Verify keeps a sentinel; Messaging stores only a keyed, scoped HMAC.
+          code: messagingChallenge?.storedCode ?? "TWILIO_VERIFY",
           phone: normalizedPhone,
           purpose,
           bookingId,

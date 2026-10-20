@@ -11,7 +11,7 @@ const port = Number(process.env.DRIVO_REALTIME_PORT || 3101);
 const httpServer = http.createServer((req, res) => { if (req.url === "/healthz") { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ status: "ok", redisConnected: safeRedisStatus(pub) })); return; } res.writeHead(404); res.end(); });
 const pub = createRedisConnection("socket-pub");
 const sub = createRedisConnection("socket-sub");
-const io = new Server(httpServer, { transports: ["websocket"], allowRequest: (req, callback) => { const origin = req.headers.origin; callback(null, originAllowed(typeof origin === "string" ? origin : undefined)); }, cors: { origin: false }, adapter: createAdapter(pub, sub) });
+const io = new Server(httpServer, { transports: ["websocket"], allowRequest: (req, callback) => { const origin = req.headers.origin; callback(null, originAllowed(typeof origin === "string" ? origin : undefined)); }, cors: { origin: false } });
 for (const [path, actor] of [["/driver", "DRIVER"], ["/admin", "ADMIN"], ["/passenger", "PASSENGER"]] as const) {
   const namespace = io.of(path);
   namespace.use(async (socket, next) => {
@@ -35,6 +35,14 @@ for (const [path, actor] of [["/driver", "DRIVER"], ["/admin", "ADMIN"], ["/pass
     socket.emit(REALTIME_EVENTS.CONNECTION, { eventId: "connection:" + socket.id, type: REALTIME_EVENTS.CONNECTION, entityId: socket.data.actorId, occurredAt: new Date().toISOString(), stateHint: "connected" });
   });
 }
-httpServer.listen(port, "127.0.0.1", () => console.log("[realtime.start]", { port }));
+Promise.all([pub.connect(), sub.connect()])
+  .then(() => {
+    io.adapter(createAdapter(pub, sub));
+    httpServer.listen(port, "127.0.0.1", () => console.log("[realtime.start]", { port }));
+  })
+  .catch(() => {
+    console.error("[realtime.start.error]", { message: "redis_connection_failed" });
+    process.exit(1);
+  });
 async function shutdown(signal: string) { console.log("[realtime.stop]", { signal }); await new Promise<void>((resolve) => io.close(() => resolve())); await closeRedis(pub); await closeRedis(sub); httpServer.close(() => process.exit(0)); }
 process.once("SIGTERM", () => void shutdown("SIGTERM")); process.once("SIGINT", () => void shutdown("SIGINT"));

@@ -1,4 +1,4 @@
-﻿import twilio from "twilio";
+import twilio from "twilio";
 import { maskPhone } from "./utils";
 import { isUiLocale, type UiLocale } from "./i18n/locale-resolution";
 
@@ -103,5 +103,51 @@ export async function sendSMSOTP(phone: string, otp: string) {
   } catch (error: any) {
     console.error("Legacy SMS delivery failed", { code: error?.code ? String(error.code) : "unknown" });
     return { success: false, error: "SMS delivery failed.", method: "sms" };
+  }
+}
+
+
+/**
+ * WhatsApp Messaging transport for explicit Messaging-mode registration.
+ * Sandbox senders support only joined testers; production needs an approved
+ * sender and a verification template outside an open 24-hour session.
+ * A queued Twilio response means accepted for delivery, NOT delivered.
+ */
+export async function sendWhatsAppMessagingOtp(phone: string, otp: string): Promise<TwilioVerifyResult> {
+  const client = getTwilioClient();
+  const from = (process.env.TWILIO_WHATSAPP_FROM || "").trim();
+  const templateSid = (process.env.TWILIO_WHATSAPP_TEMPLATE_SID || "").trim();
+  if (!client || !/^whatsapp:\+[1-9]\d{7,14}$/.test(from)) {
+    return { success: false, error: "WhatsApp verification sender is not configured." };
+  }
+  if (!/^\+[1-9]\d{7,14}$/.test(phone) || !/^\d{6}$/.test(otp)) {
+    return { success: false, error: "Invalid verification request." };
+  }
+  // Approved template's first variable must be its OTP code placeholder.
+  if (templateSid && !/^HX[a-f\d]{32}$/i.test(templateSid)) {
+    return { success: false, error: "WhatsApp verification template is not configured." };
+  }
+  try {
+    const message = await client.messages.create({
+      from,
+      to: `whatsapp:${phone}`,
+      ...(templateSid
+        ? { contentSid: templateSid, contentVariables: JSON.stringify({ "1": otp }) }
+        : { body: `Drivo verification code: ${otp}. Expires in 10 minutes. Do not share this code.` }),
+    });
+    const status = String(message?.status || "queued").toLowerCase();
+    if (!message?.sid || ["failed", "undelivered", "canceled"].includes(status)) {
+      return { success: false, error: "WhatsApp verification message was rejected." };
+    }
+    console.info("Twilio WhatsApp Messaging challenge accepted", {
+      phone: maskPhone(phone), channel: "whatsapp", status,
+    });
+    return { success: true, status };
+  } catch (error: any) {
+    console.error("Twilio WhatsApp Messaging send failed", {
+      code: error?.code ? String(error.code) : "unknown",
+      status: error?.status ? String(error.status) : "unknown",
+    });
+    return { success: false, error: "We could not send a WhatsApp verification code. Please try again.", providerCode: error?.code ? String(error.code) : undefined };
   }
 }
