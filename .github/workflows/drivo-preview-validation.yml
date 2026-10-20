@@ -50,8 +50,21 @@ jobs:
       - name: Verify TypeScript
         run: ./node_modules/.bin/tsc --noEmit --incremental false --pretty false
 
-      - name: Verify production build
-        run: npm run build
+      - name: Verify production build with Google Maps
+        env:
+          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY" ]; then
+            echo "ERROR: Google Maps browser key is missing"
+            exit 1
+          fi
+          npm run build
+          if ! grep -RFq "$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY" .next/static; then
+            echo "ERROR: Google Maps key missing from browser build"
+            exit 1
+          fi
+          echo "GOOGLE MAPS BROWSER BUILD: PASS"
 
       - name: Run six previously passing source-level regression suites
         shell: bash
