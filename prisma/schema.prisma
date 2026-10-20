@@ -500,7 +500,9 @@ model RideRequest {
   @@index([driverId])
   @@index([status])
   @@index([expiresAt])
-  @@unique([bookingId, driverId])
+  // Historical expired offers are preserved.
+  // Active-offer uniqueness requires a managed MongoDB partial index.
+  @@index([bookingId, driverId])
   @@map("ride_requests")
 }
 

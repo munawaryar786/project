@@ -19,9 +19,12 @@ check("WhatsApp channel is explicit", has("lib/twilio.ts", 'channel: "whatsapp"'
 check("registration send calls Verify", has("app/api/otp/send/route.ts", "sendWhatsAppVerification"));
 check("registration verify calls Verify Check", has("app/api/otp/verify/route.ts", "checkWhatsAppVerification"));
 check("registration does not import local generator", no("app/api/otp/send/route.ts", "generateOTP"));
-check("registration does not compare local code", no("app/api/otp/verify/route.ts", "otpRecord.code"));
+check("Messaging uses keyed HMAC and constant-time verification", has("lib/otp-challenge.ts", "createHmac") && has("lib/otp-challenge.ts", "timingSafeEqual") && has("app/api/otp/verify/route.ts", "verifyMessagingOtpChallenge"));
+check("Messaging stores HMAC, never plaintext OTP", has("app/api/otp/send/route.ts", "messagingChallenge?.storedCode") && has("lib/otp-challenge.ts", "randomInt"));
+check("Messaging requires explicit mode and secret", has("lib/otp-challenge.ts", "DRIVO_REGISTRATION_OTP_PROVIDER") && has("lib/otp-challenge.ts", "DRIVO_OTP_HMAC_SECRET"));
+check("Messaging sender is WhatsApp-only", has("lib/twilio.ts", "sendWhatsAppMessagingOtp") && has("lib/twilio.ts", "`whatsapp:${phone}`"));
 check("registration has no SMS fallback", no("app/api/otp/send/route.ts", "sendSMSOTP") && no("app/api/otp/send/route.ts", "sendOTPWithFallback"));
-check("real Verify code is not stored", has("app/api/otp/send/route.ts", 'code: "TWILIO_VERIFY"'));
+check("real Verify code is not stored", has("app/api/otp/send/route.ts", '?? "TWILIO_VERIFY"'));
 check("Verify status must be approved", has("lib/twilio.ts", 'status !== "approved"'));
 check("server-only service SID", has(".env.example", "TWILIO_VERIFY_SERVICE_SID") && no(".env.example", "NEXT_PUBLIC_TWILIO_VERIFY_SERVICE_SID"));
 check("E.164 validation exists", has("lib/passenger-auth.ts", "isValidE164Phone") && has("app/api/otp/send/route.ts", "isValidE164Phone"));

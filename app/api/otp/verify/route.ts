@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { checkWhatsAppVerification } from "@/lib/twilio";
+import { verifyMessagingOtpChallenge } from "@/lib/otp-challenge";
 import { createVerificationProof, isValidE164Phone, normalizePassengerPhone } from "@/lib/passenger-auth";
 import { authRateLimitResponse, enforceAuthRateLimit, rateLimits, resolveClientIp } from "@/lib/rate-limit";
 import { publicBookingAccess, validBookingId } from "@/lib/booking-access";
@@ -39,9 +40,14 @@ async function handler(request: NextRequest) {
     const otpRecord = await prisma.oTP.findFirst({ where: { bookingId, phone: normalizedPhone, purpose, used: false, expiresAt: { gt: new Date() }, attempts: { lt: 5 } }, orderBy: { createdAt: "desc" } });
     if (!otpRecord) return otpError("OTP_EXPIRED", "Verification code expired. Please request a new code.");
 
-    const provider = await checkWhatsAppVerification(normalizedPhone, code);
+    // Record format allows in-flight challenges to survive explicit provider switches.
+    const provider = otpRecord.code === "TWILIO_VERIFY"
+      ? await checkWhatsAppVerification(normalizedPhone, code)
+      : verifyMessagingOtpChallenge({ storedCode: otpRecord.code, bookingId, phone: normalizedPhone, purpose, otp: code })
+        ? { success: true as const, status: "approved" }
+        : { success: false as const, error: "Invalid or expired verification code." };
     if (!provider.success) {
-      await prisma.oTP.updateMany({ where: { id: otpRecord.id, used: false }, data: { attempts: { increment: 1 } } });
+      await prisma.oTP.updateMany({ where: { id: otpRecord.id, used: false, attempts: { lt: 5 } }, data: { attempts: { increment: 1 } } });
       return otpError("OTP_INVALID", provider.error);
     }
 

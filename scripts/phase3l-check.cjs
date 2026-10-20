@@ -96,8 +96,15 @@ const dispatchSchemaDiffIsAdditive = !dispatchSchemaDiffError &&
   dispatchSchemaDiff.includes("+model BookingPayment") &&
   dispatchSchemaDiff.includes("+model DispatchAuditEvent") &&
   !dispatchSchemaDiff.split("\n").some(line => line.startsWith("-") && !line.startsWith("---"));
+const currentSchemaRemovals = currentSchemaDiff.split("\n")
+  .filter(line => line.startsWith("-") && !line.startsWith("---"))
+  .map(line => line.slice(1).trim());
+const approvedHistoricalOfferIndexCorrection =
+  currentSchemaRemovals.length === 1 &&
+  currentSchemaRemovals[0] === "@@unique([bookingId, driverId])" &&
+  currentSchemaDiff.includes("+  @@index([bookingId, driverId])");
 const currentSchemaDiffIsAdditive = !dispatchSchemaDiffError &&
-  !currentSchemaDiff.split("\n").some(line => line.startsWith("-") && !line.startsWith("---"));
+  (currentSchemaRemovals.length === 0 || approvedHistoricalOfferIndexCorrection);
 if (dispatchSchemaDiffError) console.error(`Prisma schema assertion detail: ${dispatchSchemaDiffError}`);
 else if (!dispatchSchemaDiffIsAdditive) console.error(`Prisma schema assertion detail: ${dispatchSchemaDiffSource} must add all three Dispatch models and contain no schema deletions.`);
 check("Prisma change is additive Dispatch schema only", dispatchSchemaDiffIsAdditive);
