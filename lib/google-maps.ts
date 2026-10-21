@@ -324,12 +324,13 @@ export async function getAddressSuggestionItems(
       };
     });
     const seenDescriptions = new Set(airportSuggestions.map((item) => item.description.toLowerCase()));
+    const airportGeocodingClient = airportTransfer ? getClient() : null;
     const resolvedAirportSuggestions = await Promise.all(airportSuggestions.map(async (airportSuggestion) => {
       const preset = airportTransferPresetsFor(airportSuggestion.mainText || "")[0];
       const expectedCountry = preset && ({ BTS: "SK", VIE: "AT", BUD: "HU", PRG: "CZ" } as const)[preset.code];
-      if (!preset || !expectedCountry) return airportSuggestion;
+      if (!preset || !expectedCountry || !airportGeocodingClient) return airportSuggestion;
       try {
-        const geocoded = await client.geocode({
+        const geocoded = await airportGeocodingClient.geocode({
           params: { address: preset.description, key: GOOGLE_MAPS_API_KEY! },
         });
         const resolved = geocoded.data.results.find((result) =>
