@@ -1071,7 +1071,7 @@ export default function BookingForm({
 
     try {
       const res = await csrfFetch("passenger",
-        `/api/addresses/suggest?q=${encodeURIComponent(address)}`,
+        `/api/addresses/suggest?q=${encodeURIComponent(address)}${serviceType === "airport" ? "&service=airport" : ""}`,
         { cache: "no-store" }
       );
 
@@ -1178,13 +1178,17 @@ export default function BookingForm({
     if (assistedTransport && wheelchairUser && !canTransferToSeat) return t('booking.validation.transfer');
     if (assistedTransport && companionRequired && companionCount < 1) return t('booking.validation.companions');
     if (assistedTransport && medicalAppointment) {
+      if (!scheduledDate || !scheduledTime || rideMode !== "schedule") return t("booking.validation.date");
       if (!hospitalName.trim()) return t('booking.validation.hospital');
       if (!department.trim()) return t('booking.validation.department');
       if (!appointmentDate) return t('booking.validation.appointmentDate');
       if (!appointmentTime) return t('booking.validation.appointmentTime');
-      if (tripType === "GO_RETURN" && (!returnDate || (returnTimingPreference === "FIXED" && !returnTime))) {
+      if ((tripType === "GO_RETURN" || tripType === "WAIT_RETURN") && (!returnDate || (returnTimingPreference === "FIXED" && !returnTime))) {
         return t('booking.validation.return');
       }
+      if (appointmentDate && scheduledDate && appointmentDate < scheduledDate) return t("booking.validation.date");
+      if (returnDate && appointmentDate && returnDate < appointmentDate) return t("booking.validation.return");
+      if (returnTimingPreference === "FIXED" && returnDate === scheduledDate && returnTime && returnTime <= scheduledTime) return t("booking.validation.return");
     }
     if (showWaitingDuration && !waitingDuration) return t('booking.validation.waiting');
     if (waitingDuration === "CUSTOM" && !customWaitingDuration.trim()) {
