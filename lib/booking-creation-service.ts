@@ -66,6 +66,12 @@ export async function createBookingWithDrivoRules(request: NextRequest, data: Bo
     }
   }
 
+  if (data.companionRequired) {
+    if (data.serviceType !== "ACCESSIBLE" && data.serviceType !== "SENIOR") throw new BookingCreateError("Companion assistance requires assisted transport.", 400, "INVALID_COMPANION_ASSISTANCE");
+    if (data.companionCount < 1 || data.companionHours < 1) throw new BookingCreateError("Companion count and hours are required.", 400, "COMPANION_HOURS_REQUIRED");
+  } else if (data.companionHours !== 0) {
+    throw new BookingCreateError("Companion hours require companion assistance.", 400, "INVALID_COMPANION_ASSISTANCE");
+  }
   const normalizedPhone = normalizePassengerPhone(`${data.customerPhoneCode}${data.customerPhone}`);
   const capacityPassengerCount = data.passengerCount + data.companionCount;
   const wavRequired = requiresWav({ ...data, passengerRemainsInWheelchair: data.passengerRemainsInWheelchair });
@@ -111,6 +117,8 @@ export async function createBookingWithDrivoRules(request: NextRequest, data: Bo
     scheduledDate: bookingScheduledDate, scheduledTime: bookingScheduledTime,
     waitingDuration: data.waitingDuration, customWaitingDuration: data.customWaitingDuration,
     assistanceLevel: data.assistanceLevel,
+    companionCount: data.companionRequired ? data.companionCount : 0,
+    companionHours: data.companionRequired ? data.companionHours : 0,
     waitingMinutes: data.waitingDuration === "30_MINUTES" ? 30 : data.waitingDuration === "1_HOUR" ? 60 : data.waitingDuration === "2_HOURS" ? 120 : data.waitingDuration === "3_HOURS" ? 180 : data.waitingDuration === "4_HOURS" ? 240 : data.waitingDuration === "CUSTOM" ? Number(data.customWaitingDuration?.match(/\d+/)?.[0] || 0) : 0,
     waitAndGreet: data.waitAndGreet, recurrenceType: data.recurrenceType || data.recurrence,
     recurrenceCustom: data.recurrenceCustom, returnDate: data.returnDate, returnTime: data.returnTime,
@@ -128,6 +136,7 @@ export async function createBookingWithDrivoRules(request: NextRequest, data: Bo
     wheelchairUser: data.wheelchairUser, companionRequired: data.companionRequired, medicalAppointment: data.medicalAppointment,
     waitingTimeRequired: data.waitingTimeRequired, assistanceLevel: data.assistanceLevel || null, wheelchairType: data.wheelchairType || null,
     canTransferToSeat: data.canTransferToSeat ?? null, wavRequired, passengerRemainsInWheelchair, companionCount: data.companionCount,
+    companionHours: data.companionRequired ? data.companionHours : 0,
     hospitalName: data.hospitalName || null, department: data.department || null, appointmentDate: data.appointmentDate || null,
     appointmentTime: data.appointmentTime || null, tripType: data.tripType || null,
     returnTimingPreference: data.returnTimingPreference || null, returnDate: data.returnDate || null, returnTime: data.returnTime || null,
