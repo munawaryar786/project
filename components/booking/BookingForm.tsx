@@ -365,6 +365,7 @@ export default function BookingForm({
   const [wheelchairType, setWheelchairType] = useState<WheelchairType>("");
   const [canTransferToSeat, setCanTransferToSeat] = useState<TransferToSeat>("");
   const [companionCount, setCompanionCount] = useState(1);
+  const [companionHours, setCompanionHours] = useState(0);
   const [hospitalName, setHospitalName] = useState("");
   const [department, setDepartment] = useState("");
   const [appointmentDate, setAppointmentDate] = useState("");
@@ -667,7 +668,7 @@ export default function BookingForm({
       setWheelchairType("");
       setCanTransferToSeat("");
     }
-    if (!companionRequired) setCompanionCount(1);
+    if (!companionRequired) { setCompanionCount(1); setCompanionHours(0); }
     if (!medicalAppointment) {
       setHospitalName("");
       setDepartment("");
@@ -862,7 +863,7 @@ export default function BookingForm({
     setWheelchair(false); setWaitAndGreet(false); setFlightNumber(""); setAirline("");
     setSeniorPassenger(false); setZtpCardHolder(false); setWheelchairUser(false);
     setCompanionRequired(false); setMedicalAppointment(false); setWaitingTimeRequired(false);
-    setAssistanceLevel(""); setWheelchairType(""); setCanTransferToSeat(""); setCompanionCount(1);
+    setAssistanceLevel(""); setWheelchairType(""); setCanTransferToSeat(""); setCompanionCount(1); setCompanionHours(0);
     setHospitalName(""); setDepartment(""); setAppointmentDate(""); setAppointmentTime("");
     setTripType("GO_ONLY"); setReturnTimingPreference("FIXED"); setReturnDate(""); setReturnTime(""); setWaitingDuration("");
     setCustomWaitingDuration(""); setRecurrence("ONE_TIME"); setRecurrenceCustom("");
@@ -1177,6 +1178,7 @@ export default function BookingForm({
     if (assistedTransport && wheelchairUser && !wheelchairType) return t('booking.validation.wheelchair');
     if (assistedTransport && wheelchairUser && !canTransferToSeat) return t('booking.validation.transfer');
     if (assistedTransport && companionRequired && companionCount < 1) return t('booking.validation.companions');
+    if (assistedTransport && companionRequired && (!Number.isSafeInteger(companionHours) || companionHours < 1 || companionHours > 24)) return t("booking.validation.companionHours", "Please select companion assistance hours.");
     if (assistedTransport && medicalAppointment) {
       if (!scheduledDate || !scheduledTime || rideMode !== "schedule") return t("booking.validation.date");
       if (!hospitalName.trim()) return t('booking.validation.hospital');
@@ -1434,6 +1436,7 @@ export default function BookingForm({
           wavRequired,
           passengerRemainsInWheelchair,
           companionCount: activeCompanionCount,
+          companionHours: assistedTransport && companionRequired ? companionHours : 0,
           hospitalName: assistedTransport && medicalAppointment ? hospitalName.trim() || null : null,
           department: assistedTransport && medicalAppointment ? department.trim() || null : null,
           appointmentDate: assistedTransport && medicalAppointment ? appointmentDate || null : null,
@@ -2032,6 +2035,7 @@ export default function BookingForm({
           wavRequired,
           passengerRemainsInWheelchair,
           companionCount: activeCompanionCount,
+          companionHours: assistedTransport && companionRequired ? companionHours : 0,
           hospitalName: assistedTransport && medicalAppointment ? hospitalName : "",
           department: assistedTransport && medicalAppointment ? department : "",
           appointmentDate: assistedTransport && medicalAppointment ? appointmentDate : "",
@@ -2502,6 +2506,8 @@ export default function BookingForm({
                 waitAndGreet={waitAndGreet}
                 waitingMinutes={estimateWaitingMinutes}
                 assistanceLevel={assistanceLevel}
+                companionCount={activeCompanionCount}
+                companionHours={assistedTransport && companionRequired ? companionHours : 0}
                 onPriceChange={setEstimatedPrice}
                 onFareChange={handleFareChange}
               />
@@ -2825,17 +2831,29 @@ onChange={(e) => {
           )}
 
           {companionRequired && (
-            <div className="mt-5 animate-fade-in">
-              <FieldLabel>{t("booking.numberOfCompanions", "Number of Companions")}</FieldLabel>
-              <select
-                value={companionCount}
-                onChange={(e) => setCompanionCount(Number(e.target.value))}
-                className="input"
-              >
-                {[1, 2, 3].map((count) => (
-                  <option key={count} value={count}>{count}</option>
-                ))}
-              </select>
+            <div className="mt-5 space-y-3 animate-fade-in">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block text-sm font-semibold text-drivo-text">
+                  {t("booking.numberOfCompanions", "Number of Companions")}
+                  <select value={companionCount} onChange={(e) => setCompanionCount(Number(e.target.value))} className="input mt-2">
+                    {[1, 2, 3].map((count) => <option key={count} value={count}>{count}</option>)}
+                  </select>
+                </label>
+                <label className="block text-sm font-semibold text-drivo-text">
+                  {t("booking.companionHours", "Companion Required Hours")} *
+                  <select required value={companionHours} onChange={(e) => setCompanionHours(Number(e.target.value))} className="input mt-2">
+                    <option value={0}>{t("booking.selectOption", "Select option")}</option>
+                    {Array.from({ length: 24 }, (_, index) => index + 1).map((hours) =>
+                      <option key={hours} value={hours}>{hours} {t("booking.hoursUnit", "hours")}</option>
+                    )}
+                  </select>
+                </label>
+              </div>
+              {companionHours > 0 && (
+                <p className="rounded-xl bg-drivo-green-light/40 p-3 text-sm font-semibold text-drivo-text" role="status">
+                  {t("booking.companionAssistanceFee", "Companion Assistance")}: {companionCount} × {companionHours} × €8 = €{(companionCount * companionHours * 8).toFixed(2)}
+                </p>
+              )}
             </div>
           )}
         </div>
