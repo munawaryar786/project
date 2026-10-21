@@ -1,0 +1,76 @@
+name: Drivo Booking Release Review (No Deployment)
+
+# This is an isolated review-only workflow for the owner's unmerged branch.
+# No VPS deployment, SSH, live MongoDB, payments, SMS, driver notifications,
+# schema push, or external provider tokens.
+on:
+  push:
+    branches:
+      - fix/booking-time-route-2026-10-21
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: drivo-booking-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  isolated-validation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CI: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+      DATABASE_URL: "mongodb://127.0.0.1:1/drivo_offline_ci?serverSelectionTimeoutMS=1000"
+      APP_ORIGIN: "https://drivo-build.invalid"
+      AUTH_SIGNING_SECRET: "build-only-placeholder-auth-secret-not-for-live"
+      CSRF_HMAC_SECRET: "build-only-placeholder-csrf-secret-not-for-live"
+      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: "build-only-placeholder-browser-key-not-for-live"
+      NODE_OPTIONS: "--max-old-space-size=4096"
+
+    steps:
+      - name: Checkout without persistent credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install exact dependencies
+        run: npm ci --ignore-scripts --include=optional --no-audit --no-fund
+
+      - name: Generate Prisma client offline
+        run: ./node_modules/.bin/prisma generate --schema=prisma/schema.prisma
+
+      - name: Validate schema and TypeScript
+        run: |
+          ./node_modules/.bin/prisma validate --schema=prisma/schema.prisma
+          ./node_modules/.bin/tsc --noEmit --incremental false --pretty false
+
+      - name: Booking and airport/medical/companion regressions
+        run: |
+          ./node_modules/.bin/tsx scripts/booking-time-regression.ts
+          ./node_modules/.bin/tsx scripts/airport-medical-regression.ts
+          ./node_modules/.bin/tsx scripts/companion-assistance-regression.ts
+
+      - name: Existing offline business regression suites
+        run: |
+          npm run test:phase3f
+          npm run test:phase3g
+          npm run test:phase3h
+          npm run test:dispatch
+          npm run test:email
+          npm run test:i18n
+
+      - name: Compile clean Next.js production build (placeholder browser key)
+        run: |
+          npm run build
+          test -s .next/BUILD_ID
+          echo "OFFLINE PRODUCTION COMPILE: PASS"
+          echo "No live Maps, payment, customer ride, provider or deployment test performed."
