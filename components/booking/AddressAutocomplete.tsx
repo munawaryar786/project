@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 type AddressSuggestion = {
@@ -21,6 +21,7 @@ interface AddressAutocompleteProps {
   id: string;
   suggestionBias?: string;
   educationalOnly?: boolean;
+  airportTransfer?: boolean;
   noResultsText?: string;
   onSelect?: (value: string, suggestion?: AddressSuggestion) => void;
 }
@@ -33,16 +34,19 @@ export default function AddressAutocomplete({
   id,
   suggestionBias,
   educationalOnly = false,
+  airportTransfer = false,
   noResultsText,
   onSelect,
 }: AddressAutocompleteProps) {
   const { t } = useLanguage();
+  const requestId = useRef(0);
   const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
 
   useEffect(() => {
+    const generation = ++requestId.current;
     const trimmedValue = value.trim();
 
     if (trimmedValue.length < 3) {
@@ -56,11 +60,13 @@ export default function AddressAutocomplete({
       try {
         const params = new URLSearchParams({ q: trimmedValue });
         if (educationalOnly) params.set("educationalOnly", "true");
+        if (airportTransfer) params.set("service", "airport");
         if (suggestionBias) params.set("bias", suggestionBias);
 
         const response = await fetch(`/api/addresses/suggest?${params.toString()}`);
         const data = await response.json();
         
+        if (generation !== requestId.current) return;
         if (data.success) {
           const items = Array.isArray(data.suggestionItems)
             ? data.suggestionItems
@@ -74,12 +80,12 @@ export default function AddressAutocomplete({
       } catch (error) {
         console.error('Address autocomplete error:', error);
       } finally {
-        setLoading(false);
+        if (generation === requestId.current) setLoading(false);
       }
     }, 300); // Debounce 300ms
 
     return () => clearTimeout(timer);
-  }, [value, suggestionBias, educationalOnly]);
+  }, [value, suggestionBias, educationalOnly, airportTransfer]);
 
   const handleSelect = (suggestion: AddressSuggestion) => {
     onChange(suggestion.description);
