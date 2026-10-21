@@ -25,6 +25,7 @@ import BookingConfirmation from "./BookingConfirmation";
 import AddressAutocomplete from "./AddressAutocomplete";
 import PriceEstimate from "./PriceEstimate";
 import { marketLocalDateTime } from "@/lib/market-booking-time";
+import { COMPANION_HOUR_OPTIONS, validCompanionHours } from "@/lib/companion-assistance";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { messageKeyForCode, presentMessage } from "@/lib/i18n/message-catalog";
 import { isCustomerServiceEnabled } from "@/lib/feature-flags";
@@ -1178,7 +1179,7 @@ export default function BookingForm({
     if (assistedTransport && wheelchairUser && !wheelchairType) return t('booking.validation.wheelchair');
     if (assistedTransport && wheelchairUser && !canTransferToSeat) return t('booking.validation.transfer');
     if (assistedTransport && companionRequired && companionCount < 1) return t('booking.validation.companions');
-    if (assistedTransport && companionRequired && (!Number.isSafeInteger(companionHours) || companionHours < 1 || companionHours > 24)) return t("booking.validation.companionHours", "Please select companion assistance hours.");
+    if (assistedTransport && companionRequired && (!validCompanionHours(companionHours))) return t("booking.validation.companionHours", "Please select companion assistance hours.");
     if (assistedTransport && medicalAppointment) {
       if (!scheduledDate || !scheduledTime || rideMode !== "schedule") return t("booking.validation.date");
       if (!hospitalName.trim()) return t('booking.validation.hospital');
@@ -2843,7 +2844,7 @@ onChange={(e) => {
                   {t("booking.companionHours", "Companion Required Hours")} *
                   <select required value={companionHours} onChange={(e) => setCompanionHours(Number(e.target.value))} className="input mt-2">
                     <option value={0}>{t("booking.selectOption", "Select option")}</option>
-                    {Array.from({ length: 24 }, (_, index) => index + 1).map((hours) =>
+                    {COMPANION_HOUR_OPTIONS.map((hours) =>
                       <option key={hours} value={hours}>{hours} {t("booking.hoursUnit", "hours")}</option>
                     )}
                   </select>
