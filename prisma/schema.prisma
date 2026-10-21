@@ -48,6 +48,7 @@ model Booking {
   wavRequired                     Boolean  @default(false)
   passengerRemainsInWheelchair    Boolean  @default(false)
   companionCount                  Int      @default(0)
+  companionHours                  Int      @default(0)
   hospitalName                    String?
   department                      String?
   appointmentDate                 String?
