@@ -40,8 +40,12 @@ export interface DistancePricingTier {
   label?: string;
 }
 
+import { calculateCompanionAssistanceCharge } from "@/lib/companion-assistance";
+
 export interface FareCalculationInput {
   distanceKm: number;
+  companionCount?: number;
+  companionHours?: number;
   waitingMinutes?: number;
   reservedWaiting?: boolean;
   assistanceLevel?: "LIGHT" | "DOOR_TO_DOOR" | "BOARDING_HELP" | null;
@@ -234,6 +238,7 @@ export function calculateFare(input: FareCalculationInput) {
       optionalServiceCharges.assistedTransport = roundMoney((durationMinutes / 60) * 10);
     }
   }
+  if (input.companionCount && input.companionHours) optionalServiceCharges.companionAssistance = calculateCompanionAssistanceCharge(input.companionCount, input.companionHours);
   if (optionalCharges.childTransport) optionalServiceCharges.childTransport = config.childTransportFee;
   if (optionalCharges.priorityBooking) optionalServiceCharges.priorityBooking = config.priorityBookingFee;
 
