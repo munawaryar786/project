@@ -136,7 +136,10 @@ export async function geocodeAddress(address: string): Promise<GeocodeResult> {
 
 type AddressSuggestionOptions = {
   educationalOnly?: boolean;
+  airportTransfer?: boolean;
 };
+
+import { airportTransferPresetsFor } from "@/lib/airport-transfers";
 
 const BRATISLAVA_LOCATION = "48.1486,17.1077";
 const BRATISLAVA_RADIUS_METERS = "70000";
@@ -252,18 +255,25 @@ export async function getAddressSuggestionItems(
   options: boolean | AddressSuggestionOptions = false
 ): Promise<AddressSuggestion[]> {
   const educationalOnly = normalizeEducationalOption(options);
+  const airportTransfer = typeof options === "object" && options.airportTransfer === true && !educationalOnly;
   const trimmedInput = input.trim();
 
-  if (!GOOGLE_MAPS_API_KEY || trimmedInput.length < 3) {
-    if (!GOOGLE_MAPS_API_KEY) console.error("Google Maps not configured");
-    return [];
+  if (trimmedInput.length < 3) return [];
+  const airportSuggestions: AddressSuggestion[] = airportTransfer
+    ? airportTransferPresetsFor(trimmedInput).map((airport) => ({
+      description: airport.description, mainText: airport.mainText,
+      secondaryText: airport.secondaryText, typeLabel: "Airport", types: ["airport"],
+    })) : [];
+  if (!GOOGLE_MAPS_API_KEY) {
+    console.error("Google Maps not configured");
+    return airportSuggestions;
   }
 
   try {
     const params = new URLSearchParams({
       input: trimmedInput,
       key: GOOGLE_MAPS_API_KEY,
-      components: "country:sk",
+      ...(airportTransfer ? {} : { components: "country:sk" }),
       language: "sk",
       location: BRATISLAVA_LOCATION,
       radius: BRATISLAVA_RADIUS_METERS,
@@ -277,7 +287,7 @@ export async function getAddressSuggestionItems(
     const data = await response.json();
 
     if (data.status !== "OK" || !Array.isArray(data.predictions)) {
-      return [];
+      return airportSuggestions;
     }
 
     const seen = new Set<string>();
@@ -297,7 +307,7 @@ export async function getAddressSuggestionItems(
       )
     );
 
-    return predictions.map((p: any, index: number) => {
+    const googleSuggestions = predictions.map((p: any, index: number) => {
       const predictionTypes = Array.isArray(p.types) ? p.types : [];
       const detail = details[index];
       const types = Array.from(new Set([...(detail?.types || []), ...predictionTypes]));
@@ -313,9 +323,11 @@ export async function getAddressSuggestionItems(
         lng: detail?.lng,
       };
     });
+    const seenDescriptions = new Set(airportSuggestions.map((item) => item.description.toLowerCase()));
+    return [...airportSuggestions, ...googleSuggestions.filter((item: AddressSuggestion) => !seenDescriptions.has(item.description.toLowerCase()))].slice(0, 8);
   } catch (error: any) {
     console.error("Address autocomplete error:", error.message);
-    return [];
+    return airportSuggestions;
   }
 }
 
