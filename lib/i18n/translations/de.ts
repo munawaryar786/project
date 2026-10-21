@@ -1,6 +1,16 @@
 import { foundation } from "./foundation";
 
 const de = {
+  "booking.medicalOutboundTrip": "HINFAHRT",
+  "booking.medicalReturnTrip": "RÜCKFAHRT",
+  "booking.medicalReturnTiming": "Bevorzugte Rückfahrzeit",
+  "booking.medicalFixedReturn": "Feste Rückfahrzeit",
+  "booking.medicalFlexibleReturn": "Flexibel / Fahrer anrufen, wenn Sie bereit sind",
+  "booking.medicalReturnPickupTime": "Geschätzte Abholzeit für die Rückfahrt",
+  "booking.medicalReturnQuoteNotice": "Rückfahrzeit und Gesamtpreis müssen noch bestätigt werden. Der angezeigte Preis kann nur die Hinfahrt umfassen.",
+  "booking.medicalAccessibilityNotes": "BARRIEREFREIHEIT & HINWEISE FÜR DEN FAHRER",
+  "booking.medicalWavNotice": "Rollstuhlgerechtes Fahrzeug (WAV) – demnächst verfügbar. Falls möglich, wählen Sie Hilfe beim Umsetzen auf einen Sitzplatz.",
+  "booking.medicalInstructions": "Besondere Hinweise für den Fahrer",
   "nav.home": "Startseite",
   "nav.services": "Dienstleistungen",
   "nav.book": "Fahrt buchen",
