@@ -43,6 +43,7 @@ export const BookingSchema = z.object({
   appointmentDate: z.string().optional().nullable(),
   appointmentTime: z.string().optional().nullable(),
   tripType: z.enum(["GO_ONLY", "GO_RETURN", "WAIT_RETURN"]).optional().nullable(),
+  returnTimingPreference: z.enum(["FIXED", "FLEXIBLE"]).optional().nullable(),
   returnDate: z.string().optional().nullable(),
   returnTime: z.string().optional().nullable(),
   waitingDuration: z.enum(["30_MINUTES", "1_HOUR", "2_HOURS", "3_HOURS", "4_HOURS", "CUSTOM"]).optional().nullable(),
