@@ -62,3 +62,14 @@ No live deployment or merge without owner approval. Capture full test/build resu
 - [ ] Owner approval, verified backup + rollback and VPS login restoration required before deployment. Stripe still postponed, CARD UI preserved.
 
 Screenshot request completed in code only; do **not** mark operationally complete until final testing, live QA and owner sign-off.
+
+## Owner-approved companion assistance tariff (2026-10-21)
+
+- [x] Pricing rule explicitly approved: **€8 per companion per hour**. Example 2 companions × 3 hours = **€48**.
+- [x] Branch code added: beside companion count, companion hours UI selection, separate inline charge and fare breakdown row; `companionHours` to booking request, estimate API, central fare engine, authoritative booking quote, booking creation, and Mongo/Prisma Booking schema.
+- [x] Companion-only labor charge applies count × hours × €8 and is excluded from percentage night surcharge; other ride/assistance charges remain separate.
+- [x] EN/SK/DE/UK labels and `scripts/companion-assistance-regression.ts` added.
+- [ ] **Test and release gate:** run new regression, Prisma client generation/schema review, TypeScript/build, earlier suites and full quote→booking fare matching including overnight, midnight, cancelled selector, 1/2/3 companions and 1/3/24 hours. No claim of branch test pass before executed.
+- [ ] **Business limit to confirm:** implementation currently accepts positive whole hours up to **24 hours**, and existing UI supports 1–3 companions; user has confirmed price calculation, not an hourly maximum or fractional-hour billing. Do not assume this is final policy.
+- [ ] Check operational staffing/companion fulfillment, driver-assignment capability, charge display in customer emails and admin detail views.
+- [ ] Existing bookings must remain unchanged. Live VPS deployment requires separate approval and migration safety review.
