@@ -1,6 +1,10 @@
 import { foundation } from "./foundation";
 
 const de = {
+  "booking.companionHours": "Benötigte Stunden der Begleitperson",
+  "booking.hoursUnit": "Stunden",
+  "booking.companionAssistanceFee": "Begleitperson-Assistenz",
+  "booking.validation.companionHours": "Bitte wählen Sie die benötigten Assistenzstunden.",
   "booking.medicalOutboundTrip": "HINFAHRT",
   "booking.medicalReturnTrip": "RÜCKFAHRT",
   "booking.medicalReturnTiming": "Bevorzugte Rückfahrzeit",
