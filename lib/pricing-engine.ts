@@ -250,7 +250,7 @@ export function calculateFare(input: FareCalculationInput) {
     config.nightStartTime,
     config.nightEndTime
   )
-    ? roundMoney(subtotalBeforeNight * (config.nightServicePercentage / 100))
+    ? roundMoney((subtotalBeforeNight - (optionalServiceCharges.companionAssistance || 0)) * (config.nightServicePercentage / 100))
     : 0;
   const subtotal = roundMoney(subtotalBeforeNight + nightServiceCharge);
   const minimumFareAdjustment = roundMoney(Math.max(0, config.minimumFare - subtotal));
