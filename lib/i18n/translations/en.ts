@@ -1,6 +1,10 @@
 import { foundation } from "./foundation";
 
 const en = {
+  "booking.companionHours": "Companion Required Hours",
+  "booking.hoursUnit": "hours",
+  "booking.companionAssistanceFee": "Companion Assistance",
+  "booking.validation.companionHours": "Please select companion assistance hours.",
   "booking.medicalOutboundTrip": "OUTBOUND TRIP",
   "booking.medicalReturnTrip": "RETURN TRIP",
   "booking.medicalReturnTiming": "Return Timing Preference",
