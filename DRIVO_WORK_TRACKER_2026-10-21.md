@@ -73,3 +73,9 @@ Screenshot request completed in code only; do **not** mark operationally complet
 - [ ] **Business limit to confirm:** implementation currently accepts positive whole hours up to **24 hours**, and existing UI supports 1–3 companions; user has confirmed price calculation, not an hourly maximum or fractional-hour billing. Do not assume this is final policy.
 - [ ] Check operational staffing/companion fulfillment, driver-assignment capability, charge display in customer emails and admin detail views.
 - [ ] Existing bookings must remain unchanged. Live VPS deployment requires separate approval and migration safety review.
+
+## Owner approval — 30-minute companion increments (2026-10-21)
+- [x] User approved **30-minute selection intervals**. €8 per companion/hour means **€4 per companion per 30 minutes**. Examples: 1 companion × 0.5 hour = €4; 2 companions × 1.5 hours = €24; 2 × 3 hours = €48.
+- [x] GitHub review branch updated across shared rate/validation helper, booking UI options, Zod request validation, quote API and Prisma Mongo schema (`companionHours Float`). Tests extended to cover half hours and reject quarter hours.
+- [ ] Run updated tests, regenerate Prisma client, typecheck and clean build before merging/deploying. Validate existing records and schema sync safely; no live DB changes before owner approval.
+- [ ] Upper bound remains provisionally 24 hours (48 half-hour options). Confirm final cap separately if changing it. No existing live bookings were edited.
