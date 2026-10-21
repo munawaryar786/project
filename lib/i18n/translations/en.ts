@@ -1,6 +1,16 @@
 import { foundation } from "./foundation";
 
 const en = {
+  "booking.medicalOutboundTrip": "OUTBOUND TRIP",
+  "booking.medicalReturnTrip": "RETURN TRIP",
+  "booking.medicalReturnTiming": "Return Timing Preference",
+  "booking.medicalFixedReturn": "Fixed Return Time",
+  "booking.medicalFlexibleReturn": "Flexible / Call Driver When Ready",
+  "booking.medicalReturnPickupTime": "Estimated Return Pickup Time",
+  "booking.medicalReturnQuoteNotice": "Return ride timing and total return fare are subject to confirmation. The displayed estimate may cover the outbound leg only.",
+  "booking.medicalAccessibilityNotes": "ACCESSIBILITY & DRIVER NOTES",
+  "booking.medicalWavNotice": "Wheelchair Accessible Vehicle (WAV) – Coming Soon. Please select transfer-to-seat assistance if suitable.",
+  "booking.medicalInstructions": "Special Instructions for Driver",
   // Navigation
   "nav.home": "Home",
   "nav.services": "Services",
