@@ -38,6 +38,8 @@ interface PriceEstimateProps {
   waitAndGreet?: boolean;
   waitingMinutes?: number;
   assistanceLevel?: string;
+  companionCount?: number;
+  companionHours?: number;
   onPriceChange?: (price: number) => void;
   onFareChange?: (price: number, breakdown: FareBreakdown) => void;
 }
@@ -69,6 +71,8 @@ export default function PriceEstimate({
   waitAndGreet = false,
   waitingMinutes = 0,
   assistanceLevel = "",
+  companionCount = 0,
+  companionHours = 0,
   onPriceChange,
   onFareChange,
 }: PriceEstimateProps) {
@@ -111,6 +115,8 @@ export default function PriceEstimate({
             waitAndGreet,
             waitingMinutes,
             assistanceLevel,
+            companionCount,
+            companionHours,
           }),
         });
 
@@ -154,6 +160,8 @@ export default function PriceEstimate({
     waitAndGreet,
     waitingMinutes,
     assistanceLevel,
+    companionCount,
+    companionHours,
     onPriceChange,
     onFareChange,
   ]);
@@ -205,7 +213,7 @@ export default function PriceEstimate({
           value={optionalServices.length ? money(optionalServices.reduce((sum, [, value]) => sum + value, 0)) : money(0)}
         />
         {optionalServices.map(([key, value]) => (
-          <Row key={key} label={t(`booking.charge.${key}`)} value={money(value)} muted />
+          <Row key={key} label={t(`booking.charge.${key}`, key === "companionAssistance" ? "Companion Assistance" : key)} value={money(value)} muted />
         ))}
         {breakdown.childTransport && (
           <>
