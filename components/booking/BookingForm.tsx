@@ -2385,6 +2385,7 @@ export default function BookingForm({
             <div className="relative">
               <AddressAutocomplete
                 id="pickup"
+                airportTransfer={serviceType === "airport"}
                 label={`📍 ${t("booking.pickup")} *`}
                 value={pickupAddress}
                 onChange={(v) => {
@@ -2413,6 +2414,7 @@ export default function BookingForm({
 
             <AddressAutocomplete
               id="dropoff"
+              airportTransfer={serviceType === "airport"}
               label={
                 childrenTransport
                   ? t("booking.schoolInstitution", "School / College / University *")
