@@ -1,6 +1,10 @@
 import { foundation } from "./foundation";
 
 const sk = {
+  "booking.companionHours": "Počet hodín asistencie sprievodcu",
+  "booking.hoursUnit": "hodín",
+  "booking.companionAssistanceFee": "Asistencia sprievodcu",
+  "booking.validation.companionHours": "Vyberte počet hodín asistencie sprievodcu.",
   "booking.medicalOutboundTrip": "CESTA TAM",
   "booking.medicalReturnTrip": "SPIATOČNÁ CESTA",
   "booking.medicalReturnTiming": "Preferovaný čas návratu",
