@@ -53,6 +53,7 @@ model Booking {
   appointmentDate                 String?
   appointmentTime                 String?
   tripType                        String?
+  returnTimingPreference          String?
   returnDate                      String?
   returnTime                      String?
   waitingDuration                 String?
