@@ -1,6 +1,16 @@
 import { foundation } from "./foundation";
 
 const uk = {
+  "booking.medicalOutboundTrip": "ПОЇЗДКА ТУДИ",
+  "booking.medicalReturnTrip": "ЗВОРОТНА ПОЇЗДКА",
+  "booking.medicalReturnTiming": "Побажання щодо часу повернення",
+  "booking.medicalFixedReturn": "Фіксований час повернення",
+  "booking.medicalFlexibleReturn": "Гнучко / Зателефонувати водієві, коли будете готові",
+  "booking.medicalReturnPickupTime": "Орієнтовний час подачі авто для повернення",
+  "booking.medicalReturnQuoteNotice": "Час зворотної поїздки та її загальна вартість потребують підтвердження. Показана оцінка може включати лише поїздку туди.",
+  "booking.medicalAccessibilityNotes": "ДОСТУПНІСТЬ І ПРИМІТКИ ДЛЯ ВОДІЯ",
+  "booking.medicalWavNotice": "Авто для перевезення крісел колісних (WAV) – незабаром. Якщо можливо, оберіть допомогу з пересадкою на сидіння.",
+  "booking.medicalInstructions": "Особливі інструкції для водія",
   "nav.home": "Головна",
   "nav.services": "Послуги",
   "nav.book": "Замовити поїздку",
