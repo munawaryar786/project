@@ -68,7 +68,7 @@ export async function createBookingWithDrivoRules(request: NextRequest, data: Bo
 
   if (data.companionRequired) {
     if (data.serviceType !== "ACCESSIBLE" && data.serviceType !== "SENIOR") throw new BookingCreateError("Companion assistance requires assisted transport.", 400, "INVALID_COMPANION_ASSISTANCE");
-    if (data.companionCount < 1 || data.companionHours < 1) throw new BookingCreateError("Companion count and hours are required.", 400, "COMPANION_HOURS_REQUIRED");
+    if (data.companionCount < 1 || data.companionHours < 0.5) throw new BookingCreateError("Companion count and hours are required.", 400, "COMPANION_HOURS_REQUIRED");
   } else if (data.companionHours !== 0) {
     throw new BookingCreateError("Companion hours require companion assistance.", 400, "INVALID_COMPANION_ASSISTANCE");
   }
