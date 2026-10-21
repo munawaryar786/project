@@ -370,6 +370,7 @@ export default function BookingForm({
   const [appointmentDate, setAppointmentDate] = useState("");
   const [appointmentTime, setAppointmentTime] = useState("");
   const [tripType, setTripType] = useState<MedicalTripType>("GO_ONLY");
+  const [returnTimingPreference, setReturnTimingPreference] = useState<"FIXED" | "FLEXIBLE">("FIXED");
   const [returnDate, setReturnDate] = useState("");
   const [returnTime, setReturnTime] = useState("");
   const [waitingDuration, setWaitingDuration] = useState<WaitingDuration>("");
@@ -673,6 +674,7 @@ export default function BookingForm({
       setAppointmentDate("");
       setAppointmentTime("");
       setTripType("GO_ONLY");
+      setReturnTimingPreference("FIXED");
       setReturnDate("");
       setReturnTime("");
     }
@@ -862,7 +864,7 @@ export default function BookingForm({
     setCompanionRequired(false); setMedicalAppointment(false); setWaitingTimeRequired(false);
     setAssistanceLevel(""); setWheelchairType(""); setCanTransferToSeat(""); setCompanionCount(1);
     setHospitalName(""); setDepartment(""); setAppointmentDate(""); setAppointmentTime("");
-    setTripType("GO_ONLY"); setReturnDate(""); setReturnTime(""); setWaitingDuration("");
+    setTripType("GO_ONLY"); setReturnTimingPreference("FIXED"); setReturnDate(""); setReturnTime(""); setWaitingDuration("");
     setCustomWaitingDuration(""); setRecurrence("ONE_TIME"); setRecurrenceCustom("");
     setChildrenDetails([createEmptyChild(), createEmptyChild()]);
     setChildFullName(""); setChildAge(""); setChildSpecialRequirements("");
@@ -1180,7 +1182,7 @@ export default function BookingForm({
       if (!department.trim()) return t('booking.validation.department');
       if (!appointmentDate) return t('booking.validation.appointmentDate');
       if (!appointmentTime) return t('booking.validation.appointmentTime');
-      if (tripType === "GO_RETURN" && (!returnDate || !returnTime)) {
+      if (tripType === "GO_RETURN" && (!returnDate || (returnTimingPreference === "FIXED" && !returnTime))) {
         return t('booking.validation.return');
       }
     }
@@ -1433,6 +1435,7 @@ export default function BookingForm({
           appointmentDate: assistedTransport && medicalAppointment ? appointmentDate || null : null,
           appointmentTime: assistedTransport && medicalAppointment ? appointmentTime || null : null,
           tripType: assistedTransport && medicalAppointment ? tripType : null,
+          returnTimingPreference: assistedTransport && medicalAppointment && tripType !== "GO_ONLY" ? returnTimingPreference : null,
           returnDate: childrenTransport || (assistedTransport && (medicalAppointment || waitingTimeRequired)) ? returnDate || null : null,
           returnTime: childrenTransport || (assistedTransport && (medicalAppointment || waitingTimeRequired)) ? returnTime || null : null,
           waitingDuration: showWaitingDuration ? waitingDuration || null : null,
@@ -2030,6 +2033,7 @@ export default function BookingForm({
           appointmentDate: assistedTransport && medicalAppointment ? appointmentDate : "",
           appointmentTime: assistedTransport && medicalAppointment ? appointmentTime : "",
           tripType: assistedTransport && medicalAppointment ? tripType : "",
+          returnTimingPreference: assistedTransport && medicalAppointment && tripType !== "GO_ONLY" ? returnTimingPreference : null,
           returnDate: childrenTransport || (assistedTransport && (medicalAppointment || waitingTimeRequired)) ? returnDate : "",
           returnTime: childrenTransport || (assistedTransport && (medicalAppointment || waitingTimeRequired)) ? returnTime : "",
           waitingDuration: showWaitingDuration ? waitingDuration : "",
