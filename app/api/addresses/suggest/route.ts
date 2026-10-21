@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const query = (searchParams.get("q") || "").trim();
   const typeFilter = (searchParams.get("type") || "").trim().toLowerCase();
+  const airportTransfer = searchParams.get("service") === "airport";
   const educationalOnly =
     searchParams.get("educationalOnly") === "true" ||
     searchParams.get("educationalOnly") === "1" ||
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const suggestionItems = await getAddressSuggestionItems(query, { educationalOnly });
+    const suggestionItems = await getAddressSuggestionItems(query, { educationalOnly, airportTransfer });
 
     return NextResponse.json({
       success: true,
