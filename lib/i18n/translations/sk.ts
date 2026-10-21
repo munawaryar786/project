@@ -1,6 +1,16 @@
 import { foundation } from "./foundation";
 
 const sk = {
+  "booking.medicalOutboundTrip": "CESTA TAM",
+  "booking.medicalReturnTrip": "SPIATOČNÁ CESTA",
+  "booking.medicalReturnTiming": "Preferovaný čas návratu",
+  "booking.medicalFixedReturn": "Pevný čas návratu",
+  "booking.medicalFlexibleReturn": "Flexibilne / Zavolať vodičovi, keď budete pripravení",
+  "booking.medicalReturnPickupTime": "Odhadovaný čas vyzdvihnutia na spiatočnú cestu",
+  "booking.medicalReturnQuoteNotice": "Čas spiatočnej cesty a celková cena za návrat podliehajú potvrdeniu. Zobrazený odhad môže zahŕňať iba cestu tam.",
+  "booking.medicalAccessibilityNotes": "PRÍSTUPNOSŤ A POKYNY PRE VODIČA",
+  "booking.medicalWavNotice": "Vozidlo prispôsobené na prepravu vozíčkarov (WAV) – čoskoro. Ak je to vhodné, zvoľte pomoc pri presune na sedadlo.",
+  "booking.medicalInstructions": "Osobitné pokyny pre vodiča",
   // Navigation
   "nav.home": "Domov",
   "nav.services": "Služby",
