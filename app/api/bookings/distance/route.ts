@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 import { calculateAuthoritativeBookingQuote } from "@/lib/booking-quote";
+import { validCompanionHours } from "@/lib/companion-assistance";
 
 const DistanceSchema = z.object({
   pickupAddress: z.string().min(3),
@@ -10,7 +11,7 @@ const DistanceSchema = z.object({
   assistanceLevel: z.enum(["LIGHT", "DOOR_TO_DOOR", "BOARDING_HELP"]).optional().nullable(),
   passengerCount: z.coerce.number().min(1).optional().default(1),
   companionCount: z.number().int().min(0).max(3).optional().default(0),
-  companionHours: z.number().int().min(0).max(24).optional().default(0),
+  companionHours: z.number().min(0).max(24).refine((hours) => hours === 0 || validCompanionHours(hours), "Use 30-minute increments").optional().default(0),
   waitingMinutes: z.coerce.number().min(0).optional().default(0),
   scheduledDate: z.string().optional().nullable(),
   scheduledTime: z.string().optional().nullable(),
