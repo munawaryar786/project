@@ -20,6 +20,7 @@ export const BookingSchema = z.object({
 
   scheduledDate: z.string().min(1, "Date required"),
   scheduledTime: z.string().min(1, "Time required"),
+  pickupMode: z.enum(["NOW", "SCHEDULED"]).optional(),
   passengerCount: z.number().min(1).max(6),
   luggageType: z.enum(["NONE", "SMALL", "LARGE"]).default("NONE"),
   smallBags: z.number().min(0).max(12).default(0),
