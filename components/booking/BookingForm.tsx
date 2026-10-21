@@ -24,6 +24,7 @@ import OTPVerification from "./OTPVerification";
 import BookingConfirmation from "./BookingConfirmation";
 import AddressAutocomplete from "./AddressAutocomplete";
 import PriceEstimate from "./PriceEstimate";
+import { marketLocalDateTime } from "@/lib/market-booking-time";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { messageKeyForCode, presentMessage } from "@/lib/i18n/message-catalog";
 import { isCustomerServiceEnabled } from "@/lib/feature-flags";
@@ -340,6 +341,7 @@ export default function BookingForm({
   const [locatingPickup, setLocatingPickup] = useState(false);
 
   const [rideMode, setRideMode] = useState<"now" | "schedule">("now");
+  const [marketClock, setMarketClock] = useState(() => marketLocalDateTime());
 
   const [scheduledDate, setScheduledDate] = useState("");
   const [scheduledTime, setScheduledTime] = useState("");
@@ -516,7 +518,19 @@ export default function BookingForm({
     onServiceTypeChange?.(serviceType);
   }, [onServiceTypeChange, serviceType]);
 
-  const today = useMemo(() => new Date().toISOString().split("T")[0], []);
+  useEffect(() => {
+    const refresh = () => setMarketClock(marketLocalDateTime());
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+  const today = marketClock.date;
   const assistedTransport = serviceType === "accessible";
   const quoteOnlyTransport = false;
   const passengerAuthenticated = Boolean(passengerProfile) || authMode === "authenticated";
@@ -541,7 +555,7 @@ export default function BookingForm({
   const contactStepNumber = showMedicalReturnDetails ? 6 : assistedTransport ? 5 : 4;
   const childrenTransport = serviceType === "children";
   const institutionAddress = dropoffAddress.trim();
-  const currentBookingTime = useMemo(() => new Date().toTimeString().slice(0, 5), []);
+  const currentBookingTime = marketClock.time;
   const estimateScheduledDate = childrenTransport || rideMode === "schedule" ? scheduledDate : today;
   const estimateScheduledTime = childrenTransport || rideMode === "schedule" ? scheduledTime : currentBookingTime;
   const estimateWaitingMinutes = showWaitingDuration
@@ -1140,11 +1154,15 @@ export default function BookingForm({
 
     if (pickupAddress.trim().length < 3) return t('booking.validation.pickup');
     if (dropoffAddress.trim().length < 3) return t('booking.validation.destination');
-   if (rideMode === "schedule") {
-  if (!scheduledDate) return t('booking.validation.date');
-  if (!scheduledTime) return t('booking.validation.time');
-  if (scheduledDate < today) return t('booking.validation.pastDate');
-}
+    if (rideMode === "schedule" || childrenTransport) {
+      if (!scheduledDate) return t('booking.validation.date');
+      if (!scheduledTime) return t('booking.validation.time');
+      const marketNow = marketLocalDateTime();
+      if (scheduledDate < marketNow.date ||
+          (scheduledDate === marketNow.date && scheduledTime <= marketNow.time)) {
+        return t('booking.validation.pastDate');
+      }
+    }
     if (customerName.trim().length < 2) return t('booking.validation.name');
     if (!trimmedEmail) return t('booking.validation.email');
     if (!isValidEmail(trimmedEmail)) return t('booking.validation.email');
@@ -1369,6 +1387,7 @@ export default function BookingForm({
       clearBookingDraft();
       markBookingSubmissionUncertain();
       setSubmissionUncertain(true);
+      const submitMarketNow = marketLocalDateTime();
       const bookingRes = await csrfFetch("passenger","/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(submittedOperationId ? { "X-Drivo-Booking-Operation": submittedOperationId } : {}) },
@@ -1382,11 +1401,9 @@ export default function BookingForm({
           pickupLng: resolvedPickupCoords?.lng ?? null,
           dropoffLat: resolvedDropoffCoords?.lat ?? null,
           dropoffLng: resolvedDropoffCoords?.lng ?? null,
-          scheduledDate: childrenTransport || rideMode === "schedule" ? scheduledDate : today,
-scheduledTime:
-  childrenTransport || rideMode === "schedule"
-    ? scheduledTime
-    : new Date().toTimeString().slice(0, 5),
+          pickupMode: childrenTransport || rideMode === "schedule" ? "SCHEDULED" : "NOW",
+          scheduledDate: childrenTransport || rideMode === "schedule" ? scheduledDate : submitMarketNow.date,
+          scheduledTime: childrenTransport || rideMode === "schedule" ? scheduledTime : submitMarketNow.time,
           passengerCount: passengers,
           luggageType: luggageMap[luggage],
           smallBags,
