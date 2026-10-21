@@ -6,6 +6,8 @@ type QuoteInput = {
   pickupAddress: string;
   dropoffAddress: string;
   serviceType: string;
+  companionCount?: number;
+  companionHours?: number;
   waitingMinutes?: number;
   waitingDuration?: string | null;
   customWaitingDuration?: string | null;
@@ -90,6 +92,8 @@ export async function calculateAuthoritativeBookingQuote(input: QuoteInput) {
   const waitingMinutes = waitingMinutesFromInput(input);
   const fare = calculateFare({
     distanceKm: distance.distanceKm,
+    companionCount: input.companionCount,
+    companionHours: input.companionHours,
     waitingMinutes,
     reservedWaiting: waitingMinutes > 0,
     tripDurationMinutes: distance.durationMinutes,
