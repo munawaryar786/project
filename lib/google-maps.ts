@@ -273,7 +273,7 @@ export async function getAddressSuggestionItems(
     const params = new URLSearchParams({
       input: trimmedInput,
       key: GOOGLE_MAPS_API_KEY,
-      ...(airportTransfer ? {} : { components: "country:sk" }),
+      components: "country:sk",
       language: "sk",
       location: BRATISLAVA_LOCATION,
       radius: BRATISLAVA_RADIUS_METERS,
