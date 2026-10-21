@@ -2883,7 +2883,7 @@ onChange={(e) => {
                 </div>
               </fieldset>
               <fieldset className="space-y-3 rounded-2xl border border-drivo-border-light p-4">
-                <legend className="px-2 text-sm font-bold text-drivo-text">OUTBOUND TRIP</legend>
+                <legend className="px-2 text-sm font-bold text-drivo-text">{t("booking.medicalOutboundTrip", "OUTBOUND TRIP")}</legend>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="block text-sm font-semibold text-drivo-text">
                     {t("booking.pickupDate", "Pickup Date")} *
@@ -2907,42 +2907,42 @@ onChange={(e) => {
               </fieldset>
               {tripType !== "GO_ONLY" && (
                 <fieldset className="space-y-4 rounded-2xl border border-drivo-border-light p-4">
-                  <legend className="px-2 text-sm font-bold text-drivo-text">RETURN TRIP</legend>
-                  <div className="text-sm font-semibold text-drivo-text">Return Timing Preference</div>
+                  <legend className="px-2 text-sm font-bold text-drivo-text">{t("booking.medicalReturnTrip", "RETURN TRIP")}</legend>
+                  <div className="text-sm font-semibold text-drivo-text">{t("booking.medicalReturnTiming", "Return Timing Preference")}</div>
                   <div className="flex flex-wrap gap-4">
                     <label className="flex min-h-11 items-center gap-2 text-sm">
                       <input type="radio" name="medical-return-timing" checked={returnTimingPreference === "FIXED"} onChange={() => setReturnTimingPreference("FIXED")} />
-                      Fixed Return Time
+                      {t("booking.medicalFixedReturn", "Fixed Return Time")}
                     </label>
                     <label className="flex min-h-11 items-center gap-2 text-sm">
                       <input type="radio" name="medical-return-timing" checked={returnTimingPreference === "FLEXIBLE"} onChange={() => { setReturnTimingPreference("FLEXIBLE"); setReturnTime(""); }} />
-                      Flexible / Call Driver When Ready
+                      {t("booking.medicalFlexibleReturn", "Flexible / Call Driver When Ready")}
                     </label>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <label className="block text-sm font-semibold text-drivo-text">
-                      Return Date *
+                      {t("booking.returnDate", "Return Date")} *
                       <input className="input mt-2" type="date" min={appointmentDate || scheduledDate || today} value={returnDate} onChange={(e) => setReturnDate(e.target.value)} required />
                     </label>
                     {returnTimingPreference === "FIXED" && (
                       <label className="block text-sm font-semibold text-drivo-text">
-                        Estimated Return Pickup Time *
+                        {t("booking.medicalReturnPickupTime", "Estimated Return Pickup Time")} *
                         <input className="input mt-2" type="time" value={returnTime} onChange={(e) => setReturnTime(e.target.value)} required />
                       </label>
                     )}
                   </div>
                   <p className="text-xs text-drivo-text-secondary" role="note">
-                    Return ride timing and total return fare are subject to confirmation. The displayed estimate may cover the outbound leg only.
+                    {t("booking.medicalReturnQuoteNotice", "Return ride timing and total return fare are subject to confirmation. The displayed estimate may cover the outbound leg only.")}
                   </p>
                 </fieldset>
               )}
               <fieldset className="space-y-3 rounded-2xl border border-drivo-border-light p-4">
-                <legend className="px-2 text-sm font-bold text-drivo-text">ACCESSIBILITY &amp; DRIVER NOTES</legend>
+                <legend className="px-2 text-sm font-bold text-drivo-text">{t("booking.medicalAccessibilityNotes", "ACCESSIBILITY & DRIVER NOTES")}</legend>
                 <p className="text-sm text-drivo-text-secondary">
-                  Wheelchair Accessible Vehicle (WAV) – Coming Soon. Please select transfer-to-seat assistance if suitable.
+                  {t("booking.medicalWavNotice", "Wheelchair Accessible Vehicle (WAV) – Coming Soon. Please select transfer-to-seat assistance if suitable.")}
                 </p>
                 <label className="block text-sm font-semibold text-drivo-text">
-                  Special Instructions for Driver
+                  {t("booking.medicalInstructions", "Special Instructions for Driver")}
                   <textarea className="input mt-2 min-h-24" maxLength={500} value={specialNotes} onChange={(e) => setSpecialNotes(e.target.value)} placeholder="e.g. Please assist to the hospital entrance; call on arrival." />
                 </label>
               </fieldset>
