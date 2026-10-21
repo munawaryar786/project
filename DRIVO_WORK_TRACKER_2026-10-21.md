@@ -79,3 +79,14 @@ Screenshot request completed in code only; do **not** mark operationally complet
 - [x] GitHub review branch updated across shared rate/validation helper, booking UI options, Zod request validation, quote API and Prisma Mongo schema (`companionHours Float`). Tests extended to cover half hours and reject quarter hours.
 - [ ] Run updated tests, regenerate Prisma client, typecheck and clean build before merging/deploying. Validate existing records and schema sync safely; no live DB changes before owner approval.
 - [ ] Upper bound remains provisionally 24 hours (48 half-hour options). Confirm final cap separately if changing it. No existing live bookings were edited.
+
+## Saved Routes / Book Again client requirement (2026-10-21)
+
+- [x] Customer/owner approved the experience: after booking receipt show **Save Route**, **Not Now**, **Save Always**; returning signed-in passengers see their own stored routes in **Book Again** and can select to pre-fill another booking.
+- [x] Existing canonical passenger login/session and passenger booking history inspected; password saving must NOT be added, and booking history should not be duplicated.
+- [x] Written proposed system architecture/database schema/API/folders/roadmap, privacy/cost rationale, complete feature acceptance tests in `DRIVO_SAVED_ROUTES_ARCHITECTURE_2026-10-21.md`.
+- [ ] Await architecture/cap approval before changing DB/API/UI code; 20 saved routes/account is a PROPOSAL, not user-approved.
+- [ ] Implement complete owner-scoped, opt-in SavedRoute model and preference; login ownership checks; idempotent route saving, deletions and toggle.
+- [ ] Add three-action confirmation prompt, Saved Routes in dashboard and route-ID-based **Book Again** with revalidated service/date/fare and no automatic booking.
+- [ ] Privacy, a11y, locales, integration/API test suite and CI/build; explicitly approved VPS release only after rollback.
+- [ ] Earlier GitHub **Drivo Booking Release Review (No Deployment)** run appeared FAILED in owner screenshot (commit `13fb169`); investigate CI error and achieve green branch validation before any release.
