@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validCompanionHours } from "@/lib/companion-assistance";
 
 export const BookingSchema = z.object({
   serviceType: z.enum([
@@ -38,7 +39,7 @@ export const BookingSchema = z.object({
   wavRequired: z.boolean().default(false),
   passengerRemainsInWheelchair: z.boolean().default(false),
   companionCount: z.number().int().min(0).max(3).default(0),
-  companionHours: z.number().int().min(0).max(24).default(0),
+  companionHours: z.number().min(0).max(24).refine((hours) => hours === 0 || validCompanionHours(hours), "Use 30-minute increments").default(0),
   hospitalName: z.string().max(120).optional().nullable(),
   department: z.string().max(120).optional().nullable(),
   appointmentDate: z.string().optional().nullable(),
