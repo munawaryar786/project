@@ -269,6 +269,32 @@ export async function getAddressSuggestionItems(
     return airportSuggestions;
   }
 
+  const airportGeocodingClient = airportTransfer ? getClient() : null;
+  const resolvedAirportSuggestions = await Promise.all(airportSuggestions.map(async (airportSuggestion) => {
+    const preset = airportTransferPresetsFor(airportSuggestion.mainText || "")[0];
+    const expectedCountry = preset && ({ BTS: "SK", VIE: "AT", BUD: "HU", PRG: "CZ" } as const)[preset.code];
+    if (!preset || !expectedCountry || !airportGeocodingClient) return airportSuggestion;
+    try {
+      const geocoded = await airportGeocodingClient.geocode({
+        params: { address: preset.description, key: GOOGLE_MAPS_API_KEY! },
+      });
+      const resolved = geocoded.data.results.find((result) =>
+        result.address_components?.some((part) =>
+          part.types.includes("country") && part.short_name.toUpperCase() === expectedCountry
+        ) && result.geometry?.location
+      );
+      if (!resolved) return airportSuggestion;
+      return {
+        ...airportSuggestion,
+        placeId: resolved.place_id,
+        lat: resolved.geometry.location.lat,
+        lng: resolved.geometry.location.lng,
+      };
+    } catch {
+      return airportSuggestion;
+    }
+  }));
+
   try {
     const params = new URLSearchParams({
       input: trimmedInput,
@@ -287,7 +313,7 @@ export async function getAddressSuggestionItems(
     const data = await response.json();
 
     if (data.status !== "OK" || !Array.isArray(data.predictions)) {
-      return airportSuggestions;
+      return resolvedAirportSuggestions;
     }
 
     const seen = new Set<string>();
@@ -324,35 +350,10 @@ export async function getAddressSuggestionItems(
       };
     });
     const seenDescriptions = new Set(airportSuggestions.map((item) => item.description.toLowerCase()));
-    const airportGeocodingClient = airportTransfer ? getClient() : null;
-    const resolvedAirportSuggestions = await Promise.all(airportSuggestions.map(async (airportSuggestion) => {
-      const preset = airportTransferPresetsFor(airportSuggestion.mainText || "")[0];
-      const expectedCountry = preset && ({ BTS: "SK", VIE: "AT", BUD: "HU", PRG: "CZ" } as const)[preset.code];
-      if (!preset || !expectedCountry || !airportGeocodingClient) return airportSuggestion;
-      try {
-        const geocoded = await airportGeocodingClient.geocode({
-          params: { address: preset.description, key: GOOGLE_MAPS_API_KEY! },
-        });
-        const resolved = geocoded.data.results.find((result) =>
-          result.address_components?.some((part) =>
-            part.types.includes("country") && part.short_name.toUpperCase() === expectedCountry
-          ) && result.geometry?.location
-        );
-        if (!resolved) return airportSuggestion;
-        return {
-          ...airportSuggestion,
-          placeId: resolved.place_id,
-          lat: resolved.geometry.location.lat,
-          lng: resolved.geometry.location.lng,
-        };
-      } catch {
-        return airportSuggestion;
-      }
-    }));
     return [...resolvedAirportSuggestions, ...googleSuggestions.filter((item: AddressSuggestion) => !seenDescriptions.has(item.description.toLowerCase()))].slice(0, 8);
   } catch (error: any) {
     console.error("Address autocomplete error:", error.message);
-    return airportSuggestions;
+    return resolvedAirportSuggestions;
   }
 }
 
