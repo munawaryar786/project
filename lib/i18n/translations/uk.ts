@@ -1,6 +1,10 @@
 import { foundation } from "./foundation";
 
 const uk = {
+  "booking.companionHours": "Години супроводу",
+  "booking.hoursUnit": "годин",
+  "booking.companionAssistanceFee": "Послуга супроводу",
+  "booking.validation.companionHours": "Оберіть кількість годин супроводу.",
   "booking.medicalOutboundTrip": "ПОЇЗДКА ТУДИ",
   "booking.medicalReturnTrip": "ЗВОРОТНА ПОЇЗДКА",
   "booking.medicalReturnTiming": "Побажання щодо часу повернення",
