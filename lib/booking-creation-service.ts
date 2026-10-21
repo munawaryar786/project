@@ -80,6 +80,27 @@ export async function createBookingWithDrivoRules(request: NextRequest, data: Bo
     if (data.paymentMethod === "CASH") throw new BookingCreateError("Cash is not available for children's scheduled transport.", 400);
     if ((data.childrenDetails || []).length !== data.passengerCount) throw new BookingCreateError("Child details must match the selected number of children.", 400);
   }
+  if ((data.serviceType === "ACCESSIBLE" || data.serviceType === "SENIOR") && data.medicalAppointment) {
+    if (!data.hospitalName?.trim() || !data.department?.trim() ||
+        !data.appointmentDate || !data.appointmentTime) {
+      throw new BookingCreateError("Medical appointment details are required.", 400, "MEDICAL_DETAILS_REQUIRED");
+    }
+    if (data.pickupMode === "NOW") {
+      throw new BookingCreateError("A medical appointment requires a scheduled outbound pickup.", 400, "MEDICAL_PICKUP_SCHEDULE_REQUIRED");
+    }
+    if (data.tripType === "GO_RETURN" || data.tripType === "WAIT_RETURN") {
+      if (!data.returnDate || (data.returnTimingPreference !== "FLEXIBLE" && !data.returnTime)) {
+        throw new BookingCreateError("Return date and fixed time (if selected) are required.", 400, "MEDICAL_RETURN_REQUIRED");
+      }
+      if (data.returnDate < data.appointmentDate ||
+          (data.returnDate === bookingScheduledDate && data.returnTime && data.returnTime <= bookingScheduledTime)) {
+        throw new BookingCreateError("Return pickup cannot precede the outbound appointment.", 400, "MEDICAL_RETURN_INVALID");
+      }
+    }
+    if (data.appointmentDate < bookingScheduledDate) {
+      throw new BookingCreateError("Appointment cannot precede pickup.", 400, "MEDICAL_APPOINTMENT_INVALID");
+    }
+  }
   if (data.paymentMethod === "CASH" && !data.cashAgreed) throw new BookingCreateError("Cash payment requires agreement to pay before journey starts.", 400);
 
   const passengerRemainsInWheelchair = data.passengerRemainsInWheelchair || (data.wheelchairUser && data.canTransferToSeat === false);
