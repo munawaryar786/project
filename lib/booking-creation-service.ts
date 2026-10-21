@@ -8,6 +8,7 @@ import { BookingSchema, type BookingInput } from "@/lib/booking-schema";
 import { generateBookingRef, getSourceDomain } from "@/lib/utils";
 import { estimateBookingPrice } from "@/lib/pricing";
 import { calculateAuthoritativeBookingQuote } from "@/lib/booking-quote";
+import { marketLocalDateTime, bookingPickupIsExpired } from "@/lib/market-booking-time";
 import { authorizePassenger, getPassengerFromRequest, normalizePassengerPhone } from "@/lib/passenger-auth";
 import { isCustomerServiceEnabled } from "@/lib/feature-flags";
 import { signBookingPrice } from "@/lib/security/booking-price";
@@ -29,9 +30,28 @@ export class BookingCreateError extends Error {
 export async function createBookingWithDrivoRules(request: NextRequest, data: BookingInput, actor: BookingCreateActor, options: { requestRecordId?: string; requestLeaseToken?: string; publicOperation?: { id: string; leaseToken: string; fingerprint: string; passengerId: string | null } } = {}) {
   if (data.paymentMethod === "INVOICE") throw new BookingCreateError("Invoice requires approved corporate billing. Choose card or cash.", 409, "INVOICE_REQUIRES_CORPORATE_APPROVAL");
   const marketTimezone = SCHEDULED_MARKET_CONFIG.timezone;
-  const pickupAt = parseMarketDateTime(data.pickupDate || data.scheduledDate, data.pickupTime || data.scheduledTime, marketTimezone);
+  const now = new Date();
+  if (data.pickupMode === "NOW" && (data.scheduledRide || data.serviceType === "CHILDREN")) {
+    throw new BookingCreateError("Invalid pickup mode", 400, "INVALID_PICKUP_MODE");
+  }
+  const isRideNow = data.pickupMode === "NOW";
+  const marketNow = isRideNow ? marketLocalDateTime(now, marketTimezone) : null;
+  const bookingScheduledDate = marketNow?.date || data.scheduledDate;
+  const bookingScheduledTime = marketNow?.time || data.scheduledTime;
+  const pickupAt = isRideNow ? now : parseMarketDateTime(
+    data.pickupDate || bookingScheduledDate,
+    data.pickupTime || bookingScheduledTime,
+    marketTimezone,
+  );
   if (!pickupAt) throw new BookingCreateError("Invalid scheduled pickup date/time", 400, "INVALID_SCHEDULE_TIME");
-  const scheduledIntent = data.scheduledRide || data.serviceType === "CHILDREN" || pickupAt.getTime() > Date.now() + 5 * 60 * 1000;
+  const strictFuture = data.pickupMode === "SCHEDULED" || data.scheduledRide || data.serviceType === "CHILDREN";
+  if (bookingPickupIsExpired(pickupAt, now, strictFuture)) {
+    throw new BookingCreateError("Pickup date/time must not be in the past", 400, "PICKUP_IN_PAST");
+  }
+  const scheduledIntent = !isRideNow && (
+    data.scheduledRide || data.serviceType === "CHILDREN" ||
+    pickupAt.getTime() > now.getTime() + 5 * 60 * 1000
+  );
   if (!isCustomerServiceEnabled(data.serviceType)) throw new BookingCreateError("Children Transport is temporarily unavailable for new bookings.", 409);
 
   let currentPassenger: { id: string; normalizedPhone: string | null; phone: string; phoneVerified: boolean } | null = null;
@@ -67,7 +87,7 @@ export async function createBookingWithDrivoRules(request: NextRequest, data: Bo
   const estimate = estimateBookingPrice({ serviceType: data.serviceType, pickupAddress: data.pickupAddress, dropoffAddress: data.dropoffAddress, passengerCount: data.passengerCount, luggageType: luggageType as any, smallBags: data.smallBags, largeBags: data.largeBags, companionCount: data.companionCount, wheelchairNeeded: data.wheelchairNeeded || data.wheelchairUser, wavRequired });
   const quote = await calculateAuthoritativeBookingQuote({
     pickupAddress: data.pickupAddress, dropoffAddress: data.dropoffAddress, serviceType: data.serviceType,
-    scheduledDate: data.scheduledDate, scheduledTime: data.scheduledTime,
+    scheduledDate: bookingScheduledDate, scheduledTime: bookingScheduledTime,
     waitingDuration: data.waitingDuration, customWaitingDuration: data.customWaitingDuration,
     assistanceLevel: data.assistanceLevel,
     waitingMinutes: data.waitingDuration === "30_MINUTES" ? 30 : data.waitingDuration === "1_HOUR" ? 60 : data.waitingDuration === "2_HOURS" ? 120 : data.waitingDuration === "3_HOURS" ? 180 : data.waitingDuration === "4_HOURS" ? 240 : data.waitingDuration === "CUSTOM" ? Number(data.customWaitingDuration?.match(/\d+/)?.[0] || 0) : 0,
@@ -81,7 +101,7 @@ export async function createBookingWithDrivoRules(request: NextRequest, data: Bo
     bookingRef, status: "PENDING", serviceType: data.serviceType,
     pickupAddress: data.pickupAddress, dropoffAddress: data.dropoffAddress,
     pickupLat: data.pickupLat ?? null, pickupLng: data.pickupLng ?? null, dropoffLat: data.dropoffLat ?? null, dropoffLng: data.dropoffLng ?? null,
-    scheduledDate: data.scheduledDate, scheduledTime: data.scheduledTime, passengerCount: data.passengerCount, luggageType,
+    scheduledDate: bookingScheduledDate, scheduledTime: bookingScheduledTime, passengerCount: data.passengerCount, luggageType,
     smallBags: data.smallBags, largeBags: data.largeBags,
     wheelchairNeeded: data.wheelchairNeeded || data.wheelchairUser, seniorPassenger: data.seniorPassenger, ztpCardHolder: data.ztpCardHolder,
     wheelchairUser: data.wheelchairUser, companionRequired: data.companionRequired, medicalAppointment: data.medicalAppointment,
@@ -102,7 +122,8 @@ export async function createBookingWithDrivoRules(request: NextRequest, data: Bo
     parentEmail: data.parentEmail || null, guardianEmail: data.guardianEmail || data.parentEmail || null,
     educationalInstitutionName: data.educationalInstitutionName || null, institutionName: data.institutionName || data.educationalInstitutionName || null,
     institutionAddress: data.institutionAddress || data.dropoffAddress || null, educationalDestinationValidated: data.educationalDestinationValidated,
-    pickupDate: data.pickupDate || data.scheduledDate, pickupTime: data.pickupTime || data.scheduledTime,
+    pickupDate: isRideNow ? bookingScheduledDate : (data.pickupDate || bookingScheduledDate),
+    pickupTime: isRideNow ? bookingScheduledTime : (data.pickupTime || bookingScheduledTime),
     recurrenceType: data.recurrenceType || data.recurrence || null, flightNumber: data.flightNumber || null, airline: data.airline || null,
     waitAndGreet: data.waitAndGreet, customerName: data.customerName, customerEmail: data.customerEmail || null,
     customerPhone: data.customerPhone, customerPhoneCode: data.customerPhoneCode, normalizedPhone,
