@@ -26,7 +26,8 @@
 
 - [x] **Booking-date bug diagnosed:** read-only audit of 6 bookings (last 14 days) found 2 created with a past pickup; both still non-terminal. Example `DRV-2026-09937053` created Oct 21 with Oct 13 pickup, €41.03 fare consistent with stored 37.3 km. Do not mutate historical records without owner's approval.
 - [x] **Date/time staging prototype on VPS** in `/home/administrator/drivo-booking-time-review-b2e1651`: new market-time utility, browser Bratislava clock, server NOW vs SCHEDULED pickup semantics, strict past-date rejection. Typecheck and 6 regression suites passed. **Not deployed.**
-- [ ] Port/review/finalize date/time fix on this exact-release branch, with tests checking UTC→Bratislava, DST, previous-day rejection, NOW time spoof protection, scheduled future acceptance, and child pickup override.
+- [x] Port earlier staging date/time fix to exact-release GitHub review branch (schema pickupMode; browser market clock; server NOW/SCHEDULED guard; market-booking-time helper; initial regression file). **Changes committed; no fresh CI/build run yet.**
+- [ ] Expand date/time tests to full API integration with UTC→Bratislava, DST boundaries, previous-day rejection, NOW spoof protection, scheduled future acceptance and child pickup overrides; rerun TypeScript and all existing suites on branch.
 - [ ] Inspect related booking idempotency, card-checkout timing, scheduled-dispatch semantics, and guard against regressions.
 - [ ] **Isolated production build:** prior Turbopack build FAILED because staging `node_modules` is a symlink pointing outside Turbopack's root — build layout issue, not a demonstrated app-code failure. Rebuild with real local dependencies or `next build --webpack` in staging; do not modify production `node_modules`. Perform required tests and browser-key checks without revealing keys.
 - [ ] **Maps**: enforce Slovakia/Bratislava phase-1 country bounds for resolved pickup and destination; avoid stale/re-geocoded coordinates; compare place details, server route/distance and preview. Google autocomplete `components=country:sk` alone does not guarantee subsequent geocoder results are Slovak.
@@ -41,3 +42,8 @@
 
 ## Release gate
 No live deployment or merge without owner approval. Capture full test/build results, base SHA, commit SHA, rollback path and precise deployment command. Do not claim passed tests are sufficient for end-to-end production correctness.
+
+## Offline update note (VPS SSH currently unavailable)
+- GitHub work branch commits include `lib/market-booking-time.ts`, `scripts/booking-time-regression.ts`, `lib/booking-schema.ts`, `lib/booking-creation-service.ts`, and `components/booking/BookingForm.tsx`. GitHub changes are **not deployed**.
+- VPS review results reported before SSH outage: isolated TS PASS, 6/6 source/invariant suites PASS. Next.js/Turbopack production build FAILED solely on external `node_modules` symlink; retry isolated build without symlink or via `next build --webpack` once workspace access returns, and verify normal production build in clean CI.
+- User has chosen to postpone Stripe setup but keep card selection. Existing duplicate-email passenger accounts are intentionally retained.
