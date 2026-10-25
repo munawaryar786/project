@@ -1,21 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getAuthenticatedUser } from "@/lib/auth-middleware";
+import { authorizeAdmin } from "@/lib/security/authorization";
 
 /**
  * GET /api/admin/drivers/tracking - Get all active drivers with locations
  */
 export async function GET(request: NextRequest) {
+  const auth = await authorizeAdmin(request);
+  if (!auth.ok) return auth.response;
   try {
-    const user = getAuthenticatedUser(request);
-
-    if (!user || user.role !== "admin") {
-      return NextResponse.json(
-        { error: "Unauthorized. Admin access required." },
-        { status: 401 }
-      );
-    }
-
     const drivers = await prisma.driver.findMany({
       where: {
         status: "ACTIVE",

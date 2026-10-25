@@ -1,29 +1,53 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import { createToken, verifyToken } from "@/lib/auth";
+import { loadActivePassengerSession } from "@/lib/security/passenger-session";
+import {
+  csrfCookieName,
+  createCanonicalToken,
+  hashCsrfToken,
+  sessionCookieName,
+  setSessionCookies,
+  secureCookie,
+  clearActorCookies,
+  SESSION_TTL_SECONDS,
+  verifyCanonicalToken,
+  type CanonicalSession,
+} from "@/lib/security/session";
+import { verifyLegacyPassengerToken } from "@/lib/security/legacy-session";
+import { isAllowedOrigin } from "@/lib/env";
 
 export const PASSENGER_COOKIE = "drivo_passenger_token";
 export const PASSENGER_SESSION_COOKIE = "drivo_passenger_session";
 export const PASSENGER_DEVICE_COOKIE = "drivo_passenger_device";
 
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const SESSION_TTL_MS = SESSION_TTL_SECONDS.PASSENGER * 1000;
 const DEVICE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const OTP_PROOF_TTL_MS = 10 * 60 * 1000;
 
-type PassengerTokenPayload = {
-  id?: string;
-  phone?: string;
-  type?: string;
-  sessionId?: string;
-};
-
-export function normalizePassengerPhone(phone: string) {
-  const compact = phone.replace(/[\s().-]/g, "");
+/** Normalize a user-entered phone to E.164 using explicit country context when supplied. */
+export function normalizePassengerPhone(phone: string, countryCode = "+421") {
+  const raw = String(phone || "").trim();
+  const compact = raw.replace(/[\s().-]/g, "");
   if (!compact) return "";
-  if (compact.startsWith("+")) return `+${compact.slice(1).replace(/\D/g, "")}`;
-  if (compact.startsWith("00")) return `+${compact.slice(2).replace(/\D/g, "")}`;
-  return `+${compact.replace(/\D/g, "")}`;
+  const digits = compact.replace(/\D/g, "");
+  if (!digits) return "";
+  if (compact.startsWith("+")) return `+${digits}`;
+  if (compact.startsWith("00")) return `+${digits.slice(2)}`;
+
+  const context = String(countryCode || "+421").replace(/[^\d]/g, "");
+  const local = digits.replace(/^0+/, "");
+  if (!context || !local) return "";
+  return `+${context}${local}`;
+}
+
+export function isValidE164Phone(phone: string) {
+  return /^\+[1-9]\d{7,14}$/.test(phone);
+}
+
+export function normalizePassengerEmail(email: string) {
+  return String(email || "").trim().toLowerCase();
 }
 
 export function hashSecret(value: string) {
@@ -41,68 +65,57 @@ export function validatePassengerPassword(password: string) {
   return "";
 }
 
+type PassengerRecord = Awaited<ReturnType<typeof prisma.passenger.findUnique>>;
+
 export async function createPassengerSession(passenger: {
   id: string;
-  phone: string;
-  email?: string | null;
-}) {
-  const rawSessionToken = createOpaqueToken();
-  const session = await prisma.passengerSession.create({
+  status?: string;
+  authVersion?: number;
+}, db: Pick<typeof prisma, "passengerSession"> = prisma) {
+  const jti = crypto.randomUUID();
+  const session = await db.passengerSession.create({
     data: {
       passengerId: passenger.id,
-      tokenHash: hashSecret(rawSessionToken),
+      tokenHash: hashSecret(jti),
       expiresAt: new Date(Date.now() + SESSION_TTL_MS),
       lastUsedAt: new Date(),
+      revokedAt: null,
     },
   });
-
-  return createToken({
-    id: passenger.id,
-    phone: passenger.phone,
-    email: passenger.email || undefined,
-    type: "PASSENGER",
-    sessionId: session.id,
-    sessionToken: rawSessionToken,
+  return createCanonicalToken({
+    sub: passenger.id,
+    actor: "PASSENGER",
+    role: "PASSENGER",
+    ver: passenger.authVersion ?? 0,
+    sid: session.id,
+    jti,
   });
 }
 
-export function setPassengerCookie(response: NextResponse, token: string) {
-  response.cookies.set({
-    name: PASSENGER_COOKIE,
-    value: token,
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
-  });
+export function setPassengerCookie(
+  response: NextResponse,
+  session: Awaited<ReturnType<typeof createPassengerSession>>
+) {
+  setSessionCookies(response, "PASSENGER", session);
 }
 
 export function clearPassengerCookies(response: NextResponse) {
-  for (const name of [PASSENGER_COOKIE, PASSENGER_SESSION_COOKIE]) {
-    response.cookies.set({
-      name,
-      value: "",
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      maxAge: 0,
-    });
-  }
+  clearActorCookies(response, "PASSENGER");
 }
 
-export async function getPassengerFromRequest(request: NextRequest) {
-  const token = request.cookies.get(PASSENGER_COOKIE)?.value;
-  if (!token) return null;
+async function loadCanonicalPassenger(token: string) {
+  const payload = await verifyCanonicalToken(token, "PASSENGER");
+  if (!payload) return null;
+  const active = await loadActivePassengerSession(payload);
+  if (!active) return null;
+  const { passenger, session } = active;
+  await prisma.passengerSession.update({ where: { id: session.id }, data: { lastUsedAt: new Date() } });
+  return { passenger, session: payload, legacy: false as const };
+}
 
-  const payload = (await verifyToken(token)) as (PassengerTokenPayload & {
-    sessionToken?: string;
-  }) | null;
-  if (!payload?.id || payload.type !== "PASSENGER" || !payload.sessionId || !payload.sessionToken) {
-    return null;
-  }
-
+async function loadLegacyPassenger(token: string) {
+  const payload = await verifyLegacyPassengerToken(token);
+  if (!payload?.id || payload.type !== "PASSENGER" || !payload.sessionId || !payload.sessionToken) return null;
   const session = await prisma.passengerSession.findFirst({
     where: {
       id: payload.sessionId,
@@ -112,22 +125,66 @@ export async function getPassengerFromRequest(request: NextRequest) {
       revokedAt: null,
     },
   });
-
   if (!session) return null;
+  const passenger = await prisma.passenger.findUnique({ where: { id: payload.id } });
+  if (!passenger || passenger.status !== "ACTIVE" || (passenger.authVersion ?? 0) !== 0) return null;
+  await prisma.passengerSession.update({ where: { id: session.id }, data: { lastUsedAt: new Date() } });
+  return { passenger, legacy: true as const };
+}
 
-  await prisma.passengerSession.update({
-    where: { id: session.id },
-    data: { lastUsedAt: new Date() },
+async function setUpgradedCookies(session: Awaited<ReturnType<typeof createPassengerSession>>) {
+  const store = await cookies();
+  const secure = secureCookie();
+  store.set(sessionCookieName("PASSENGER"), session.token, {
+    httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: session.expiresIn,
   });
+  store.set(csrfCookieName("PASSENGER"), session.csrfToken, {
+    httpOnly: false, secure, sameSite: "lax", path: "/", maxAge: session.expiresIn,
+  });
+}
 
-  return prisma.passenger.findUnique({
-    where: { id: payload.id },
-  });
+export async function getPassengerAuth(request: NextRequest) {
+  const canonical = request.cookies.get(sessionCookieName("PASSENGER"))?.value;
+  if (canonical) {
+    return loadCanonicalPassenger(canonical);
+  }
+  const legacy = request.cookies.get(PASSENGER_COOKIE)?.value;
+  if (!legacy) return null;
+  const authenticated = await loadLegacyPassenger(legacy);
+  if (!authenticated) return null;
+  const upgraded = await createPassengerSession(authenticated.passenger);
+  await setUpgradedCookies(upgraded);
+  return { passenger: authenticated.passenger, legacy: true as const };
+}
+
+export async function getPassengerFromRequest(request: NextRequest) {
+  return (await getPassengerAuth(request))?.passenger || null;
+}
+
+export async function authorizePassenger(request: NextRequest) {
+  const auth = await getPassengerAuth(request);
+  if (!auth) {
+    return { ok: false as const, response: NextResponse.json({ error: "Authentication required" }, { status: 401 }) };
+  }
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method.toUpperCase())) {
+    if (!isAllowedOrigin(request.headers.get("origin"))) {
+      return { ok: false as const, response: NextResponse.json({ error: "Request origin is not allowed" }, { status: 403 }) };
+    }
+    if (auth.legacy) {
+      return { ok: false as const, response: NextResponse.json({ error: "Session upgraded; retry request" }, { status: 409, headers: { "X-Drivo-Session-Upgraded": "1" } }) };
+    }
+    const csrfCookie = request.cookies.get(csrfCookieName("PASSENGER"))?.value;
+    const csrfHeader = request.headers.get("x-drivo-csrf");
+    if (!csrfCookie || !csrfHeader || csrfCookie !== csrfHeader || hashCsrfToken(csrfCookie) !== auth.session.csrf) {
+      return { ok: false as const, response: NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 }) };
+    }
+  }
+  return { ok: true as const, actor: auth.passenger, session: "session" in auth ? auth.session : null };
 }
 
 export async function revokePassengerSessions(passengerId: string) {
   await prisma.passengerSession.updateMany({
-    where: { passengerId, revokedAt: null },
+    where: { passengerId, OR: [{ revokedAt: null }, { revokedAt: { isSet: false } }] },
     data: { revokedAt: new Date() },
   });
 }
@@ -199,10 +256,10 @@ export async function createVerificationProof(input: {
   bookingId?: string | null;
   loginAttemptId?: string | null;
   resetAttemptId?: string | null;
-}) {
+}, db: Pick<typeof prisma, "passengerVerificationProof"> = prisma) {
   const proofToken = createOpaqueToken();
   const expiresAt = new Date(Date.now() + OTP_PROOF_TTL_MS);
-  await prisma.passengerVerificationProof.create({
+  await db.passengerVerificationProof.create({
     data: {
       proofTokenHash: hashSecret(proofToken),
       passengerId: input.passengerId || null,
@@ -212,6 +269,7 @@ export async function createVerificationProof(input: {
       loginAttemptId: input.loginAttemptId || null,
       resetAttemptId: input.resetAttemptId || null,
       expiresAt,
+      consumedAt: null,
     },
   });
   return { proofToken, expiresAt };

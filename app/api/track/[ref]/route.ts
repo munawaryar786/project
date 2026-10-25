@@ -1,99 +1,59 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { getPassengerFromRequest } from "@/lib/passenger-auth";
+import { verifyTrackingToken } from "@/lib/tracking-token";
 
-/**
- * GET /api/track/[ref]
- * Customer booking tracking by reference number
- */
+const RefSchema = z.string().trim().toUpperCase().regex(/^[A-Z0-9-]{6,40}$/);
+const TokenSchema = z.string().min(40).max(512);
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ ref: string }> }
 ) {
   try {
-    const { ref } = await params;
-    const bookingRef = ref.toUpperCase();
-
+    const parsedRef = RefSchema.safeParse((await params).ref);
+    if (!parsedRef.success) return NextResponse.json({ error: "Tracking link not found" }, { status: 404 });
     const booking = await prisma.booking.findUnique({
-      where: { bookingRef },
+      where: { bookingRef: parsedRef.data },
       select: {
-        id: true,
-        bookingRef: true,
-        status: true,
-        serviceType: true,
-        pickupAddress: true,
-        dropoffAddress: true,
-        pickupLat: true,
-        pickupLng: true,
-        dropoffLat: true,
-        dropoffLng: true,
-        scheduledDate: true,
-        scheduledTime: true,
-        passengerCount: true,
-        wheelchairNeeded: true,
-        customerName: true,
-        customerPhone: true,
-        paymentMethod: true,
-        estimatedPrice: true,
-        dispatchStatus: true,
-        createdAt: true,
-        driver: {
+        id: true, passengerId: true, bookingRef: true, status: true, serviceType: true,
+        pickupAddress: true, dropoffAddress: true, scheduledDate: true, scheduledTime: true,
+        dispatchStatus: true, driver: {
           select: {
-            id: true,
-            fullName: true,
-            phone: true,
-            currentLat: true,
-            currentLng: true,
-            lastLocationUpdate: true,
-            isOnTrip: true,
-            vehiclePlate: true,
-            vehicleType: true,
+            fullName: true, currentLat: true, currentLng: true,
+            lastLocationUpdate: true, isOnTrip: true, vehiclePlate: true, vehicleType: true,
           },
         },
       },
     });
+    if (!booking) return NextResponse.json({ error: "Tracking link not found" }, { status: 404 });
 
-    if (!booking) {
-      return NextResponse.json(
-        { error: "Booking not found. Please check your reference number." },
-        { status: 404 }
-      );
+    const passenger = await getPassengerFromRequest(request);
+    const tokenValue = request.nextUrl.searchParams.get("token");
+    const validToken = TokenSchema.safeParse(tokenValue).success &&
+      verifyTrackingToken(tokenValue!, booking.id);
+    if ((!passenger || passenger.id !== booking.passengerId) && !validToken) {
+      return NextResponse.json({ error: "Tracking link not found" }, { status: 404 });
     }
 
-    // Calculate status progress
-    const statusProgress = getStatusProgress(booking.status, booking.dispatchStatus);
-
-    // Determine if we can show driver location
-    const showDriverLocation = booking.driver &&
-      booking.dispatchStatus === "ACCEPTED" &&
-      booking.driver.isOnTrip;
-
+    const terminal = ["COMPLETED", "CANCELLED", "NO_SHOW"].includes(booking.status);
+    const showDriver = ["DRIVER_ENROUTE", "IN_PROGRESS"].includes(booking.status) && booking.driver?.isOnTrip;
     return NextResponse.json({
       success: true,
       booking: {
         ref: booking.bookingRef,
         status: booking.status,
         serviceType: booking.serviceType,
-        pickupAddress: booking.pickupAddress,
-        dropoffAddress: booking.dropoffAddress,
-        pickupLat: booking.pickupLat,
-        pickupLng: booking.pickupLng,
-        dropoffLat: booking.dropoffLat,
-        dropoffLng: booking.dropoffLng,
+        pickupAddress: terminal ? undefined : booking.pickupAddress,
+        dropoffAddress: terminal ? undefined : booking.dropoffAddress,
         scheduledDate: booking.scheduledDate,
         scheduledTime: booking.scheduledTime,
-        passengerCount: booking.passengerCount,
-        wheelchairNeeded: booking.wheelchairNeeded,
-        customerName: booking.customerName,
-        paymentMethod: booking.paymentMethod,
-        estimatedPrice: booking.estimatedPrice,
         dispatchStatus: booking.dispatchStatus,
-        progress: statusProgress,
-        createdAt: booking.createdAt,
+        progress: getStatusProgress(booking.status, booking.dispatchStatus),
       },
-      driver: showDriverLocation ? {
-        id:  booking.driver!.id,
+      driver: showDriver ? {
         name: booking.driver!.fullName,
-        phone: booking.driver!.phone,
         lat: booking.driver!.currentLat,
         lng: booking.driver!.currentLng,
         lastUpdate: booking.driver!.lastLocationUpdate,
@@ -101,41 +61,19 @@ export async function GET(
         vehicleType: booking.driver!.vehicleType,
       } : null,
     });
-  } catch (error: any) {
-    console.error("❌ Track booking error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch booking details" },
-      { status: 500 }
-    );
+  } catch {
+    return NextResponse.json({ error: "Failed to fetch tracking status" }, { status: 500 });
   }
 }
 
 function getStatusProgress(status: string, dispatchStatus: string | null) {
-  const progressMap: Record<string, number> = {
-    // Booking status
-    PENDING: 10,
-    CONFIRMED: 30,
-    ASSIGNED: 50,
-    IN_PROGRESS: 70,
-    COMPLETED: 100,
-    CANCELLED: 0,
-
-    // Dispatch status (more granular)
-    NOT_STARTED: 20,
-    DRIVER_ASSIGNED: 40,
-    ACCEPTED: 50,
-    EN_ROUTE: 60,
-    ARRIVED: 70,
-    LOADING: 80,
-    IN_TRANSIT: 85,
-    ARRIVED_DESTINATION: 90,
-    DISPATCH_COMPLETED: 100,
+  const progress: Record<string, number> = {
+    PENDING: 10, CONFIRMED: 30, ASSIGNED: 50, DRIVER_ENROUTE: 60,
+    IN_PROGRESS: 70, COMPLETED: 100, CANCELLED: 0,
+    NOT_STARTED: 20, SEARCHING_DRIVER: 30, ACCEPTED: 50,
+    EN_ROUTE: 60, ARRIVED: 70, IN_TRANSIT: 85, DISPATCH_COMPLETED: 100,
   };
-
-  // Use dispatchStatus if available for more accurate progress
-  if (dispatchStatus && progressMap[dispatchStatus] !== undefined) {
-    return progressMap[dispatchStatus];
-  }
-
-  return progressMap[status] || 10;
+  return (dispatchStatus && progress[dispatchStatus] !== undefined)
+    ? progress[dispatchStatus]
+    : progress[status] ?? 10;
 }

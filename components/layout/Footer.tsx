@@ -4,11 +4,26 @@ import Link from "next/link";
 import BrandLogo from "@/components/shared/BrandLogo";
 import { PHONE_NUMBER, PHONE_RAW, WHATSAPP_URL } from "@/lib/constants";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { isCustomerServiceEnabled } from "@/lib/feature-flags";
 
-function FooterIcon({ kind }: { kind: "taxi" | "airport" | "accessible" | "senior" | "children" | "rental" | "location" | "phone" | "mail" | "message" }) {
+function FooterIcon({ kind }: { kind: "taxi" | "airport" | "accessible" | "senior" | "children" | "rental" | "driver" | "dispatch" | "location" | "phone" | "mail" | "message" }) {
   const className = "h-4 w-4";
 
   switch (kind) {
+
+    case "driver":
+      return (
+        <svg className={className} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <circle cx="10" cy="6" r="2.4" stroke="currentColor" strokeWidth="1.4" />
+          <path d="M4.5 16v-1a5.5 5.5 0 0 1 11 0v1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      );
+    case "dispatch":
+      return (
+        <svg className={className} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M4 9a6 6 0 0 1 12 0M4 9v4a2 2 0 0 0 2 2h1V9H5a1 1 0 0 0-1 1ZM16 9v4a2 2 0 0 1-2 2h-1V9h2a1 1 0 0 1 1 1ZM14 15c0 1-1.4 2-3 2h-1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
     case "location":
       return (
         <svg className={className} viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -90,18 +105,17 @@ function FooterIcon({ kind }: { kind: "taxi" | "airport" | "accessible" | "senio
 }
 
 const services = [
-  { nameKey: "services.taxi.title", href: "/taxi", code: "taxi" as const },
-  { nameKey: "services.airport.title", href: "/airport", code: "airport" as const },
-  { nameKey: "services.accessible.title", href: "/accessible-transport", code: "accessible" as const },
-  { nameKey: "services.children.title", href: "/children", code: "children" as const },
-  { nameKey: "services.rental.title", href: "/car-rental", code: "rental" as const },
-];
+  { serviceType: "standard", nameKey: "services.taxi.title", href: "/taxi", code: "taxi" as const },
+  { serviceType: "airport", nameKey: "services.airport.title", href: "/airport", code: "airport" as const },
+  { serviceType: "accessible", nameKey: "services.accessible.title", href: "/accessible-transport", code: "accessible" as const },
+  { serviceType: "children", nameKey: "services.children.title", href: "/children", code: "children" as const },
+  { serviceType: "rental", nameKey: "services.rental.title", href: "/car-rental", code: "rental" as const },
+].filter((service) => isCustomerServiceEnabled(service.serviceType));
 
 const company = [
   { nameKey: "nav.about", href: "/about" },
   { nameKey: "nav.faq", href: "/faq" },
   { nameKey: "nav.contact", href: "/contact" },
-  { nameKey: "nav.driverPortal", href: "/driver/login" },
   { nameKey: "footer.privacy", href: "/privacy" },
   { nameKey: "footer.terms", href: "/terms" },
   { nameKey: "footer.accessibility", href: "/gdpr" },
@@ -115,7 +129,7 @@ export default function Footer() {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(50,201,193,0.18),transparent_32%),radial-gradient(circle_at_bottom_right,rgba(27,119,138,0.2),transparent_28%)]" />
 
       <div className="container-main relative py-16 md:py-20">
-        <div className="grid gap-10 lg:grid-cols-[1.15fr_0.85fr_0.85fr_1fr]">
+        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[1.3fr_0.9fr_0.9fr_0.9fr_1.2fr]">
           <div>
             <BrandLogo variant="light" className="h-16 w-44" />
             <p className="mt-6 max-w-sm text-sm leading-7 text-white/62">
@@ -148,6 +162,29 @@ export default function Footer() {
                   <Link href={service.href} className="group flex items-center gap-3 text-sm text-white/66 transition hover:text-white">
                     <FooterIcon kind={service.code} />
                     <span className="font-medium">{t(service.nameKey)}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-semibold uppercase tracking-[0.28em] text-white/45">
+              {t("footer.driverOperations")}
+            </h4>
+            <ul className="mt-5 space-y-1">
+              {[
+                { href: "/driver/login", label: "nav.driverPortal", icon: "driver" as const },
+                { href: "/rental", label: "nav.rental", icon: "rental" as const },
+                { href: "/dispatch/login", label: "nav.dispatcherPortal", icon: "dispatch" as const },
+              ].map((item) => (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    className="group flex min-h-11 items-center gap-3 rounded-lg text-sm font-medium text-white/66 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-drivo-aqua"
+                  >
+                    <FooterIcon kind={item.icon} />
+                    <span>{t(item.label)}</span>
                   </Link>
                 </li>
               ))}

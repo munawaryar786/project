@@ -1,3 +1,4 @@
+import { authorizeAdmin } from "@/lib/security/authorization";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
@@ -8,19 +9,19 @@ const DriverCreateSchema = z.object({
   phone: z.string().trim().min(3),
   email: z.string().trim().email().optional().nullable().or(z.literal("")),
   licenseNumber: z.string().trim().optional().nullable(),
-  vehicleId: z.string().trim().optional().nullable(),
+  vehicleId: z.string().trim().regex(/^[a-f0-9]{24}$/i).optional().nullable(),
   vehicleType: z.string().trim().optional().nullable(),
   vehiclePlate: z.string().trim().optional().nullable(),
   password: z.string().min(6),
 });
 
 const DriverUpdateSchema = z.object({
-  driverId: z.string().trim().min(1),
+  driverId: z.string().trim().regex(/^[a-f0-9]{24}$/i),
   fullName: z.string().trim().min(2).optional(),
   phone: z.string().trim().min(3).optional(),
   email: z.string().trim().email().optional().nullable().or(z.literal("")),
   licenseNumber: z.string().trim().optional().nullable(),
-  vehicleId: z.string().trim().optional().nullable(),
+  vehicleId: z.string().trim().regex(/^[a-f0-9]{24}$/i).optional().nullable(),
   password: z.string().min(6).optional().or(z.literal("")),
   isOnTrip: z.boolean().optional(),
   isOnline: z.boolean().optional(),
@@ -53,7 +54,9 @@ async function getVehicleAssignment(vehicleId?: string | null) {
   };
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await authorizeAdmin(request);
+  if (!auth.ok) return auth.response;
   try {
     const drivers = await prisma.driver.findMany({
       orderBy: { createdAt: "desc" },
@@ -79,6 +82,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await authorizeAdmin(request);
+  if (!auth.ok) return auth.response;
   try {
     const body = await request.json();
     const parsed = DriverCreateSchema.safeParse(body);
@@ -140,6 +145,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
+  const auth = await authorizeAdmin(request);
+  if (!auth.ok) return auth.response;
   try {
     const body = await request.json();
     const parsed = DriverUpdateSchema.safeParse(body);

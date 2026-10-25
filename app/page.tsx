@@ -8,6 +8,8 @@ import WhatsAppFloat from "@/components/layout/WhatsAppFloat";
 import CookieBanner from "@/components/layout/CookieBanner";
 import { SERVICES, WHATSAPP_URL } from "@/lib/constants";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { formatNumber } from "@/lib/i18n/format";
+import { FEATURE_FLAGS, isCustomerServiceEnabled } from "@/lib/feature-flags";
 
 const HOME_IMAGES = {
   taxi: "/drivo-taxi-service.jpeg",
@@ -26,12 +28,12 @@ const HOME_IMAGES = {
 } as const;
 
 function Hero() {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const stats = [
-    ["2,400+", t("home.stats.riders")],
+    [`${formatNumber(2400, locale)}+`, t("home.stats.riders")],
     ["50+", t("home.stats.drivers")],
     ["15+", t("home.stats.vehicles")],
-    ["5", t("home.stats.services")],
+    [FEATURE_FLAGS.childrenTransport ? "5" : "4", t("home.stats.services")],
   ] as const;
 
   return (
@@ -66,9 +68,12 @@ function Hero() {
               {t("hero.subtitle")}
             </p>
 
-            <div className="flex w-full flex-col sm:w-auto sm:flex-row">
-              <Link href="/book" className="btn-primary min-h-[52px] w-full px-7 text-[16px] sm:w-auto">
-                {t("hero.bookNow")}
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+              <Link href="/book?service=accessible" className="btn-primary min-h-[52px] w-full px-7 text-[16px] sm:w-auto">
+                {t("hero.bookAccessible")}
+              </Link>
+              <Link href="/book?service=airport" className="btn-outline min-h-[52px] w-full border-white/25 bg-white/[0.08] px-7 text-[16px] text-white backdrop-blur-sm hover:bg-white/[0.12] hover:text-white sm:w-auto">
+                {t("hero.bookAirport")}
               </Link>
             </div>
           </div>
@@ -104,7 +109,7 @@ function Hero() {
 
                 <div className="min-w-0">
                   <div className="text-[15px] font-bold leading-snug text-white [hyphens:auto] [overflow-wrap:break-word] sm:text-[16px]">
-                    2,400+ {t("home.stats.riders")}
+                    {formatNumber(2400, locale)}+ {t("home.stats.riders")}
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] font-semibold uppercase tracking-[0.12em] text-drivo-aqua">
                     <span className="h-1.5 w-1.5 rounded-full bg-drivo-aqua" />
@@ -142,11 +147,11 @@ function Hero() {
 function ServicesSection() {
   const { t } = useLanguage();
   const services = [
-    { ...SERVICES[0], nameKey: "services.taxi.title", descKey: "services.taxi.desc", img: HOME_IMAGES.taxi },
-    { ...SERVICES[1], nameKey: "services.airport.title", descKey: "services.airport.desc", img: HOME_IMAGES.airport },
-    { ...SERVICES[2], nameKey: "services.accessible.title", descKey: "services.accessible.desc", img: HOME_IMAGES.accessible },
-    { ...SERVICES[3], nameKey: "services.children.title", descKey: "services.children.desc", img: HOME_IMAGES.children },
-  ];
+    { ...SERVICES[2], serviceType: "accessible", nameKey: "services.accessible.title", descKey: "services.accessible.desc", img: HOME_IMAGES.accessible },
+    { ...SERVICES[1], serviceType: "airport", nameKey: "services.airport.title", descKey: "services.airport.desc", img: HOME_IMAGES.airport },
+    { ...SERVICES[0], serviceType: "standard", nameKey: "services.taxi.title", descKey: "services.taxi.desc", img: HOME_IMAGES.taxi },
+    { ...SERVICES[3], serviceType: "children", nameKey: "services.children.title", descKey: "services.children.desc", img: HOME_IMAGES.children },
+  ].filter((service) => isCustomerServiceEnabled(service.serviceType));
 
   return (
     <section className="section bg-white" id="services">

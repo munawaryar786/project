@@ -1,8 +1,13 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { io } from "socket.io-client";
+import { formatEuro, formatMarketWallDateTime, formatNumber } from "@/lib/i18n/format";
+import { presentStatus } from "@/lib/i18n/status-catalog";
 
 interface Booking {
   id: string;
@@ -44,12 +49,23 @@ export default function AdminDashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState("");
+  const [loadError, setLoadError] = useState(false);
+  const [realtimeStatus, setRealtimeStatus] = useState<"connecting" | "connected" | "offline">("connecting");
 
   useEffect(() => {
     void fetchStats();
     const interval = setInterval(() => void fetchStats(), 10000);
     return () => clearInterval(interval);
   }, [locale]);
+
+  useEffect(() => {
+    const socket = io("/admin", { path: "/socket.io", transports: ["websocket"], withCredentials: true, reconnection: true });
+    socket.on("connect", () => setRealtimeStatus("connected"));
+    socket.on("disconnect", () => setRealtimeStatus("offline"));
+    socket.on("connect_error", () => setRealtimeStatus("offline"));
+    ["dispatch.updated", "booking.updated", "trip.updated", "notification.created"].forEach((event) => socket.on(event, () => void fetchStats()));
+    return () => { socket.removeAllListeners(); socket.close(); };
+  }, []);
 
   const safeJson = async (res: Response) => {
     const text = await res.text();
@@ -63,12 +79,15 @@ export default function AdminDashboard() {
 
   const fetchStats = async () => {
     try {
-      const res = await fetch("/api/admin/stats", { cache: "no-store" });
+      const res = await csrfFetch("admin", "/api/admin/stats", { cache: "no-store" });
+      if (!res.ok) throw new Error("admin-stats-unavailable");
       const data = (await safeJson(res)) as DashboardStats;
       setStats(data);
       setLastUpdated(new Date().toLocaleTimeString(locale));
+      setLoadError(false);
     } catch (err) {
       console.error("Failed to fetch stats:", err);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -88,7 +107,7 @@ export default function AdminDashboard() {
         recentBookings.filter((b) => b.dispatchStatus === "SEARCHING_DRIVER").length,
       noDriverAvailable:
         stats?.noDriverAvailable ??
-        recentBookings.filter((b) => b.dispatchStatus === "NO_DRIVER_AVAILABLE").length,
+        recentBookings.filter((b) => ["NO_DRIVER_AVAILABLE", "DISPATCH_EXHAUSTED"].includes(b.dispatchStatus || "")).length,
       todayRevenue:
         stats?.todayRevenue ??
         recentBookings
@@ -120,6 +139,7 @@ export default function AdminDashboard() {
 
   return (
     <div>
+      {loadError && <p role="alert" className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{t("m4.admin.statsUnavailable")}</p>}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black tracking-tight text-drivo-navy">{t("adminDashboard.title")}</h1>
@@ -151,17 +171,17 @@ export default function AdminDashboard() {
             <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/70 text-xs font-black tracking-[0.2em]">
               {card.code}
             </div>
-            <div className="text-2xl font-black">{card.value}</div>
+            <div className="text-2xl font-black">{formatNumber(Number(card.value), locale)}</div>
             <div className="mt-1 text-xs font-medium">{card.label}</div>
           </div>
         ))}
       </div>
 
       <div className="mb-8 grid gap-4 md:grid-cols-4">
-        <MiniCard label={t("adminDashboard.financial.onlineDrivers")} value={stats?.onlineDrivers ?? "—"} code="ON" />
-        <MiniCard label={t("adminDashboard.financial.noDriverAvailable")} value={computed.noDriverAvailable} code="ND" />
-        <MiniCard label={t("adminDashboard.financial.cancelledBookings")} value={stats?.cancelledBookings || 0} code="CN" />
-        <MiniCard label={t("adminDashboard.financial.todayRevenue")} value={`€${computed.todayRevenue.toFixed(2)}`} code="RV" />
+        <MiniCard label={t("adminDashboard.financial.onlineDrivers")} value={stats?.onlineDrivers == null ? "—" : formatNumber(stats.onlineDrivers, locale)} code="ON" />
+        <MiniCard label={t("adminDashboard.financial.noDriverAvailable")} value={formatNumber(computed.noDriverAvailable, locale)} code="ND" />
+        <MiniCard label={t("adminDashboard.financial.cancelledBookings")} value={formatNumber(stats?.cancelledBookings || 0, locale)} code="CN" />
+        <MiniCard label={t("adminDashboard.financial.todayRevenue")} value={formatEuro(computed.todayRevenue, locale)} code="RV" />
       </div>
 
       <div className="overflow-hidden rounded-[30px] border border-drivo-border bg-white shadow-soft">
@@ -210,8 +230,7 @@ export default function AdminDashboard() {
                       </div>
                     </td>
                     <td className="p-3 whitespace-nowrap text-drivo-text-secondary">
-                      <div>{booking.scheduledDate}</div>
-                      <div className="text-xs text-drivo-text-muted">{booking.scheduledTime}</div>
+                      <div>{formatMarketWallDateTime(booking.scheduledDate, booking.scheduledTime, locale) || t("common.unavailable")}</div>
                     </td>
                     <td className="max-w-[220px] truncate p-3 text-drivo-text-secondary">
                       {booking.pickupAddress} → {booking.dropoffAddress}
@@ -251,7 +270,7 @@ function MiniCard({ label, value, code }: { label: string; value: string | numbe
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const { t } = useLanguage();
+  const { locale } = useLanguage();
   const styles: Record<string, string> = {
     PENDING: "bg-drivo-amber-light text-drivo-amber",
     CONFIRMED: "bg-drivo-blue-light text-drivo-blue",
@@ -263,25 +282,27 @@ function StatusBadge({ status }: { status: string }) {
     NO_SHOW: "bg-gray-100 text-gray-700",
   };
 
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${styles[status] || "bg-gray-100 text-gray-600"}`}>{t(`status.${status}`, status)}</span>;
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${styles[status] || "bg-gray-100 text-gray-600"}`}>{presentStatus("booking", status, locale)}</span>;
 }
 
 function DispatchBadge({ status }: { status?: string | null }) {
-  const { t } = useLanguage();
+  const { locale } = useLanguage();
   const value = status || "NOT_STARTED";
   const styles: Record<string, string> = {
     NOT_STARTED: "bg-gray-100 text-gray-600",
     SEARCHING_DRIVER: "bg-drivo-blue-light text-drivo-blue",
+    DISPATCHING: "bg-yellow-50 text-yellow-700",
     ACCEPTED: "bg-drivo-green-light text-drivo-teal",
     NO_DRIVER_AVAILABLE: "bg-red-50 text-red-700",
+    DISPATCH_EXHAUSTED: "bg-red-50 text-red-700",
   };
 
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${styles[value] || "bg-gray-100 text-gray-600"}`}>{t(`dispatch.${value}`, value)}</span>;
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${styles[value] || "bg-gray-100 text-gray-600"}`}>{presentStatus("dispatch", value, locale)}</span>;
 }
 
 function ServiceBadge({ type }: { type: string }) {
   const { t } = useLanguage();
-  return <span className="text-xs font-semibold text-drivo-text">{t(`service.${type}`, type)}</span>;
+  return <span className="text-xs font-semibold text-drivo-text">{t(`service.${type}`)}</span>;
 }
 
 function PaymentBadge({ method }: { method: string }) {
@@ -292,5 +313,5 @@ function PaymentBadge({ method }: { method: string }) {
     INVOICE: "bg-drivo-blue-light text-drivo-blue",
   };
 
-  return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${styles[method] || "bg-gray-100 text-gray-600"}`}>{t(`payment.${method}`, method)}</span>;
+  return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${styles[method] || "bg-gray-100 text-gray-600"}`}>{t(`payment.${method}`)}</span>;
 }

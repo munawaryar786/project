@@ -1,3 +1,4 @@
+import { authorizeAdmin } from "@/lib/security/authorization";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -52,7 +53,9 @@ function vehicleData(body: z.infer<typeof VehicleSchema>) {
   };
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await authorizeAdmin(request);
+  if (!auth.ok) return auth.response;
   try {
     const vehicles = await prisma.vehicle.findMany({
       orderBy: { createdAt: "desc" },
@@ -78,6 +81,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await authorizeAdmin(request);
+  if (!auth.ok) return auth.response;
   try {
     const body = await request.json();
     const parsed = VehicleSchema.safeParse(body);

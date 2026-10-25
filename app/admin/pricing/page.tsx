@@ -1,7 +1,10 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { useEffect, useMemo, useState } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 
 type PricingForm = {
   baseFare: string;
@@ -108,7 +111,7 @@ function toMoney(value: unknown) {
 
 async function safeJson(res: Response) {
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || "Request failed");
+  if (!res.ok) throw new Error("REQUEST_FAILED");
   return data;
 }
 
@@ -139,9 +142,9 @@ export default function AdminPricingPage() {
 
     try {
       const [pricingData, profilesData, commissionsData] = await Promise.all([
-        fetch("/api/admin/pricing", { cache: "no-store" }).then(safeJson),
-        fetch("/api/admin/pricing/profiles", { cache: "no-store" }).then(safeJson),
-        fetch("/api/admin/commissions", { cache: "no-store" }).then(safeJson),
+        csrfFetch("admin", "/api/admin/pricing", { cache: "no-store" }).then(safeJson),
+        csrfFetch("admin", "/api/admin/pricing/profiles", { cache: "no-store" }).then(safeJson),
+        csrfFetch("admin", "/api/admin/commissions", { cache: "no-store" }).then(safeJson),
       ]);
 
       const loadedPricing = pricingData.pricing || {};
@@ -210,7 +213,7 @@ export default function AdminPricingPage() {
         }))
       );
     } catch (err: any) {
-      setError(err?.message || "Failed to load pricing configuration.");
+      setError("m4.pricing.loadFailed");
     } finally {
       setLoading(false);
     }
@@ -219,20 +222,20 @@ export default function AdminPricingPage() {
   function validatePricing() {
     for (const field of pricingFields) {
       const value = Number(pricing[field.key] || 0);
-      if (!Number.isFinite(value) || value < 0) return `${field.label} must be zero or higher.`;
+      if (!Number.isFinite(value) || value < 0) return `INVALID_AMOUNT:${field.key}`;
     }
 
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(pricing.nightStartTime)) {
-      return "Night start must use HH:mm format.";
+      return "m4.pricing.invalidNightStart";
     }
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(pricing.nightEndTime)) {
-      return "Night end must use HH:mm format.";
+      return "m4.pricing.invalidNightEnd";
     }
 
     for (const tier of tiers) {
-      if (!tier.label.trim()) return "Each long-distance tier needs a label.";
+      if (!tier.label.trim()) return "m4.pricing.tierLabelRequired";
       if (numberValue(tier.maxKm) > 0 && numberValue(tier.maxKm) <= numberValue(tier.minKm)) {
-        return "Tier max km must be greater than min km.";
+        return "m4.pricing.tierRangeInvalid";
       }
     }
 
@@ -282,13 +285,13 @@ export default function AdminPricingPage() {
         })),
       };
 
-      const data = await fetch("/api/admin/pricing", {
+      const data = await csrfFetch("admin", "/api/admin/pricing", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       }).then(safeJson);
 
-      setMessage("Pricing configuration saved.");
+      setMessage("m4.pricing.savedPricing");
       setTiers((data.tiers || []).map((tier: any) => ({
         id: tier.id,
         key: tier.key,
@@ -300,7 +303,7 @@ export default function AdminPricingPage() {
         active: Boolean(tier.active),
       })));
     } catch (err: any) {
-      setError(err?.message || "Failed to save pricing configuration.");
+      setError("m4.pricing.saveFailed");
     } finally {
       setSavingSection("");
     }
@@ -312,7 +315,7 @@ export default function AdminPricingPage() {
     setMessage("");
 
     try {
-      const data = await fetch("/api/admin/pricing/profiles", {
+      const data = await csrfFetch("admin", "/api/admin/pricing/profiles", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -341,9 +344,9 @@ export default function AdminPricingPage() {
           commissionRateOverride: toMoney(profile.commissionRateOverride),
         }))
       );
-      setMessage("Service pricing profiles saved.");
+      setMessage("m4.pricing.savedProfiles");
     } catch (err: any) {
-      setError(err?.message || "Failed to save service profiles.");
+      setError("m4.pricing.saveFailed");
     } finally {
       setSavingSection("");
     }
@@ -355,7 +358,7 @@ export default function AdminPricingPage() {
     setMessage("");
 
     try {
-      const data = await fetch("/api/admin/commissions", {
+      const data = await csrfFetch("admin", "/api/admin/commissions", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -379,9 +382,9 @@ export default function AdminPricingPage() {
           notes: commission.notes || "",
         }))
       );
-      setMessage("Commission settings saved.");
+      setMessage("m4.pricing.savedCommissions");
     } catch (err: any) {
-      setError(err?.message || "Failed to save commission settings.");
+      setError("m4.pricing.saveFailed");
     } finally {
       setSavingSection("");
     }
@@ -411,25 +414,37 @@ export default function AdminPricingPage() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">{t("adminPricing.title", "Pricing Configuration")}</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Configure fare rules, service profiles, and commissions for Pricing Engine V1.
+          {t("m4.pricing.intro")}
         </p>
+      <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-bold text-gray-900">{t("m4.pricing.children")}</p>
+          <p className="text-xs text-gray-500">
+            {t("m4.pricing.childrenHelp")}
+          </p>
+        </div>
+        <span className={`w-fit rounded-full px-3 py-1 text-xs font-black uppercase ${FEATURE_FLAGS.childrenTransport ? "bg-green-100 text-green-700" : "bg-gray-200 text-gray-700"}`}>
+          {FEATURE_FLAGS.childrenTransport ? t("m4.pricing.enabled") : t("m4.pricing.disabled")}
+        </span>
+      </div>
+
       </div>
 
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-          {error}
+          {error.startsWith("INVALID_AMOUNT:") ? t("m4.pricing.invalidAmount").replace("{field}", t(`m4.pricing.field.${error.slice(15)}`)) : t(error)}
         </div>
       )}
       {message && (
         <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-semibold text-green-700">
-          {message}
+          {t(message)}
         </div>
       )}
 
       <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Fare Settings</h2>
+            <h2 className="text-lg font-bold text-gray-900">{t("m4.pricing.fareSettings")}</h2>
             <p className="text-sm text-gray-500">{pricing.transparentPricingMessage}</p>
           </div>
           <button
@@ -438,7 +453,7 @@ export default function AdminPricingPage() {
             disabled={savingSection === "pricing"}
             className="rounded-xl bg-green-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
           >
-            {savingSection === "pricing" ? "Saving..." : "Save Pricing"}
+            {savingSection === "pricing" ? t("m4.pricing.saving") : t("m4.pricing.savePricing")}
           </button>
         </div>
 
@@ -446,25 +461,25 @@ export default function AdminPricingPage() {
           {pricingFields.map((field) => (
             <NumberField
               key={field.key}
-              label={field.label}
+              label={t(`m4.pricing.field.${field.key}`)}
               value={String(pricing[field.key] || "")}
               onChange={(value) => setPricing({ ...pricing, [field.key]: value })}
             />
           ))}
           <TextField
-            label="Night Start"
+            label={t("m4.pricing.nightStart")}
             value={pricing.nightStartTime}
             onChange={(value) => setPricing({ ...pricing, nightStartTime: value })}
             placeholder="22:00"
           />
           <TextField
-            label="Night End"
+            label={t("m4.pricing.nightEnd")}
             value={pricing.nightEndTime}
             onChange={(value) => setPricing({ ...pricing, nightEndTime: value })}
             placeholder="06:00"
           />
           <TextField
-            label="Customer Pricing Message"
+            label={t("m4.pricing.customerMessage")}
             value={pricing.transparentPricingMessage}
             onChange={(value) => setPricing({ ...pricing, transparentPricingMessage: value })}
           />
@@ -472,8 +487,8 @@ export default function AdminPricingPage() {
 
         <label className="mt-5 flex items-center justify-between gap-4 rounded-2xl border border-gray-200 bg-gray-50 p-4">
           <span>
-            <span className="block text-sm font-bold text-gray-900">Surge Enabled</span>
-            <span className="text-xs text-gray-500">Default is off. Enable only when Drivo decides to use surge pricing.</span>
+            <span className="block text-sm font-bold text-gray-900">{t("m4.pricing.surge")}</span>
+            <span className="text-xs text-gray-500">{t("m4.pricing.surgeHelp")}</span>
           </span>
           <input
             type="checkbox"
@@ -485,9 +500,9 @@ export default function AdminPricingPage() {
 
         <div className="mt-6">
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-black uppercase tracking-wide text-gray-500">Long Distance Pricing Tiers</h3>
+            <h3 className="text-sm font-black uppercase tracking-wide text-gray-500">{t("m4.pricing.tiers")}</h3>
             <button type="button" onClick={addTier} className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700">
-              Add Tier
+              {t("m4.pricing.addTier")}
             </button>
           </div>
           <div className="space-y-3">
@@ -495,11 +510,11 @@ export default function AdminPricingPage() {
               const index = tiers.findIndex((item) => item === tier);
               return (
                 <div key={tier.id || `${tier.label}-${tier.sortOrder}`} className="grid gap-3 rounded-2xl border border-gray-200 p-4 md:grid-cols-[1.2fr_.7fr_.7fr_.7fr_.5fr_auto]">
-                  <TextField label="Label" value={tier.label} onChange={(value) => updateTier(index, { label: value })} />
-                  <NumberField label="Min km" value={tier.minKm} onChange={(value) => updateTier(index, { minKm: value })} />
-                  <NumberField label="Max km" value={tier.maxKm} onChange={(value) => updateTier(index, { maxKm: value })} placeholder="No max" />
-                  <NumberField label="Rate / km" value={tier.ratePerKm} onChange={(value) => updateTier(index, { ratePerKm: value })} />
-                  <NumberField label="Order" value={tier.sortOrder} onChange={(value) => updateTier(index, { sortOrder: value })} step="1" />
+                  <TextField label={t("m4.pricing.label")} value={!tier.id && tier.label === "New tier" ? t("m4.pricing.newTier") : tier.label} onChange={(value) => updateTier(index, { label: value })} />
+                  <NumberField label={t("m4.pricing.minKm")} value={tier.minKm} onChange={(value) => updateTier(index, { minKm: value })} />
+                  <NumberField label={t("m4.pricing.maxKm")} value={tier.maxKm} onChange={(value) => updateTier(index, { maxKm: value })} placeholder={t("m4.pricing.noMax")} />
+                  <NumberField label={t("m4.pricing.rateKm")} value={tier.ratePerKm} onChange={(value) => updateTier(index, { ratePerKm: value })} />
+                  <NumberField label={t("m4.pricing.order")} value={tier.sortOrder} onChange={(value) => updateTier(index, { sortOrder: value })} step="1" />
                   <div className="flex items-end gap-3">
                     <label className="flex h-10 items-center gap-2 text-xs font-bold text-gray-600">
                       <input
@@ -507,14 +522,14 @@ export default function AdminPricingPage() {
                         checked={tier.active}
                         onChange={(event) => updateTier(index, { active: event.target.checked })}
                       />
-                      Active
+                      {t("m4.pricing.active")}
                     </label>
                     <button
                       type="button"
                       onClick={() => setTiers(tiers.filter((_, tierIndex) => tierIndex !== index))}
                       className="h-10 rounded-lg border border-red-200 px-3 text-xs font-bold text-red-600"
                     >
-                      Remove
+                      {t("m4.pricing.remove")}
                     </button>
                   </div>
                 </div>
@@ -527,8 +542,8 @@ export default function AdminPricingPage() {
       <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Service Pricing Profiles</h2>
-            <p className="text-sm text-gray-500">Future-ready overrides by service type.</p>
+            <h2 className="text-lg font-bold text-gray-900">{t("m4.pricing.profiles")}</h2>
+            <p className="text-sm text-gray-500">{t("m4.pricing.profilesHelp")}</p>
           </div>
           <button
             type="button"
@@ -536,7 +551,7 @@ export default function AdminPricingPage() {
             disabled={savingSection === "profiles"}
             className="rounded-xl bg-green-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
           >
-            {savingSection === "profiles" ? "Saving..." : "Save Profiles"}
+            {savingSection === "profiles" ? t("m4.pricing.saving") : t("m4.pricing.saveProfiles")}
           </button>
         </div>
 
@@ -554,15 +569,15 @@ export default function AdminPricingPage() {
                     checked={profile.active}
                     onChange={(event) => updateProfile(index, { active: event.target.checked })}
                   />
-                  Active
+                  {t("m4.pricing.active")}
                 </label>
               </div>
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                <NumberField label="Service Fee" value={profile.serviceFee} onChange={(value) => updateProfile(index, { serviceFee: value })} />
-                <NumberField label="Base Override" value={profile.baseFareOverride} onChange={(value) => updateProfile(index, { baseFareOverride: value })} placeholder="Default" />
-                <NumberField label="Distance Override" value={profile.distanceRateOverride} onChange={(value) => updateProfile(index, { distanceRateOverride: value })} placeholder="Default" />
-                <NumberField label="Minimum Override" value={profile.minimumFareOverride} onChange={(value) => updateProfile(index, { minimumFareOverride: value })} placeholder="Default" />
-                <NumberField label="Commission Override %" value={profile.commissionRateOverride} onChange={(value) => updateProfile(index, { commissionRateOverride: value })} placeholder="Default" />
+                <NumberField label={t("m4.pricing.serviceFee")} value={profile.serviceFee} onChange={(value) => updateProfile(index, { serviceFee: value })} />
+                <NumberField label={t("m4.pricing.baseOverride")} value={profile.baseFareOverride} onChange={(value) => updateProfile(index, { baseFareOverride: value })} placeholder={t("m4.pricing.default")} />
+                <NumberField label={t("m4.pricing.distanceOverride")} value={profile.distanceRateOverride} onChange={(value) => updateProfile(index, { distanceRateOverride: value })} placeholder={t("m4.pricing.default")} />
+                <NumberField label={t("m4.pricing.minimumOverride")} value={profile.minimumFareOverride} onChange={(value) => updateProfile(index, { minimumFareOverride: value })} placeholder={t("m4.pricing.default")} />
+                <NumberField label={t("m4.pricing.commissionOverride")} value={profile.commissionRateOverride} onChange={(value) => updateProfile(index, { commissionRateOverride: value })} placeholder={t("m4.pricing.default")} />
               </div>
             </div>
           ))}
@@ -572,8 +587,8 @@ export default function AdminPricingPage() {
       <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">Commission Settings</h2>
-            <p className="text-sm text-gray-500">Launch recommendation is 10-15%.</p>
+            <h2 className="text-lg font-bold text-gray-900">{t("m4.pricing.commissions")}</h2>
+            <p className="text-sm text-gray-500">{t("m4.pricing.commissionHelp")}</p>
           </div>
           <button
             type="button"
@@ -581,24 +596,24 @@ export default function AdminPricingPage() {
             disabled={savingSection === "commissions"}
             className="rounded-xl bg-green-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
           >
-            {savingSection === "commissions" ? "Saving..." : "Save Commissions"}
+            {savingSection === "commissions" ? t("m4.pricing.saving") : t("m4.pricing.saveCommissions")}
           </button>
         </div>
 
         <div className="space-y-3">
           {commissions.map((commission, index) => (
             <div key={commission.key} className="grid gap-3 rounded-2xl border border-gray-200 p-4 lg:grid-cols-[.8fr_1fr_.7fr_1.4fr_auto]">
-              <TextField label="Scope" value={commission.scope.replaceAll("_", " ")} onChange={() => {}} disabled />
-              <TextField label="Override ID" value={commission.scopeId} onChange={(value) => updateCommission(index, { scopeId: value })} placeholder="default / driver id / fleet id / service code" />
-              <NumberField label="Commission %" value={commission.commissionRate} onChange={(value) => updateCommission(index, { commissionRate: value })} />
-              <TextField label="Notes" value={commission.notes} onChange={(value) => updateCommission(index, { notes: value })} />
+              <TextField label={t("m4.pricing.scope")} value={t(`m4.pricing.scope.${commission.scope}`)} onChange={() => {}} disabled />
+              <TextField label={t("m4.pricing.overrideId")} value={commission.scopeId} onChange={(value) => updateCommission(index, { scopeId: value })} placeholder={t("m4.pricing.overridePlaceholder")} />
+              <NumberField label={t("m4.pricing.commission")} value={commission.commissionRate} onChange={(value) => updateCommission(index, { commissionRate: value })} />
+              <TextField label={t("m4.pricing.notes")} value={commission.notes} onChange={(value) => updateCommission(index, { notes: value })} />
               <label className="flex items-end gap-2 pb-2 text-xs font-bold text-gray-600">
                 <input
                   type="checkbox"
                   checked={commission.active}
                   onChange={(event) => updateCommission(index, { active: event.target.checked })}
                 />
-                Active
+                {t("m4.pricing.active")}
               </label>
             </div>
           ))}

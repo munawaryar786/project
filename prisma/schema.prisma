@@ -58,6 +58,8 @@ model Booking {
   waitingDuration                 String?
   customWaitingDuration           String?
   scheduledRide                   Boolean  @default(false)
+  pickupAt                        DateTime?
+  marketTimezone                  String?  @default("Europe/Bratislava")
   recurrence                      String?
   recurrenceCustom                String?
   childFullName                   String?
@@ -100,6 +102,8 @@ model Booking {
   cashAgreed    Boolean @default(false)
 
   sourceDomain String?
+  bookingSource String @default("WEB")
+  createdByDispatchOperatorId String? @db.ObjectId
 
   estimatedPrice        Float?
   distanceKm            Float?
@@ -127,6 +131,11 @@ model Booking {
 
   otps    OTP[]
   earning DriverEarning?
+  cashCollection CashCollection?
+  paymentOperations PaymentOperation[]
+  publicOperations PublicBookingOperation[]
+  ledgerEntries DriverLedgerEntry[]
+  rideRequests RideRequest[]
 
   @@index([status])
   @@index([passengerId])
@@ -135,11 +144,69 @@ model Booking {
   @@index([driverId])
   @@index([dispatchStatus])
   @@index([createdAt])
+  @@index([pickupAt])
+  @@index([bookingSource, createdAt])
+  @@index([createdByDispatchOperatorId, createdAt])
+}
+
+// A public booking intent is issued before submission. Its unique string _id is
+// the idempotency key; it is not an access credential. Expiry is checked by the
+// application. A MongoDB TTL index on cleanupAt is a separate release step.
+model PublicBookingOperation {
+  id String @id @map("_id")
+  scope String
+  passengerId String? @db.ObjectId
+  guestCredentialHash String?
+  requestFingerprint String?
+  state String @default("RESERVED")
+  leaseToken String @default("")
+  leaseUntil DateTime?
+  accessVersion Int @default(0)
+  bookingId String? @db.ObjectId
+  booking Booking? @relation(fields: [bookingId], references: [id])
+  issuedAt DateTime @default(now())
+  recoveryExpiresAt DateTime
+  cleanupAt DateTime
+  revokedAt DateTime?
+  updatedAt DateTime @updatedAt
+
+  @@index([passengerId, state, recoveryExpiresAt])
+  @@index([state, leaseUntil])
+  // TTL on cleanupAt is managed as an explicit MongoDB index in the approved
+  // future rollout; a regular Prisma index here would conflict with it.
+  @@map("public_booking_operations")
 }
 
 // ============================================
 // PASSENGERS
 // ============================================
+// Explicit passenger-owned, privacy-minimized journey templates.
+model SavedRoute {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  passengerId   String   @db.ObjectId
+  passenger     Passenger @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+  fingerprint   String
+  label         String
+  serviceType   String
+  pickupAddress String
+  dropoffAddress String
+  pickupLat     Float?
+  pickupLng     Float?
+  dropoffLat    Float?
+  dropoffLng    Float?
+  passengerCount Int
+  smallBags     Int @default(0)
+  largeBags     Int @default(0)
+  luggageType   String @default("NONE")
+  airline       String?
+  waitAndGreet  Boolean @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([passengerId, fingerprint])
+  @@index([passengerId, updatedAt])
+}
+
 model Passenger {
   id               String  @id @default(auto()) @map("_id") @db.ObjectId
   phone            String  @unique
@@ -153,8 +220,11 @@ model Passenger {
   status           String  @default("ACTIVE")
   lastLoginAt      DateTime?
   passwordResetAt  DateTime?
+  authVersion      Int     @default(0)
 
   bookings Booking[]
+  savedRoutes SavedRoute[]
+  autoSaveRoutes Boolean @default(false)
   otps     PassengerOtp[]
   sessions PassengerSession[]
   trustedDevices PassengerTrustedDevice[]
@@ -291,14 +361,24 @@ model Driver {
   currentLat         Float?
   currentLng         Float?
   lastLocationUpdate DateTime?
+  lastLocationClientAt DateTime?
+  lastLocationReceivedAt DateTime?
+  lastLocationAccuracy Float?
+  lastLocationSpeed Float?
+  lastLocationHeading Float?
+  lastHeartbeatAt DateTime?
   isOnTrip           Boolean   @default(false)
   isOnline           Boolean   @default(false)
 
   passwordHash String?
+  authVersion Int @default(0)
 
   bookings        Booking[]
   locationHistory DriverLocation[]
   earnings        DriverEarning[]
+  cashCollections CashCollection[]
+  ledgerEntries   DriverLedgerEntry[]
+  rideRequests    RideRequest[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -307,6 +387,7 @@ model Driver {
   @@index([isOnline])
   @@index([isOnTrip])
   @@index([vehicleId])
+  @@index([lastHeartbeatAt])
 }
 
 // ============================================
@@ -348,7 +429,65 @@ model DriverEarning {
   @@map("driver_earnings")
 }
 
+// Authoritative evidence that the assigned Driver confirmed receipt of the
+// full server-priced CASH fare when starting a trip. Customer cashAgreed is
+// only pre-dispatch consent and is intentionally not financial evidence.
+model CashCollection {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  bookingId String @unique @db.ObjectId
+  driverId  String @db.ObjectId
+
+  booking Booking @relation(fields: [bookingId], references: [id])
+  driver  Driver  @relation(fields: [driverId], references: [id])
+
+  amountMinor Int
+  currency    String @default("EUR")
+  status      String @default("COLLECTED")
+  source      String @default("DRIVER_TRIP_START")
+
+  assignmentAcceptedAt DateTime?
+  confirmedAt           DateTime
+  operationKey          String   @unique
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([driverId, confirmedAt])
+  @@map("cash_collections")
+}
+
 // ============================================
+// ============================================
+// IMMUTABLE DRIVER EARNINGS LEDGER
+// ============================================
+model DriverLedgerEntry {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  driverId  String @db.ObjectId
+  bookingId String? @db.ObjectId
+  driver    Driver  @relation(fields: [driverId], references: [id])
+  booking   Booking? @relation(fields: [bookingId], references: [id])
+
+  entryType             String
+  currency              String
+  grossAmountMinor      Int?
+  commissionAmountMinor Int?
+  netAmountMinor        Int
+  referenceType         String
+  referenceId           String?
+  idempotencyKey        String @unique
+  descriptionCode       String?
+  metadata              Json?
+  effectiveAt           DateTime
+  createdAt             DateTime @default(now())
+
+  @@index([driverId, effectiveAt])
+  @@index([bookingId])
+  @@index([referenceId])
+  @@index([entryType])
+  @@map("driver_ledger_entries")
+}
+
 // DRIVER LOCATION HISTORY
 // ============================================
 model DriverLocation {
@@ -375,6 +514,8 @@ model RideRequest {
 
   bookingId String @db.ObjectId
   driverId  String @db.ObjectId
+  booking Booking @relation(fields: [bookingId], references: [id])
+  driver Driver @relation(fields: [driverId], references: [id])
 
   status String @default("PENDING")
 
@@ -388,7 +529,64 @@ model RideRequest {
   @@index([driverId])
   @@index([status])
   @@index([expiresAt])
+  // Historical expired offers are preserved.
+  // Active-offer uniqueness requires a managed MongoDB partial index.
+  @@index([bookingId, driverId])
   @@map("ride_requests")
+}
+
+// Transactional domain event foundation. A relay/worker is intentionally deferred.
+model OutboxEvent {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  eventType String
+  aggregateType String
+  aggregateId String
+  idempotencyKey String @unique
+  payload Json
+  state String @default("PENDING")
+  attempts Int @default(0)
+  claimedAt DateTime?
+  lastError String?
+  nextAttemptAt DateTime?
+  createdAt DateTime @default(now())
+  publishedAt DateTime?
+
+  @@index([aggregateType, aggregateId])
+  @@index([state, createdAt])
+  @@index([state, nextAttemptAt, createdAt])
+  @@map("outbox_events")
+}
+
+model EmailDelivery {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  logicalKey  String   @unique
+  kind        String
+  recipient   String
+  status      String   @default("PENDING")
+  attempts    Int      @default(0)
+  lastError   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  sentAt      DateTime?
+
+  @@index([kind, status, createdAt])
+  @@index([status, createdAt])
+  @@map("email_deliveries")
+}
+model Notification {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  recipientType String
+  recipientId String
+  type String
+  data Json
+  dedupeKey String @unique
+  readAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([recipientType, recipientId, createdAt])
+  @@index([recipientType, recipientId, readAt])
+  @@map("notifications")
 }
 
 // ============================================
@@ -400,9 +598,187 @@ model AdminUser {
   passwordHash String
   fullName     String
   role         String @default("DISPATCHER")
+  authVersion  Int    @default(0)
 
   createdAt DateTime @default(now())
+  auditEvents AdminAuditEvent[]
 }
+
+// Dispatch staff are a distinct actor and never share Admin or Driver authority.
+model DispatchOperator {
+  id                  String   @id @default(auto()) @map("_id") @db.ObjectId
+  fullName            String
+  email               String   @unique
+  phone               String
+  normalizedPhone     String   @unique
+  passwordHash        String
+  status              String   @default("ACTIVE")
+  authVersion         Int      @default(0)
+  mustChangePassword  Boolean  @default(true)
+  lastLoginAt         DateTime?
+  createdByAdminId    String?  @db.ObjectId
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("dispatch_operators")
+}
+
+// Request receipts make phone-booking retries durable and operator-scoped.
+model DispatchBookingRequest {
+  id                       String   @id @default(auto()) @map("_id") @db.ObjectId
+  dispatchOperatorId       String   @db.ObjectId
+  idempotencyKeyHash       String
+  leaseToken               String   @default("")
+  bookingId                String?  @db.ObjectId
+  status                   String   @default("PROCESSING")
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@unique([dispatchOperatorId, idempotencyKeyHash])
+  @@index([bookingId])
+  @@index([status, createdAt])
+  @@map("dispatch_booking_requests")
+}
+
+model BookingPayment {
+  id                         String   @id @default(auto()) @map("_id") @db.ObjectId
+  bookingId                  String   @db.ObjectId
+  provider                   String   @default("STRIPE")
+  paymentMethod              String   @default("CARD")
+  status                     String   @default("PENDING")
+  emailStatus                String   @default("NOT_SENT")
+  amountMinor                Int
+  currency                   String   @default("EUR")
+  providerSessionId          String   @unique
+  providerPaymentId          String?
+  expiresAt                  DateTime
+  paidAt                     DateTime?
+  failedAt                   DateTime?
+  cancelledAt                DateTime?
+  createdByDispatchOperatorId String  @db.ObjectId
+  idempotencyKey             String   @unique
+  operationId                String?  @db.ObjectId
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  @@index([bookingId, status, createdAt])
+  @@index([status, expiresAt])
+  @@index([operationId])
+  @@map("booking_payments")
+}
+
+// One compare-and-set slot prevents concurrent creation of multiple payable sessions per booking.
+model BookingPaymentSlot {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  bookingId   String   @unique @db.ObjectId
+  sessionId   String   @default("")
+  leaseKey    String   @default("")
+  activeOperationId String? @db.ObjectId
+  generation Int @default(0)
+  leaseOwnerToken String?
+  leaseExpiresAt DateTime?
+  updatedAt   DateTime @updatedAt
+
+  @@map("booking_payment_slots")
+}
+
+// Shared durable Stripe Checkout creation record. providerSessionKey begins
+// with a unique operation placeholder and becomes the Stripe Session ID; a
+// nullable unique providerSessionId would be unsafe for MongoDB indexes.
+model PaymentOperation {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  bookingId String @db.ObjectId
+  booking Booking @relation(fields: [bookingId], references: [id])
+  actorId String @db.ObjectId
+  channel String
+  status String @default("RESERVED")
+  generation Int
+  requestScopeKey String @unique
+  providerRequestKey String @unique
+  providerSessionKey String @unique
+  providerSessionId String?
+  providerPaymentId String?
+  bookingRef String
+  amountMinor Int
+  currency String @default("EUR")
+  fareSnapshotHash String
+  providerRequestAt DateTime?
+  providerExpiresAt DateTime?
+  settledAt DateTime?
+  reconciliationCode String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([bookingId, generation])
+  @@index([bookingId, status, createdAt])
+  @@index([status, updatedAt])
+  @@map("payment_operations")
+}
+
+model PaymentWebhookEvent {
+  id                 String   @id @default(auto()) @map("_id") @db.ObjectId
+  provider           String   @default("STRIPE")
+  providerEventId    String   @unique
+  eventType          String
+  bookingId          String?  @db.ObjectId
+  paymentId          String?  @db.ObjectId
+  operationId        String?  @db.ObjectId
+  providerSessionId  String?
+  providerPaymentId  String?
+  amountMinor        Int?
+  currency           String?
+  paidAt             DateTime?
+  processingStatus   String   @default("RECEIVED")
+  safeFailureCode    String?
+  createdAt          DateTime @default(now())
+  processedAt        DateTime?
+
+  @@index([processingStatus, createdAt])
+  @@index([bookingId, createdAt])
+  @@index([operationId])
+  @@map("payment_webhook_events")
+}
+
+model DispatchAuditEvent {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  actorType   String
+  actorId     String   @db.ObjectId
+  action      String
+  targetType  String
+  targetId    String
+  bookingRef  String?
+  requestId   String   @unique
+  outcome     String
+  safeMetadata Json?
+  createdAt   DateTime @default(now())
+
+  @@index([actorType, actorId, createdAt])
+  @@index([targetType, targetId, createdAt])
+  @@index([action, createdAt])
+  @@map("dispatch_audit_events")
+}
+
+model AdminAuditEvent {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  adminId String @db.ObjectId
+  admin AdminUser @relation(fields: [adminId], references: [id])
+  action String
+  targetType String
+  targetId String
+  reason String
+  requestId String @unique
+  outcome String
+  safeMetadata Json?
+  createdAt DateTime @default(now())
+
+  @@index([adminId, createdAt])
+  @@index([targetType, targetId, createdAt])
+  @@index([action, createdAt])
+  @@map("admin_audit_events")
+}
+
 
 // ============================================
 // VEHICLES
@@ -448,10 +824,10 @@ model PricingSettings {
   tourismTransferPrice      Float   @default(0)
   weeklyVehicleRentalPrice  Float   @default(120)
   dailyVehicleRentalPrice   Float   @default(25)
-  minimumFare               Float   @default(5)
-  baseFare                  Float   @default(1.49)
-  distanceRate              Float   @default(1.09)
-  waitingRatePerMinute      Float   @default(0.19)
+  minimumFare               Float   @default(12.5)
+  baseFare                  Float   @default(0)
+  distanceRate              Float   @default(1)
+  waitingRatePerMinute      Float   @default(0.25)
   bookingFee                Float   @default(0)
   surgeEnabled              Boolean @default(false)
   airportPickupFee          Float   @default(3)

@@ -4,10 +4,10 @@ const prisma = new PrismaClient();
 
 const pricingDefaults = {
   key: "default",
-  baseFare: 1.49,
-  distanceRate: 1.09,
-  waitingRatePerMinute: 0.19,
-  minimumFare: 5.0,
+  baseFare: 0,
+  distanceRate: 1,
+  waitingRatePerMinute: 0.25,
+  minimumFare: 12.5,
   bookingFee: 0,
   surgeEnabled: false,
   airportPickupFee: 3.0,
@@ -23,9 +23,9 @@ const pricingDefaults = {
 };
 
 const distanceTiers = [
-  { key: "default:0-20", label: "0-20 km", minKm: 0, maxKm: 20, ratePerKm: 1.09, sortOrder: 1 },
-  { key: "default:20-50", label: "20-50 km", minKm: 20, maxKm: 50, ratePerKm: 1.0, sortOrder: 2 },
-  { key: "default:50-plus", label: "50+ km", minKm: 50, maxKm: null, ratePerKm: 0.95, sortOrder: 3 },
+  { key: "default:0-50", label: "0-50 km", minKm: 0, maxKm: 50, ratePerKm: 1, sortOrder: 1 },
+  { key: "default:50-100", label: "50-100 km", minKm: 50, maxKm: 100, ratePerKm: 0.9, sortOrder: 2 },
+  { key: "default:100-plus", label: "100+ km", minKm: 100, maxKm: null, ratePerKm: 0.85, sortOrder: 3 },
 ];
 
 const serviceProfiles = [
@@ -78,6 +78,11 @@ async function main() {
     where: { key: "default" },
     update: pricingDefaults,
     create: pricingDefaults,
+  });
+
+  await prisma.pricingDistanceTier.updateMany({
+    where: { configKey: "default" },
+    data: { active: false },
   });
 
   for (const tier of distanceTiers) {

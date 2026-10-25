@@ -6,6 +6,7 @@ import BrandLogo from "@/components/shared/BrandLogo";
 import LanguageSwitcher from "@/components/shared/LanguageSwitcher";
 import { WHATSAPP_URL } from "@/lib/constants";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { isCustomerServiceEnabled } from "@/lib/feature-flags";
 
 type IconProps = {
   className?: string;
@@ -67,11 +68,11 @@ function ServiceIcon({ kind, className = "h-5 w-5" }: { kind: "taxi" | "airport"
 }
 
 const SERVICES = [
-  { href: "/taxi", kind: "taxi" as const, title: "header.services.standard", desc: "services.taxi.desc" },
-  { href: "/airport", kind: "airport" as const, title: "header.services.airport", desc: "services.airport.desc" },
-  { href: "/accessible-transport", kind: "accessible" as const, title: "header.services.assistedAccessible", desc: "services.accessible.desc" },
-  { href: "/children", kind: "children" as const, title: "header.services.children", desc: "services.children.desc" },
-];
+  { serviceType: "standard", href: "/taxi", kind: "taxi" as const, title: "header.services.standard", desc: "services.taxi.desc" },
+  { serviceType: "airport", href: "/airport", kind: "airport" as const, title: "header.services.airport", desc: "services.airport.desc" },
+  { serviceType: "accessible", href: "/accessible-transport", kind: "accessible" as const, title: "header.services.assistedAccessible", desc: "services.accessible.desc" },
+  { serviceType: "children", href: "/children", kind: "children" as const, title: "header.services.children", desc: "services.children.desc" },
+].filter((service) => isCustomerServiceEnabled(service.serviceType));
 
 const NAV_LINKS = [
   { href: "/about", key: "nav.about" },
@@ -110,7 +111,7 @@ export default function Header({ forceSolid = false }: { forceSolid?: boolean })
     <header className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${shellTone}`}>
       <div className="container-main">
         <div className="flex h-[78px] items-center justify-between gap-2 xl:gap-3">
-          <Link href="/" aria-label="Drivo home" className="flex shrink-0 items-center">
+          <Link href="/" aria-label={t('nav.homeAccessible')} className="flex shrink-0 items-center">
             <BrandLogo variant={logoVariant} className="h-12 w-36 lg:h-11 lg:w-28 xl:h-14 xl:w-40" />
           </Link>
 
@@ -160,26 +161,6 @@ export default function Header({ forceSolid = false }: { forceSolid?: boolean })
 
           <div className="hidden shrink-0 items-center gap-1 lg:flex xl:gap-2">
             <LanguageSwitcher tone={solidHeader ? "dark" : "light"} />
-            <Link
-              href="/driver/login"
-              className={`inline-flex min-h-[42px] items-center rounded-full px-2 text-[13px] font-semibold transition xl:min-h-[46px] xl:px-4 xl:text-sm ${
-                solidHeader
-                  ? "text-drivo-text-secondary hover:bg-drivo-bg-soft hover:text-drivo-text"
-                  : "text-white hover:bg-white/10"
-              }`}
-            >
-              {t("nav.driverPortal")}
-            </Link>
-            <Link
-              href="/rental"
-              className={`inline-flex min-h-[42px] items-center rounded-full px-2 text-[13px] font-semibold transition xl:min-h-[46px] xl:px-4 xl:text-sm ${
-                solidHeader
-                  ? "text-drivo-text-secondary hover:bg-drivo-bg-soft hover:text-drivo-text"
-                  : "text-white hover:bg-white/10"
-              }`}
-            >
-              {t("nav.rental", "Rental")}
-            </Link>
             <Link href="/book" className="btn-primary min-h-[42px] rounded-full px-3 text-[13px] xl:min-h-[46px] xl:px-6 xl:text-sm">
               {t("cta.bookNow")}
               <ArrowRightIcon />
@@ -196,7 +177,7 @@ export default function Header({ forceSolid = false }: { forceSolid?: boolean })
                   ? "border-drivo-border bg-white text-drivo-text"
                   : "border-white/20 bg-white/10 text-white"
               }`}
-              aria-label="Toggle menu"
+              aria-label={open ? t('nav.closeMenu') : t('nav.openMenu')}
               aria-expanded={open}
             >
               <span className="flex flex-col gap-1.5">
@@ -213,7 +194,7 @@ export default function Header({ forceSolid = false }: { forceSolid?: boolean })
   <div className="fixed inset-0 z-[9999] h-[100dvh] w-screen bg-[#061D2B] lg:hidden">
     <div className="sticky top-0 z-[10000] border-b border-white/10 bg-[#061D2B] px-5">
       <div className="container-main flex h-[78px] items-center justify-between gap-3 px-0">
-        <Link href="/" aria-label="Drivo home" onClick={() => setOpen(false)} className="flex shrink-0 items-center">
+        <Link href="/" aria-label={t('nav.homeAccessible')} onClick={() => setOpen(false)} className="flex shrink-0 items-center">
           <BrandLogo variant="light" className="h-12 w-36" />
         </Link>
         <div className="flex items-center gap-2">
@@ -222,7 +203,7 @@ export default function Header({ forceSolid = false }: { forceSolid?: boolean })
             type="button"
             onClick={() => setOpen(false)}
             className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition hover:bg-white/15"
-            aria-label="Close menu"
+            aria-label={t('nav.closeMenu')}
           >
             <span className="relative h-4 w-4">
               <span className="absolute left-0 top-1/2 h-0.5 w-4 -translate-y-1/2 rotate-45 rounded-full bg-current" />
@@ -266,38 +247,10 @@ export default function Header({ forceSolid = false }: { forceSolid?: boolean })
           </Link>
         ))}
 
-        <Link
-          href="/driver/login"
-          onClick={() => setOpen(false)}
-          className="rounded-2xl px-3 py-3 text-sm font-medium text-white transition hover:bg-white/8"
-        >
-          {t("nav.driverPortal")}
-        </Link>
-        <Link
-          href="/rental"
-          onClick={() => setOpen(false)}
-          className="rounded-2xl px-3 py-3 text-sm font-medium text-white transition hover:bg-white/8"
-        >
-          {t("nav.rental", "Rental")}
-        </Link>
       </div>
 
       <div className="mt-4 flex flex-col gap-3 rounded-[28px] border border-white/10 bg-[#061F33] p-3 pb-6">
-        <Link
-          href="/driver/login"
-          onClick={() => setOpen(false)}
-          className="btn-outline w-full justify-center rounded-full border-white/15 bg-white/5 text-white hover:bg-white/10"
-        >
-          {t("nav.driverPortal")}
-        </Link>
 
-        <Link
-          href="/rental"
-          onClick={() => setOpen(false)}
-          className="btn-outline w-full justify-center rounded-full border-white/15 bg-white/5 text-white hover:bg-white/10"
-        >
-          {t("nav.rental", "Rental")}
-        </Link>
 
         <Link
           href="/book"

@@ -1,61 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { DRIVER_TRIP_SELECT, serializeDriverTrip } from "@/lib/driver-projections";
+import { isTerminalTripStatus } from "@/lib/driver-state";
+import { authorizeDriver } from "@/lib/security/authorization";
+import { bookingPickupAt } from "@/lib/scheduled-marketplace";
 
-/**
- * GET /api/driver/bookings?driverId=xxx
- * Get driver's assigned bookings
- */
 export async function GET(request: NextRequest) {
+  const auth = await authorizeDriver(request);
+  if (!auth.ok) return auth.response;
   try {
-    const driverId = request.nextUrl.searchParams.get("driverId");
-
-    if (!driverId) {
-      return NextResponse.json(
-        { error: "Driver ID required" },
-        { status: 400 }
-      );
-    }
-
     const bookings = await prisma.booking.findMany({
-      where: { driverId },
+      where: { driverId: auth.actor.id },
       orderBy: { scheduledDate: "asc" },
-      include: { earning: true },
+      select: { ...DRIVER_TRIP_SELECT, estimatedPrice: true, fareTotalFare: true, earning: { select: { driverAmount: true } } },
     });
-
+    const safeBookings = bookings.map((booking) => serializeDriverTrip(
+      booking.scheduledRide ? { ...booking, pickupAt: bookingPickupAt(booking) } : booking,
+    ));
     const today = new Date().toISOString().split("T")[0];
-
-    const todayBookings = bookings.filter(
-      (b: any) =>
-        b.scheduledDate === today &&
-        b.status !== "COMPLETED" &&
-        b.status !== "CANCELLED"
-    );
-
-    const upcomingBookings = bookings.filter(
-      (b: any) =>
-        b.scheduledDate > today &&
-        b.status !== "COMPLETED" &&
-        b.status !== "CANCELLED"
-    );
-
-    const completedBookings = bookings.filter(
-      (b: any) =>
-        b.status === "COMPLETED" ||
-        b.status === "CANCELLED"
-    );
-
+    const active = (b: { status: string }) => !isTerminalTripStatus(b.status);
     return NextResponse.json({
-      todayBookings,
-      upcomingBookings,
-      completedBookings,
+      todayBookings: safeBookings.filter((b) => b.scheduledDate <= today && active(b)),
+      upcomingBookings: safeBookings.filter((b) => b.scheduledDate > today && active(b)),
+      completedBookings: safeBookings.filter((b) => isTerminalTripStatus(b.status)),
       totalAssigned: bookings.length,
     });
-  } catch (error) {
-    console.error("❌ Driver bookings error:", error);
-
-    return NextResponse.json(
-      { error: "Failed to fetch bookings" },
-      { status: 500 }
-    );
+  } catch {
+    return NextResponse.json({ error: "Failed to fetch bookings" }, { status: 500 });
   }
 }

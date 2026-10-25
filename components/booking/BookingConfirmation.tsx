@@ -1,10 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { PaymentMethod } from "@/types/booking";
 import { EMAIL, PHONE_NUMBER, WHATSAPP_URL } from "@/lib/constants";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { presentMessage } from "@/lib/i18n/message-catalog";
+import { presentStatus } from "@/lib/i18n/status-catalog";
+import { formatMarketDate, formatMarketWallDateTime, formatNumber } from "@/lib/i18n/format";
 
 interface Props {
   passengers: number;
@@ -25,11 +30,45 @@ export default function BookingConfirmation({
   passengerProfile,
   bookingData,
 }: Props) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const [paying, setPaying] = useState(false);
+  const [routeSaving, setRouteSaving] = useState(false);
+  const [autoSaveRoutes, setAutoSaveRoutes] = useState(false);
+  const [routeSaved, setRouteSaved] = useState(false);
+  const [routeDismissed, setRouteDismissed] = useState(false);
+  const [routeError, setRouteError] = useState("");
+  useEffect(() => {
+    let active = true;
+    if (!passengerProfile) return;
+    csrfFetch("passenger", "/api/passenger/saved-routes", { cache: "no-store" })
+      .then(async (response) => { if (!response.ok) throw Error("PREFERENCES_UNAVAILABLE"); return response.json(); })
+      .then((data) => { if (active) setAutoSaveRoutes(data.autoSaveRoutes === true); })
+      .catch(() => { if (active) setRouteError("savedRoutes.error"); });
+    return () => { active = false; };
+  }, [passengerProfile]);
+
+  const saveRoute = async (saveAlways: boolean) => {
+    if (routeSaving || !passengerProfile) return;
+    setRouteSaving(true); setRouteError("");
+    try {
+      const response = await csrfFetch("passenger", "/api/passenger/saved-routes", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookingId, saveAlways }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        setRouteError(data.code === "ROUTE_LIMIT" ? "savedRoutes.limit" : "savedRoutes.error");
+        return;
+      }
+      setRouteSaved(true);
+      if (saveAlways) setAutoSaveRoutes(true);
+    } catch { setRouteError("savedRoutes.error"); }
+    finally { setRouteSaving(false); }
+  };
+  const checkoutRequestKey = useRef<string | null>(null);
   const [profileHidden, setProfileHidden] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
-  const [profileError, setProfileError] = useState("");
+  const [profileErrorCode, setProfileErrorCode] = useState("");
   const [profileDone, setProfileDone] = useState(Boolean(passengerProfile?.profileCompleted));
   const [profileForm, setProfileForm] = useState({
     fullName: String(passengerProfile?.fullName || bookingData?.customerName || ""),
@@ -38,16 +77,18 @@ export default function BookingConfirmation({
   });
 
   const handleStripePayment = async () => {
+    if (paying) return;
+    checkoutRequestKey.current ||= crypto.randomUUID();
     setPaying(true);
 
     try {
-      const res = await fetch("/api/payments/checkout", {
+      const res = await csrfFetch("passenger", "/api/payments/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           bookingId,
-          amount: estimatedPrice || 0,
           currency: "EUR",
+          requestKey: checkoutRequestKey.current,
         }),
       });
 
@@ -58,7 +99,10 @@ export default function BookingConfirmation({
         return;
       }
 
-      alert(`${t("payment.failed", "Payment failed")}: ${data.error || "Unknown error"}`);
+      if (data.paymentStatus === "EXPIRED" || data.paymentStatus === "FAILED") checkoutRequestKey.current = null;
+      const statusMessage = typeof data.paymentStatus === "string"
+        ? presentStatus('payment', data.paymentStatus, locale) : presentMessage(data.code || 'PAYMENT_NOT_CONFIRMED', locale);
+      alert(statusMessage);
       setPaying(false);
     } catch {
       alert(t("payment.error", "Payment error. Please try again."));
@@ -66,30 +110,26 @@ export default function BookingConfirmation({
     }
   };
 
-  const serviceType = String(bookingData?.serviceType || "").toLowerCase();
-  const customQuoteService = serviceType === "accessible" || serviceType === "senior";
   const showProfilePrompt = Boolean(passengerProfile) && !profileDone && !profileHidden;
 
   const handleCompleteProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    setProfileError("");
+    setProfileErrorCode("");
     setProfileLoading(true);
 
     try {
-      const res = await fetch("/api/passenger/profile/complete", {
+      const res = await csrfFetch("passenger", "/api/passenger/profile/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...profileForm, bookingId }),
       });
 
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || t("passenger.profileCompleteError"));
-      }
+      if (!res.ok) { setProfileErrorCode(typeof data?.code === 'string' ? data.code : 'SERVICE_UNAVAILABLE'); return; }
 
       setProfileDone(true);
-    } catch (err) {
-      setProfileError(err instanceof Error ? err.message : t("passenger.profileCompleteError"));
+    } catch {
+      setProfileErrorCode('SERVICE_UNAVAILABLE');
     } finally {
       setProfileLoading(false);
     }
@@ -102,7 +142,7 @@ export default function BookingConfirmation({
           ✅
         </div>
         <h2 className="text-[22px] font-bold text-drivo-text mb-2">
-          {t("confirmation.title")}
+          {t("booking.receivedTitle")}
         </h2>
         <p className="text-[14px] text-drivo-text-secondary mb-8">
           {t("confirmation.subtitle")}
@@ -112,23 +152,21 @@ export default function BookingConfirmation({
           <div className="print-header hidden print:block">
             <div className="print-logo">Drivo s.r.o.</div>
             <div className="print-subtitle">
-              Bratislava, Slovakia | VAT: SK2122572452
+              {t('public.bratislavaSlovakia')} | {t('public.vat')}: SK2122572452
             </div>
             <div className="print-subtitle">{EMAIL} | {PHONE_NUMBER}</div>
-            <h1 className="print-title mt-4">{t("confirmation.title")}</h1>
+            <h1 className="print-title mt-4">{t("booking.receivedTitle")}</h1>
           </div>
 
           <div className="bg-drivo-bg-soft rounded-2xl p-5 text-left mb-6 space-y-3 text-[14px]">
             <Detail label={t("confirmation.ref")} value={bookingRef} highlight />
             <Detail
               label={t("confirmation.service")}
-              value={(bookingData?.serviceType as string) || "Standard"}
+              value={t(`service.${String(bookingData?.serviceType || 'STANDARD').toUpperCase()}`)}
             />
             <Detail
               label={t("confirmation.date")}
-              value={`${(bookingData?.scheduledDate as string) || ""} ${
-                (bookingData?.scheduledTime as string) || ""
-              }`}
+              value={formatMarketWallDateTime(String(bookingData?.scheduledDate || ''), String(bookingData?.scheduledTime || ''), locale) || t('common.notAvailable')}
             />
             <Detail
               label={t("confirmation.from")}
@@ -138,10 +176,10 @@ export default function BookingConfirmation({
               label={t("confirmation.to")}
               value={(bookingData?.dropoffAddress as string) || ""}
             />
-            <Detail label={t("confirmation.passengers")} value={String(passengers)} />
+            <Detail label={t("confirmation.passengers")} value={formatNumber(passengers, locale)} />
             <Detail
               label={t("booking.luggage")}
-              value={(bookingData?.luggageType as string) || t("booking.luggageNone")}
+              value={t(`luggage.${String(bookingData?.luggageType || 'NONE').toUpperCase()}`)}
             />
             <Detail
               label={t("booking.wheelchair")}
@@ -168,7 +206,7 @@ export default function BookingConfirmation({
                 {getChildrenSummaryRows(bookingData).map((child, index) => (
                   <Detail
                     key={`${child.fullName}-${index}`}
-                    label={`Child ${index + 1}`}
+                    label={t('booking.childLabel').replace('{index}', String(index + 1))}
                     value={`${child.fullName || ""}${child.age ? `, ${child.age}` : ""}${child.specialRequirements ? ` - ${child.specialRequirements}` : ""}`}
                   />
                 ))}
@@ -194,7 +232,7 @@ export default function BookingConfirmation({
                 />
                 <Detail
                   label={t("booking.recurrenceType", "Recurrence")}
-                  value={String(bookingData?.recurrenceType || bookingData?.recurrence || "")}
+                  value={t(`booking.recurrence${String(bookingData?.recurrenceType || bookingData?.recurrence || 'ONE_TIME').toLowerCase().replace(/(^|_)([a-z])/g, (_match, _prefix, letter: string) => letter.toUpperCase())}`)}
                 />
               </>
             )}
@@ -217,23 +255,17 @@ export default function BookingConfirmation({
 
             <Detail
               label={t("booking.language")}
-              value={(bookingData?.languagePref as string) || "sk"}
+              value={t(`language.option.${String(bookingData?.languagePref || locale)}`)}
             />
             <Detail
               label={t("confirmation.payment")}
-              value={paymentMethod || "card"}
+              value={t(paymentMethod === 'cash' ? 'booking.paymentCash' : 'booking.paymentCard')}
             />
             <Detail
               label={t("confirmation.status")}
-              value={customQuoteService ? "Admin review required" : t("confirmation.verified")}
+              value={t("booking.receivedStatus")}
               highlight
             />
-
-            {customQuoteService && (
-              <div className="rounded-xl border border-drivo-green/20 bg-white/80 p-3 text-[13px] font-semibold text-drivo-green-dark">
-                Price will be confirmed by Drivo after reviewing your assistance requirements.
-              </div>
-            )}
 
             {Boolean(bookingData?.specialNotes) && (
               <div className="pt-3 border-t border-drivo-border">
@@ -248,7 +280,7 @@ export default function BookingConfirmation({
           </div>
 
           <div className="hidden print:block print-footer">
-            <p>{t("confirmation.title")}: {new Date().toLocaleDateString()}</p>
+            <p>{t("booking.receivedTitle")}: {formatMarketDate(new Date(), locale)}</p>
             <p>Drivo s.r.o.</p>
             <p>{EMAIL} | {PHONE_NUMBER}</p>
           </div>
@@ -306,9 +338,9 @@ export default function BookingConfirmation({
               />
             </div>
 
-            {profileError && (
+            {profileErrorCode && (
               <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] font-semibold text-red-700">
-                {profileError}
+                {presentMessage(profileErrorCode, locale)}
               </div>
             )}
 
@@ -333,8 +365,28 @@ export default function BookingConfirmation({
           </div>
         )}
 
+        {passengerProfile && (
+          <section aria-labelledby="save-route-heading" className="mb-6 rounded-2xl border border-drivo-border-light bg-white p-4 text-left no-print">
+            <h3 id="save-route-heading" className="mb-2 text-lg font-bold text-drivo-text">{t("savedRoutes.prompt")}</h3>
+            <p className="mb-3 text-sm text-drivo-text-secondary">{t("savedRoutes.privacyNotice")}</p>
+            {routeError && <p role="alert" className="mb-3 text-sm font-semibold text-red-700">{t(routeError)}</p>}
+            {routeSaved || autoSaveRoutes ? (
+              <p role="status" className="mb-3 text-sm font-semibold text-green-800">{t(autoSaveRoutes ? "savedRoutes.autoOn" : "savedRoutes.saved")}</p>
+            ) : routeDismissed ? (
+              <p role="status" className="mb-3 text-sm">{t("savedRoutes.notNowDone")}</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <button type="button" disabled={routeSaving} onClick={() => void saveRoute(false)} className="btn-primary min-h-11">{t("savedRoutes.saveRoute")}</button>
+                <button type="button" disabled={routeSaving} onClick={() => setRouteDismissed(true)} className="btn-outline min-h-11">{t("savedRoutes.notNow")}</button>
+                <button type="button" disabled={routeSaving} onClick={() => void saveRoute(true)} className="btn-outline min-h-11">{t("savedRoutes.saveAlways")}</button>
+              </div>
+            )}
+            <Link href="/passenger/dashboard" className="mt-3 inline-block text-sm font-bold underline">{t("savedRoutes.manage")}</Link>
+          </section>
+        )}
+
         <div className="space-y-3 no-print">
-          {paymentMethod === "card" && !customQuoteService && (
+          {paymentMethod === "card" && (
             <button
               onClick={handleStripePayment}
               disabled={paying}

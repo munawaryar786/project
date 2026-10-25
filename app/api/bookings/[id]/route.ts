@@ -1,53 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { authorizePassenger } from "@/lib/passenger-auth";
+import { createTrackingToken } from "@/lib/tracking-token";
 
-/**
- * GET /api/bookings/[id] — Get single booking
- */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await authorizePassenger(request);
+  if (!auth.ok) return auth.response;
   try {
     const { id } = await params;
-
-    const booking = await prisma.booking.findUnique({
-      where: { id },
+    const booking = await prisma.booking.findFirst({
+      where: { id, passengerId: auth.actor.id },
     });
+    if (!booking) return NextResponse.json({ error: "Booking not found" }, { status: 404 });
 
-    if (!booking) {
-      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({ booking });
-  } catch (error) {
-    console.error("Booking fetch error:", error);
+    const passengerBooking: Record<string, unknown> = { ...booking };
+    delete passengerBooking.passengerId;
+    delete passengerBooking.driverId;
+    delete passengerBooking.sourceDomain;
+    delete passengerBooking.normalizedPhone;
+    return NextResponse.json({ booking: passengerBooking, trackingToken: createTrackingToken(booking.id) });
+  } catch {
     return NextResponse.json({ error: "Failed to fetch booking" }, { status: 500 });
   }
 }
 
-/**
- * PATCH /api/bookings/[id] — Update booking status
- */
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params;
-    const body = await request.json();
-
-    const booking = await prisma.booking.update({
-      where: { id },
-      data: {
-        status: body.status,
-        ...body,
-      },
-    });
-
-    return NextResponse.json({ success: true, booking });
-  } catch (error) {
-    console.error("Booking update error:", error);
-    return NextResponse.json({ error: "Failed to update booking" }, { status: 500 });
-  }
+export async function PATCH() {
+  return NextResponse.json(
+    { error: "Use an authorized booking action endpoint" },
+    { status: 405, headers: { Allow: "GET" } }
+  );
 }

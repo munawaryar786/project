@@ -1,0 +1,43 @@
+# DRIVO Phase UX1  Assisted Mobility & Booking Upgrade Checklist
+
+- [ ] 01. Lock scope and inspect current branch, commit, worktree, and existing Phase 3A/security behavior.
+  - [ ] Preserve existing work; do not deploy, commit, push, migrate MongoDB, add Postgres, or run `prisma db push`.
+  - [ ] Keep deferred Phase 3B/3C/3D/3E driver infrastructure out of scope.
+- [ ] 02. Audit homepage, header, mobile navigation, footer, public service cards, and booking entry points.
+- [ ] 03. Make the public service selector clear, ordered, and prioritized for Standard, Assisted Transport, Airport, and Rental.
+- [ ] 04. Keep WAV/accessibility messaging inside Assisted Transport content; do not expose WAV as a separate top-level service.
+- [ ] 05. When Children Transport is disabled, remove all public Children labels, cards, links, and selector options while preserving backend/history compatibility.
+- [ ] 06. Implement the unified Assisted Transport booking flow with assistance level, wheelchair, child/companion, and operational fields.
+- [ ] 07. Add wheelchair-transfer yes/no flow and block submission with an accessible modal when transfer is not possible.
+- [ ] 08. Centralize `requiresWav` from wheelchair/accessibility/assistance inputs and use it consistently in quote, booking, and operations.
+- [ ] 09. Make the accessibility modal keyboard reachable, focus-safe, screen-reader clear, and actionable.
+- [ ] 10. Trace distance end to end and identify/fix the P0 pickup-to-dropoff route-distance defect.
+- [ ] 11. Define route distance, driver-approach distance, and operational ETA separately; prevent approach distance from entering fares.
+- [ ] 12. Keep distance and duration server-authoritative through one provider boundary, with validation and failure handling.
+- [ ] 13. Remove duplicate client fare formulas and make client estimates display server quotes only.
+- [ ] 14. Implement the progressive distance pricing brackets in the existing Pricing Engine V1.
+- [ ] 15. Verify exact pricing cases: 10=12.50, 12.5=12.50, 20=20, 50=50, 75=72.50, 100=95, 136=125.60, 200=180.
+- [ ] 16. Apply the progressive rule to Standard, Assisted Transport, Airport, and Rental according to existing scope/configuration.
+- [ ] 17. Price Driver Assistance Required at 10/hour prorated from authoritative trip duration; do not treat a personal companion as a fee.
+- [ ] 18. Apply waiting free periods/rates: Assisted 15 min then 10/h; Standard 5 min then 15/h; Airport 30 min then 15/h.
+- [ ] 19. Preserve one pricing truth from quote through booking, Stripe checkout/webhook, admin, and driver views.
+- [ ] 20. Present a simple fare breakdown with route fare, assistance, waiting, airport/other fees, and total.
+- [ ] 21. Polish Assisted Transport UI for trust, clarity, mobile layout, visible states, and plain-language copy.
+- [ ] 22. Use a clear service selector/card design with no duplicate or confusing choices.
+- [ ] 23. Map legacy `/book?service=senior|accessible|ztp` links into the unified Assisted Transport flow.
+- [ ] 24. Update public copy, labels, validation, and confirmation text for the unified service.
+- [ ] 25. Update every supported translation language and avoid untranslated new strings.
+- [ ] 26. Update page titles, metadata, structured/public SEO copy, and accessible labels where affected.
+- [ ] 27. Keep admin booking lists/details, fares, filters, and operational fields compatible.
+- [ ] 28. Keep driver ride requests/dashboard operational fields compatible without reintroducing private passenger data.
+- [ ] 29. Preserve electric-wheelchair safety/vehicle requirements and ensure safety blocks are enforced in the flow.
+- [ ] 30. Do not add a Prisma field unless an existing field cannot represent the requirement; stop/report before schema change.
+- [ ] 31. Retain Phase 3A authentication, authorization, CSRF, pricing MAC, and API security behavior.
+- [ ] 32. Add/run distance-source and pickup-to-dropoff regression tests.
+- [ ] 33. Add/run progressive pricing, assistance prorata, and waiting-rate tests.
+- [ ] 34. Add/run WAV/transfer blocking and `requiresWav` consistency tests.
+- [ ] 35. Add/run Children feature-flag public-hiding and backend-compatibility tests.
+- [ ] 36. Review responsive behavior and accessibility across affected public, booking, modal, admin, and driver surfaces.
+- [ ] 37. Run required checks: UX1 tests, Phase 3A security tests, TypeScript, lint, build, Prisma validate, and diff check.
+- [ ] 38. Perform a final scope audit for deferred work, duplicate engines, public Children leakage, and security regressions.
+- [ ] 39. Report implementation, tests, known limits, changed files, and project-owner review status.

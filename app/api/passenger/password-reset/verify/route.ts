@@ -1,80 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
-import {
-  createVerificationProof,
-  normalizePassengerPhone,
-} from "@/lib/passenger-auth";
-import { prisma } from "@/lib/prisma";
-import { rateLimits, withRateLimit } from "@/lib/rate-limit";
+import { rateLimits, withDistributedIpRateLimit } from "@/lib/rate-limit";
 
-const VerifySchema = z.object({
-  phone: z.string().trim().min(6),
-  otpCode: z.string().trim().length(6),
-  resetAttemptId: z.string().min(10),
-});
-
-async function handler(request: NextRequest) {
-  try {
-    const parsed = VerifySchema.safeParse(await request.json());
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid request", details: parsed.error.flatten().fieldErrors },
-        { status: 400 }
-      );
-    }
-
-    const normalizedPhone = normalizePassengerPhone(parsed.data.phone);
-    const passenger = await prisma.passenger.findFirst({
-      where: { OR: [{ phone: normalizedPhone }, { normalizedPhone }] },
-    });
-    if (!passenger?.passwordHash) {
-      return NextResponse.json({ error: "Invalid verification code." }, { status: 400 });
-    }
-
-    const otp = await prisma.passengerOtp.findFirst({
-      where: {
-        passengerId: passenger.id,
-        phone: normalizedPhone,
-        purpose: "PASSENGER_PASSWORD_RESET",
-        resetAttemptId: parsed.data.resetAttemptId,
-        expiresAt: { gte: new Date() },
-        used: false,
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    if (!otp || otp.code !== parsed.data.otpCode || otp.attempts >= otp.maxAttempts) {
-      if (otp) {
-        await prisma.passengerOtp.update({
-          where: { id: otp.id },
-          data: { attempts: { increment: 1 } },
-        });
-      }
-      return NextResponse.json({ error: "Invalid verification code." }, { status: 400 });
-    }
-
-    await prisma.passengerOtp.update({
-      where: { id: otp.id },
-      data: { used: true },
-    });
-
-    const proof = await createVerificationProof({
-      passengerId: passenger.id,
-      normalizedPhone,
-      purpose: "PASSENGER_PASSWORD_RESET",
-      resetAttemptId: parsed.data.resetAttemptId,
-    });
-
-    return NextResponse.json({
-      success: true,
-      passwordResetProofToken: proof.proofToken,
-      proofExpiresAt: proof.expiresAt.toISOString(),
-      normalizedPhone,
-    });
-  } catch (error) {
-    console.error("Password reset verify error:", error);
-    return NextResponse.json({ error: "Could not verify reset code." }, { status: 500 });
-  }
+// Deprecated compatibility endpoint. It never accepts or verifies a phone OTP.
+async function handler(_request: NextRequest) {
+  return NextResponse.json({ success: false, error: "Password recovery is email-only. Request a new reset email." }, { status: 410 });
 }
-
-export const POST = withRateLimit(handler, rateLimits.passengerPasswordResetOtpVerify);
+export const runtime = "nodejs";
+export const POST = withDistributedIpRateLimit(handler, { domain: "password-reset-legacy-verify", max: rateLimits.passengerPasswordResetOtpVerify.max, windowMs: rateLimits.passengerPasswordResetOtpVerify.windowMs, message: rateLimits.passengerPasswordResetOtpVerify.message });

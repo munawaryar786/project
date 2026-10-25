@@ -1,6 +1,12 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+import { driverCompatibility } from "@/lib/dispatch-matching";
+
 import { useEffect, useMemo, useState } from "react";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { formatEuro, formatMarketDate, formatMarketTime, formatMarketWallDateTime, formatNumber } from "@/lib/i18n/format";
+import { presentStatus } from "@/lib/i18n/status-catalog";
 
 interface Booking {
   id: string;
@@ -149,6 +155,13 @@ interface Driver {
   currentLng?: number | null;
 
   lastLocationUpdate?: string | null;
+  vehicleCapacity?: number | null;
+  vehicle?: {
+    type?: string | null;
+    status?: string | null;
+    maxPassengers?: number | null;
+    wheelchairAccessible?: boolean | null;
+  } | null;
 }
 
 const STATUS_OPTIONS = [
@@ -165,11 +178,14 @@ const STATUS_OPTIONS = [
 const DISPATCH_OPTIONS = [
   "NOT_STARTED",
   "SEARCHING_DRIVER",
+  "DISPATCHING",
   "ACCEPTED",
   "NO_DRIVER_AVAILABLE",
+  "DISPATCH_EXHAUSTED",
 ];
 
 export default function AdminBookingsPage() {
+  const { t, locale } = useLanguage();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
 
@@ -178,6 +194,30 @@ export default function AdminBookingsPage() {
 
   const [selectedBooking, setSelectedBooking] =
     useState<Booking | null>(null);
+
+  const openBookingForDispatch = (booking: Booking) => {
+    setSelectedBooking(booking);
+
+    requestAnimationFrame(() => {
+      const target = document.getElementById(
+        "drivo-admin-dispatch-controls"
+      );
+      if (!target) return;
+
+      const reducedMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)"
+      ).matches;
+
+      target.scrollIntoView({
+        behavior: reducedMotion ? "auto" : "smooth",
+        block: "start",
+        inline: "nearest",
+      });
+
+      target.focus({ preventScroll: true });
+    });
+  };
+
 
   const [search, setSearch] = useState("");
 
@@ -193,6 +233,8 @@ export default function AdminBookingsPage() {
 
   const [dispatchingId, setDispatchingId] =
     useState<string | null>(null);
+  const [actionError, setActionError] = useState("");
+  const [actionNotice, setActionNotice] = useState("");
 
   useEffect(() => {
     fetchAll();
@@ -248,7 +290,7 @@ export default function AdminBookingsPage() {
     try {
       if (showLoader) setLoading(true);
 
-      const res = await fetch(
+      const res = await csrfFetch("admin",
         "/api/admin/bookings",
         {
           cache: "no-store",
@@ -261,9 +303,7 @@ export default function AdminBookingsPage() {
 
       setBookings(list);
 
-      setLastUpdated(
-        new Date().toLocaleTimeString()
-      );
+      setLastUpdated(new Date().toISOString());
 
       if (selectedBooking) {
         const updated = list.find(
@@ -284,7 +324,7 @@ export default function AdminBookingsPage() {
 
   const fetchDrivers = async () => {
     try {
-      const res = await fetch(
+      const res = await csrfFetch("admin",
         "/api/admin/drivers",
         {
           cache: "no-store",
@@ -305,8 +345,9 @@ export default function AdminBookingsPage() {
   ) => {
     try {
       setUpdating(true);
+      setActionError(""); setActionNotice("");
 
-      const res = await fetch(
+      const res = await csrfFetch("admin",
         "/api/admin/bookings",
         {
           method: "PATCH",
@@ -324,15 +365,15 @@ export default function AdminBookingsPage() {
       const data: any = await safeJson(res);
 
       if (!res.ok) {
-        alert(data.error);
+        setActionError("m4.booking.updateFailed");
         return;
       }
-
+      setActionNotice("m4.booking.updated");
       await fetchBookings(false);
     } catch (err) {
       console.error(err);
 
-      alert("Update failed");
+      setActionError("m4.booking.updateFailed");
     } finally {
       setUpdating(false);
     }
@@ -344,8 +385,9 @@ export default function AdminBookingsPage() {
   ) => {
     try {
       setUpdating(true);
+      setActionError(""); setActionNotice("");
 
-      const res = await fetch(
+      const res = await csrfFetch("admin",
         "/api/admin/bookings",
         {
           method: "PATCH",
@@ -364,15 +406,19 @@ export default function AdminBookingsPage() {
       const data: any = await safeJson(res);
 
       if (!res.ok) {
-        alert(data.error);
+        setActionError(
+          typeof data?.code === "string" && data.code
+            ? `Driver assignment blocked: ${data.code}`
+            : "m4.booking.assignFailed"
+        );
         return;
       }
-
+      setActionNotice("m4.booking.assigned");
       await fetchBookings(false);
     } catch (err) {
       console.error(err);
 
-      alert("Driver assign failed");
+      setActionError("m4.booking.assignFailed");
     } finally {
       setUpdating(false);
     }
@@ -383,8 +429,9 @@ export default function AdminBookingsPage() {
   ) => {
     try {
       setDispatchingId(bookingId);
+      setActionError(""); setActionNotice("");
 
-      const res = await fetch(
+      const res = await csrfFetch("admin",
         "/api/dispatch/start",
         {
           method: "POST",
@@ -401,21 +448,24 @@ export default function AdminBookingsPage() {
       const data: any = await safeJson(res);
 
       if (!res.ok) {
-        alert(data.error);
+        setActionError(
+          typeof data?.code === "string" && data.code
+            ? `Dispatch blocked: ${data.code}`
+            : "m4.booking.dispatchFailed"
+        );
         return;
       }
-
-      alert(
-        data.driver?.fullName
-          ? `Dispatch sent to ${data.driver.fullName}`
-          : "Dispatch started"
-      );
+      if (data?.dispatch === "DISPATCH_EXHAUSTED") {
+        setActionError("No eligible driver is currently available (NO_ELIGIBLE_DRIVER).");
+      } else {
+        setActionNotice("m4.booking.dispatchStarted");
+      }
 
       await fetchBookings(false);
     } catch (err) {
       console.error(err);
 
-      alert("Dispatch failed");
+      setActionError("m4.booking.dispatchFailed");
     } finally {
       setDispatchingId(null);
     }
@@ -486,7 +536,8 @@ export default function AdminBookingsPage() {
       searching: bookings.filter(
         (b) =>
           b.dispatchStatus ===
-          "SEARCHING_DRIVER"
+          "SEARCHING_DRIVER",
+          "DISPATCH_EXHAUSTED"
       ).length,
     };
   }, [bookings]);
@@ -500,7 +551,7 @@ export default function AdminBookingsPage() {
           </div>
 
           <p className="text-gray-500 font-medium">
-            Loading Admin System...
+            {t("m4.booking.loading")}
           </p>
         </div>
       </div>
@@ -515,29 +566,28 @@ export default function AdminBookingsPage() {
           <div>
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-3xl font-black text-gray-900">
-                📋 Booking Operations
+                📋 {t("m4.booking.title")}
               </h1>
 
               <div className="px-3 py-1 rounded-full bg-green-100 text-green-700 text-xs font-bold flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                LIVE
+                {t("m4.booking.live")}
               </div>
             </div>
 
             <p className="text-sm text-gray-500 mt-2">
-              Real-time dispatch &
-              booking management
+              {t("m4.booking.intro")}
             </p>
           </div>
 
           <div className="flex items-center gap-3">
             <div className="text-right">
               <div className="text-xs text-gray-400">
-                Last Sync
+                {t("m4.booking.lastSync")}
               </div>
 
               <div className="text-sm font-semibold text-gray-700">
-                {lastUpdated || "--"}
+                {lastUpdated ? formatMarketTime(lastUpdated, locale) : "--"}
               </div>
             </div>
 
@@ -546,45 +596,48 @@ export default function AdminBookingsPage() {
               className="h-11 px-5 rounded-2xl bg-green-700 hover:bg-green-800 text-white font-semibold text-sm transition-all"
             >
               {refreshing
-                ? "🔄 Refreshing..."
-                : "🔄 Refresh"}
+                ? `🔄 ${t("m4.booking.refreshing")}`
+                : `🔄 ${t("m4.tracking.refresh")}`}
             </button>
           </div>
         </div>
       </div>
 
+      {actionError && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{t(actionError)}</p>}
+      {actionNotice && <p role="status" className="rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-800">{t(actionNotice)}</p>}
+
       {/* STATS */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <DashboardCard
-          title="Total"
+          title={t("m4.booking.total")}
           value={stats.total}
           icon="📦"
           color="gray"
         />
 
         <DashboardCard
-          title="Pending"
+          title={t("m4.booking.pending")}
           value={stats.pending}
           icon="🆕"
           color="amber"
         />
 
         <DashboardCard
-          title="Active"
+          title={t("m4.booking.active")}
           value={stats.active}
           icon="🚕"
           color="blue"
         />
 
         <DashboardCard
-          title="Searching"
+          title={t("m4.booking.searching")}
           value={stats.searching}
           icon="📡"
           color="purple"
         />
 
         <DashboardCard
-          title="Completed"
+          title={t("m4.booking.completed")}
           value={stats.completed}
           icon="✅"
           color="green"
@@ -599,7 +652,8 @@ export default function AdminBookingsPage() {
             onChange={(e) =>
               setSearch(e.target.value)
             }
-            placeholder="Search booking, customer, route..."
+            placeholder={t("m4.booking.searchPlaceholder")}
+            aria-label={t("m4.booking.searchPlaceholder")}
             className="h-12 rounded-2xl border border-gray-200 px-4 outline-none focus:ring-4 focus:ring-green-100 focus:border-green-500 text-sm"
           />
 
@@ -611,18 +665,18 @@ export default function AdminBookingsPage() {
             }}
             className="h-12 px-5 rounded-2xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-semibold"
           >
-            ✕ Reset
+            ✕ {t("m4.booking.reset")}
           </button>
         </div>
 
         <div className="mt-5">
           <p className="text-xs font-bold text-gray-500 mb-2">
-            BOOKING STATUS
+            {t("m4.booking.bookingStatus")}
           </p>
 
           <div className="flex flex-wrap gap-2">
             <FilterButton
-              label="ALL"
+              label={t("m4.operations.all")}
               active={
                 statusFilter === "ALL"
               }
@@ -634,7 +688,7 @@ export default function AdminBookingsPage() {
             {STATUS_OPTIONS.map((status) => (
               <FilterButton
                 key={status}
-                label={status}
+                label={presentStatus("booking", status, locale)}
                 active={
                   statusFilter === status
                 }
@@ -648,12 +702,12 @@ export default function AdminBookingsPage() {
 
         <div className="mt-5">
           <p className="text-xs font-bold text-gray-500 mb-2">
-            DISPATCH STATUS
+            {t("m4.booking.dispatchStatus")}
           </p>
 
           <div className="flex flex-wrap gap-2">
             <FilterButton
-              label="ALL"
+              label={t("m4.operations.all")}
               active={
                 dispatchFilter === "ALL"
               }
@@ -666,7 +720,7 @@ export default function AdminBookingsPage() {
               (status) => (
                 <FilterButton
                   key={status}
-                  label={status}
+                  label={presentStatus("dispatch", status, locale)}
                   active={
                     dispatchFilter ===
                     status
@@ -690,14 +744,11 @@ export default function AdminBookingsPage() {
           <div className="p-5 border-b border-gray-100 flex items-center justify-between">
             <div>
               <h2 className="font-black text-gray-900 text-lg">
-                🚖 Active Reservations
+                🚖 {t("m4.booking.reservations")}
               </h2>
 
               <p className="text-sm text-gray-500 mt-1">
-                {
-                  filteredBookings.length
-                }{" "}
-                bookings found
+                {t("m4.booking.found").replace("{count}", formatNumber(filteredBookings.length, locale))}
               </p>
             </div>
           </div>
@@ -707,39 +758,39 @@ export default function AdminBookingsPage() {
               <thead className="sticky top-0 bg-gray-50 z-20">
                 <tr className="border-b border-gray-100">
                   <TableHead>
-                    Ref
+                    {t("m4.booking.reference")}
                   </TableHead>
 
                   <TableHead>
-                    Status
+                    {t("m4.booking.status")}
                   </TableHead>
 
                   <TableHead>
-                    Dispatch
+                    {t("m4.booking.dispatch")}
                   </TableHead>
 
                   <TableHead>
-                    Service
+                    {t("m4.booking.service")}
                   </TableHead>
 
                   <TableHead>
-                    Customer
+                    {t("m4.booking.customer")}
                   </TableHead>
 
                   <TableHead>
-                    Route
+                    {t("m4.booking.route")}
                   </TableHead>
 
                   <TableHead>
-                    Driver
+                    {t("m4.booking.driver")}
                   </TableHead>
 
                   <TableHead>
-                    Payment
+                    {t("m4.booking.payment")}
                   </TableHead>
 
                   <TableHead>
-                    Price
+                    {t("m4.booking.price")}
                   </TableHead>
                 </tr>
               </thead>
@@ -749,11 +800,15 @@ export default function AdminBookingsPage() {
                   (booking) => (
                     <tr
                       key={booking.id}
-                      onClick={() =>
-                        setSelectedBooking(
-                          booking
-                        )
-                      }
+                      onClick={() => openBookingForDispatch(booking)}
+                       onKeyDown={(event) => {
+                         if (event.key === "Enter" || event.key === " ") {
+                           event.preventDefault();
+                           openBookingForDispatch(booking);
+                         }
+                       }}
+                       tabIndex={0}
+                       aria-label={`Open dispatch controls for ${booking.bookingRef}`}
                       className={`border-b border-gray-50 cursor-pointer transition-all ${
                         selectedBooking?.id ===
                         booking.id
@@ -769,13 +824,7 @@ export default function AdminBookingsPage() {
                         </div>
 
                         <div className="text-[11px] text-gray-400 mt-1">
-                          {
-                            booking.scheduledDate
-                          }{" "}
-                          •{" "}
-                          {
-                            booking.scheduledTime
-                          }
+                          {formatMarketWallDateTime(booking.scheduledDate, booking.scheduledTime, locale)}
                         </div>
                       </TableCell>
 
@@ -800,16 +849,12 @@ export default function AdminBookingsPage() {
                           {getServiceIcon(
                             booking.serviceType
                           )}{" "}
-                          {
-                            booking.serviceType
-                          }
+                          {t(`service.${booking.serviceType}`, t("m4.common.unknownState"))}
                         </div>
 
                         <div className="text-xs text-gray-400 mt-1">
                           👥{" "}
-                          {
-                            booking.passengerCount
-                          }
+                          {formatNumber(booking.passengerCount, locale)}
                         </div>
                       </TableCell>
 
@@ -861,13 +906,13 @@ export default function AdminBookingsPage() {
                             <div className="text-xs text-gray-500 mt-1">
                               {booking.driver
                                 ?.isOnline
-                                ? "🟢 Online"
-                                : "⚫ Offline"}
+                                ? `🟢 ${t("adminDrivers.online")}`
+                                : `⚫ ${t("adminDrivers.offline")}`}
                             </div>
                           </div>
                         ) : (
                           <span className="text-xs text-red-500 font-semibold">
-                            No Driver
+                            {t("m4.booking.noDriver")}
                           </span>
                         )}
                       </TableCell>
@@ -877,24 +922,17 @@ export default function AdminBookingsPage() {
                           {getPaymentIcon(
                             booking.paymentMethod
                           )}{" "}
-                          {
-                            booking.paymentMethod
-                          }
+                          {t(`m4.paymentMethod.${booking.paymentMethod}`, t("m4.common.unknownState"))}
                         </div>
                       </TableCell>
 
                       <TableCell>
                         <div className="font-black text-green-700">
-                          €
-                          {booking.estimatedPrice?.toFixed(
-                            2
-                          ) || "0"}
+                          {formatEuro(booking.estimatedPrice || 0, locale)}
                         </div>
 
                         <div className="text-xs text-gray-400">
-                          {
-                            booking.distanceKm
-                          }
+                          {formatNumber(booking.distanceKm || 0, locale)}
                           km
                         </div>
                       </TableCell>
@@ -938,12 +976,11 @@ export default function AdminBookingsPage() {
               </div>
 
               <h3 className="font-bold text-gray-900 text-lg">
-                Select Booking
+                {t("m4.booking.select")}
               </h3>
 
               <p className="text-sm text-gray-500 mt-2">
-                Click any booking to open
-                operational controls
+                {t("m4.booking.selectHelp")}
               </p>
             </div>
           )}
@@ -967,13 +1004,26 @@ function BookingPanel({
   onAssignDriver,
   onStartDispatch,
 }: any) {
+  const { t, locale } = useLanguage();
+  const yesNo = (value: unknown) => value ? t("m4.booking.yes") : t("m4.booking.no");
+  const formatMoney = (value: unknown) => formatEuro(Number(value || 0), locale);
+  const dateOnly = (value: string | null | undefined) => value ? formatMarketDate(value, locale) || t("m4.common.notProvided") : t("m4.common.notProvided");
+  const wallTime = (date: string | null | undefined, time: string | null | undefined) => date && time ? formatMarketWallDateTime(date, time, locale) || t("m4.common.notProvided") : dateOnly(date);
+  const formatValue = (value: unknown) => {
+    if (value === null || value === undefined || value === "") return t("m4.common.notProvided");
+    const raw = String(value);
+    return /^[A-Z][A-Z0-9_]*$/.test(raw) ? t(`m4.enum.${raw}`, t("m4.common.unknownState")) : raw;
+  };
+  const formatOptionalFees = (value?: Record<string, number> | null) => !value || !Object.keys(value).length
+    ? formatMoney(0)
+    : Object.entries(value).map(([key, amount]) => `${t(`m4.fee.${key}`, t("m4.common.unknownState"))}: ${formatMoney(amount)}`).join(", ");
   return (
     <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
       <div className="p-5 border-b border-gray-100 bg-gradient-to-r from-green-50 to-white">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-xs text-green-700 font-black uppercase tracking-wide">
-              Booking Detail
+              {t("m4.booking.detail")}
             </div>
 
             <h3 className="font-black text-gray-900 text-lg mt-1">
@@ -983,6 +1033,7 @@ function BookingPanel({
 
           <button
             onClick={onClose}
+            aria-label={t("m4.common.close")}
             className="w-9 h-9 rounded-xl bg-gray-100 hover:bg-gray-200"
           >
             ✕
@@ -991,7 +1042,7 @@ function BookingPanel({
       </div>
 
       <div className="p-5 space-y-5 max-h-[80vh] overflow-auto">
-        <Section title="Ride Status">
+        <Section title={t("m4.booking.rideStatus")}>
           <div className="grid grid-cols-2 gap-3">
             <StatusBadge
               status={booking.status}
@@ -1005,167 +1056,173 @@ function BookingPanel({
           </div>
         </Section>
 
-        <Section title="Customer">
+        <Section title={t("m4.booking.customer")}>
           <Info
-            label="Name"
+            label={t("m4.booking.name")}
             value={booking.customerName}
           />
 
           <Info
-            label="Phone"
+            label={t("m4.booking.phone")}
             value={`${booking.customerPhoneCode}${booking.customerPhone}`}
           />
 
           <Info
-            label="Email"
+            label={t("m4.booking.email")}
             value={
               booking.customerEmail ||
-              "N/A"
+              t("m4.common.notProvided")
             }
           />
         </Section>
 
         {booking.passenger && (
-          <Section title="Passenger Account">
-            <Info label="Passenger Name" value={booking.passenger.fullName || "N/A"} />
-            <Info label="Phone Verified" value={yesNo(booking.passenger.phoneVerified)} />
-            <Info label="Email" value={booking.passenger.email || "N/A"} />
-            <Info label="Total Bookings" value={String(booking.passenger.bookings?.length || 0)} />
+          <Section title={t("m4.booking.passengerAccount")}>
+            <Info label={t("m4.booking.passengerName")} value={booking.passenger.fullName || t("m4.common.notProvided")} />
+            <Info label={t("m4.booking.phoneVerified")} value={yesNo(booking.passenger.phoneVerified)} />
+            <Info label={t("m4.booking.email")} value={booking.passenger.email || t("m4.common.notProvided")} />
+            <Info label={t("m4.booking.totalBookings")} value={formatNumber(booking.passenger.bookings?.length || 0, locale)} />
           </Section>
         )}
 
-        <Section title="Trip">
+        <Section title={t("m4.booking.trip")}>
           <Info
-            label="Pickup"
+            label={t("m4.booking.pickup")}
             value={
               booking.pickupAddress
             }
           />
 
           <Info
-            label="Dropoff"
+            label={t("m4.booking.dropoff")}
             value={
               booking.dropoffAddress
             }
           />
 
           <Info
-            label="Date"
-            value={`${booking.scheduledDate} ${booking.scheduledTime}`}
+            label={t("m4.booking.date")}
+            value={formatMarketWallDateTime(booking.scheduledDate, booking.scheduledTime, locale)}
           />
 
           <Info
-            label="Distance"
-            value={`${booking.distanceKm} km`}
+            label={t("m4.booking.distance")}
+            value={`${formatNumber(booking.distanceKm || 0, locale)} km`}
           />
 
           <Info
-            label="Price"
-            value={`€${booking.estimatedPrice}`}
+            label={t("m4.booking.price")}
+            value={formatEuro(booking.estimatedPrice || 0, locale)}
           />
         </Section>
 
-        <Section title="Financial Breakdown">
+        <Section title={t("m4.booking.financial")}>
           <Info
-            label="Service Type"
-            value={formatValue(booking.financialBreakdown?.serviceType || booking.serviceType)}
+            label={t("m4.booking.serviceType")}
+            value={t(`service.${booking.financialBreakdown?.serviceType || booking.serviceType}`, t("m4.common.unknownState"))}
           />
           <Info
-            label="Base Fare"
+            label={t("m4.booking.baseFare")}
             value={formatMoney(booking.fareBaseFare)}
           />
           <Info
-            label="Distance Charge"
+            label={t("m4.booking.distanceCharge")}
             value={formatMoney(booking.fareDistanceCharge)}
           />
           <Info
-            label="Waiting Time Charge"
+            label={t("m4.booking.waitingCharge")}
             value={formatMoney(booking.fareWaitingCharge)}
           />
           <Info
-            label="Additional Services"
+            label={t("m4.booking.additional")}
             value={formatOptionalFees(booking.fareOptionalFees)}
           />
           <Info
-            label="Night Service Charge"
+            label={t("m4.booking.nightCharge")}
             value={formatMoney(booking.fareNightCharge)}
           />
           <Info
-            label="Minimum Fare Adjustment"
+            label={t("m4.booking.minimumAdjustment")}
             value={formatMoney(booking.fareMinimumAdjustment)}
           />
           <Info
-            label="Total Fare"
+            label={t("m4.booking.totalFare")}
             value={formatMoney(booking.financialBreakdown?.totalFare ?? booking.fareTotalFare ?? booking.estimatedPrice)}
           />
           <Info
-            label="Commission"
-            value={`${Number(booking.financialBreakdown?.commissionPercentageUsed || booking.earning?.commissionRate || 0).toFixed(2)}%`}
+            label={t("m4.booking.commission")}
+            value={`${formatNumber(Number(booking.financialBreakdown?.commissionPercentageUsed || booking.earning?.commissionRate || 0), locale)}%`}
           />
           <Info
-            label="Platform Earnings"
+            label={t("m4.booking.platformEarnings")}
             value={formatMoney(booking.financialBreakdown?.platformEarnings ?? booking.earning?.platformAmount)}
           />
           <Info
-            label="Driver Earnings"
+            label={t("m4.booking.driverEarnings")}
             value={formatMoney(booking.financialBreakdown?.driverEarnings ?? booking.earning?.driverAmount)}
           />
         </Section>
 
         {(booking.serviceType === "CHILDREN" || booking.scheduledRide) && (
-          <Section title="Children Transport">
-            <Info label="Service" value="Children Transport" />
-            <Info label="Pickup Address" value={booking.pickupAddress || "N/A"} />
-            <Info label="School / College / University Name" value={booking.institutionName || booking.educationalInstitutionName || "N/A"} />
-            <Info label="School Full Address" value={booking.institutionAddress || booking.dropoffAddress || "N/A"} />
-            <Info label="Number of Children" value={String(booking.passengerCount || 0)} />
-            <Info label="Pickup Date" value={booking.pickupDate || booking.scheduledDate || "N/A"} />
-            <Info label="Pickup Time" value={booking.pickupTime || booking.scheduledTime || "N/A"} />
-            <Info label="Return Date" value={booking.returnDate || "N/A"} />
-            <Info label="Return Time" value={booking.returnTime || "N/A"} />
-            <Info label="Recurrence Type" value={formatValue(booking.recurrenceType || booking.recurrence)} />
-            <Info label="Estimated Service Days" value={String(getChildrenServiceDays(booking))} />
-            <Info label="Children Price Breakdown" value={getChildrenPriceBreakdown(booking)} />
+          <Section title={t("m4.booking.children")}>
+            <Info label={t("m4.booking.service")} value={t("m4.booking.children")} />
+            <Info label={t("m4.booking.pickupAddress")} value={booking.pickupAddress || t("m4.common.notProvided")} />
+            <Info label={t("m4.booking.schoolName")} value={booking.institutionName || booking.educationalInstitutionName || t("m4.common.notProvided")} />
+            <Info label={t("m4.booking.schoolAddress")} value={booking.institutionAddress || booking.dropoffAddress || t("m4.common.notProvided")} />
+            <Info label={t("m4.booking.childCount")} value={formatNumber(booking.passengerCount || 0, locale)} />
+            <Info label={t("m4.booking.pickupDate")} value={dateOnly(booking.pickupDate || booking.scheduledDate)} />
+            <Info label={t("m4.booking.pickupTime")} value={booking.pickupTime || booking.scheduledTime || t("m4.common.notProvided")} />
+            <Info label={t("m4.booking.returnDate")} value={dateOnly(booking.returnDate)} />
+            <Info label={t("m4.booking.returnTime")} value={booking.returnTime || t("m4.common.notProvided")} />
+            <Info label={t("m4.booking.recurrenceType")} value={formatValue(booking.recurrenceType || booking.recurrence)} />
+            <Info label={t("m4.booking.serviceDays")} value={formatNumber(getChildrenServiceDays(booking), locale)} />
+            <Info label={t("m4.booking.childrenPrice")} value={getChildrenPriceBreakdown(booking, locale, t)} />
             {getChildrenRows(booking).map((child, index) => (
               <Info
                 key={`${child.fullName}-${index}`}
-                label={`Child ${index + 1}`}
-                value={`${child.fullName || "N/A"}${child.age !== null && child.age !== undefined && child.age !== "" ? `, ${child.age}` : ""}${child.specialRequirements ? ` - ${child.specialRequirements}` : ""}`}
+                label={t("m4.booking.child").replace("{count}", formatNumber(index + 1, locale))}
+                value={`${child.fullName || t("m4.common.notProvided")}${child.age !== null && child.age !== undefined && child.age !== "" ? `, ${child.age}` : ""}${child.specialRequirements ? ` - ${child.specialRequirements}` : ""}`}
               />
             ))}
-            <Info label="Parent/Guardian" value={booking.guardianName || booking.parentFullName || "N/A"} />
-            <Info label="Primary Phone" value={booking.guardianPhone || booking.parentPrimaryPhone || "N/A"} />
-            <Info label="Emergency Phone" value={booking.guardianEmergencyPhone || booking.parentEmergencyPhone || "N/A"} />
-            <Info label="Guardian Email" value={booking.guardianEmail || booking.parentEmail || "N/A"} />
-            <Info label="Institution" value={booking.institutionName || booking.educationalInstitutionName || "N/A"} />
-            <Info label="Institution Address" value={booking.institutionAddress || booking.dropoffAddress || "N/A"} />
-            <Info label="Pickup Schedule" value={`${booking.pickupDate || booking.scheduledDate || ""} ${booking.pickupTime || booking.scheduledTime || ""}`.trim() || "N/A"} />
-            <Info label="Return Schedule" value={`${booking.returnDate || ""} ${booking.returnTime || ""}`.trim() || "N/A"} />
-            <Info label="Recurrence" value={formatValue(booking.recurrenceType || booking.recurrence)} />
-            <Info label="Custom Recurrence" value={booking.recurrenceCustom || "N/A"} />
-            <Info label="Payment Method" value={formatValue(booking.paymentMethod)} />
+            <Info label={t("m4.booking.guardian")} value={booking.guardianName || booking.parentFullName || t("m4.common.notProvided")} />
+            <Info label={t("m4.booking.primaryPhone")} value={booking.guardianPhone || booking.parentPrimaryPhone || t("m4.common.notProvided")} />
+            <Info label={t("m4.booking.emergencyPhone")} value={booking.guardianEmergencyPhone || booking.parentEmergencyPhone || t("m4.common.notProvided")} />
+            <Info label={t("m4.booking.guardianEmail")} value={booking.guardianEmail || booking.parentEmail || t("m4.common.notProvided")} />
+            <Info label={t("m4.booking.institution")} value={booking.institutionName || booking.educationalInstitutionName || t("m4.common.notProvided")} />
+            <Info label={t("m4.booking.schoolAddress")} value={booking.institutionAddress || booking.dropoffAddress || t("m4.common.notProvided")} />
+            <Info label={t("m4.booking.pickupSchedule")} value={wallTime(booking.pickupDate || booking.scheduledDate, booking.pickupTime || booking.scheduledTime)} />
+            <Info label={t("m4.booking.returnSchedule")} value={wallTime(booking.returnDate, booking.returnTime)} />
+            <Info label={t("m4.booking.recurrence")} value={formatValue(booking.recurrenceType || booking.recurrence)} />
+            <Info label={t("m4.booking.customRecurrence")} value={booking.recurrenceCustom || t("m4.common.notProvided")} />
+            <Info label={t("m4.booking.paymentMethod")} value={t(`m4.paymentMethod.${booking.paymentMethod}`, t("m4.common.unknownState"))} />
           </Section>
         )}
 
-        <Section title="Assistance & Medical">
-          <Info label="Senior Passenger" value={yesNo(booking.seniorPassenger)} />
-          <Info label="Assistance Level" value={formatValue(booking.assistanceLevel)} />
-          <Info label="ZTP" value={yesNo(booking.ztpCardHolder)} />
-          <Info label="Wheelchair User" value={yesNo(booking.wheelchairUser || booking.wheelchairNeeded)} />
-          <Info label="Wheelchair Type" value={formatValue(booking.wheelchairType)} />
-          <Info label="Can Transfer To Seat" value={booking.canTransferToSeat === null || booking.canTransferToSeat === undefined ? "N/A" : yesNo(booking.canTransferToSeat)} />
-          <Info label="WAV Required" value={yesNo(booking.wavRequired)} />
-          <Info label="Companion Count" value={String(booking.companionCount || 0)} />
-          <Info label="Small / Large Bags" value={`${booking.smallBags || 0} / ${booking.largeBags || 0}`} />
-          <Info label="Medical Appointment" value={yesNo(booking.medicalAppointment)} />
-          <Info label="Hospital" value={booking.hospitalName || "N/A"} />
-          <Info label="Department" value={booking.department || "N/A"} />
-          <Info label="Appointment Time" value={booking.appointmentDate || booking.appointmentTime ? `${booking.appointmentDate || ""} ${booking.appointmentTime || ""}`.trim() : "N/A"} />
-          <Info label="Waiting Duration" value={formatValue(booking.customWaitingDuration || booking.waitingDuration)} />
-          <Info label="Return Trip Details" value={booking.returnDate || booking.returnTime ? `${booking.returnDate || ""} ${booking.returnTime || ""}`.trim() : "N/A"} />
+        <Section title={t("m4.booking.assistance")}>
+          <Info label={t("m4.booking.senior")} value={yesNo(booking.seniorPassenger)} />
+          <Info label={t("m4.booking.assistanceLevel")} value={formatValue(booking.assistanceLevel)} />
+          <Info label={t("dispatch.form.ztp")} value={yesNo(booking.ztpCardHolder)} />
+          <Info label={t("m4.booking.wheelchairUser")} value={yesNo(booking.wheelchairUser || booking.wheelchairNeeded)} />
+          <Info label={t("m4.booking.wheelchairType")} value={formatValue(booking.wheelchairType)} />
+          <Info label={t("m4.booking.transfer")} value={booking.canTransferToSeat === null || booking.canTransferToSeat === undefined ? t("m4.common.notProvided") : yesNo(booking.canTransferToSeat)} />
+          <Info label={t("m4.booking.wavRequired")} value={yesNo(booking.wavRequired)} />
+          <Info label={t("m4.booking.companions")} value={formatNumber(booking.companionCount || 0, locale)} />
+          <Info label={t("m4.booking.bags")} value={`${formatNumber(booking.smallBags || 0, locale)} / ${formatNumber(booking.largeBags || 0, locale)}`} />
+          <Info label={t("m4.booking.medicalAppointment")} value={yesNo(booking.medicalAppointment)} />
+          <Info label={t("m4.booking.hospital")} value={booking.hospitalName || t("m4.common.notProvided")} />
+          <Info label={t("m4.booking.department")} value={booking.department || t("m4.common.notProvided")} />
+          <Info label={t("m4.booking.appointmentTime")} value={wallTime(booking.appointmentDate, booking.appointmentTime)} />
+          <Info label={t("m4.booking.waitingDuration")} value={formatValue(booking.customWaitingDuration || booking.waitingDuration)} />
+          <Info label={t("m4.booking.returnDetails")} value={wallTime(booking.returnDate, booking.returnTime)} />
         </Section>
 
-        <Section title="Dispatch">
+        <div
+          id="drivo-admin-dispatch-controls"
+          tabIndex={-1}
+          aria-label="Dispatch and Driver Assignment"
+          className="scroll-mt-4 outline-none"
+        />
+        <Section title={t("m4.booking.dispatch")}>
           <button
             onClick={() =>
               onStartDispatch(
@@ -1180,49 +1237,60 @@ function BookingPanel({
           >
             {dispatchingId ===
             booking.id
-              ? "⏳ Dispatching..."
-              : "📡 Start Dispatch"}
+              ? `⏳ ${t("m4.booking.dispatching")}`
+              : `📡 ${t("m4.booking.startDispatch")}`}
           </button>
         </Section>
 
-        <Section title="Driver Assign">
+        <Section title={t("m4.booking.driverAssign")}>
           <select
+            aria-label={t("m4.booking.driverAssign")}
+            disabled={updating || Boolean(booking.driverId) || !["PENDING", "CONFIRMED", "SEARCHING_DRIVER"].includes(booking.status)}
             className="w-full h-12 rounded-2xl border border-gray-200 px-4 text-sm"
             value={
               booking.driverId ||
               ""
             }
-            onChange={(e) =>
-              onAssignDriver(
-                booking.id,
-                e.target.value
-              )
-            }
+            onChange={(e) => {
+              const driverId = e.target.value;
+              if (driverId) onAssignDriver(booking.id, driverId);
+            }}
           >
             <option value="">
-              Select Driver
+              {t("m4.booking.selectDriver")}
             </option>
 
-            {drivers.map(
-              (driver: Driver) => (
-                <option
-                  key={driver.id}
-                  value={driver.id}
-                >
-                  {
-                    driver.fullName
-                  }{" "}
-                  •{" "}
-                  {driver.isOnline
-                    ? "🟢"
-                    : "⚫"}
+            {drivers.map((driver: Driver) => {
+              // Mirror the backend's basic vehicle/busy checks; only the backend
+              // can authorize an assignment and check payment/schedule conflicts.
+              const compatibility = driverCompatibility({
+                booking,
+                driver,
+                hasConflictingTrip: Boolean(driver.isOnTrip),
+                attempted: false,
+                now: new Date(),
+                locationMaxAgeSeconds: 120,
+                requireOnline: false,
+                requireFreshLocation: false,
+                rejectBusy: true,
+              });
+              const reason = compatibility.eligible ? null : compatibility.reason;
+              const blocked = Boolean(reason) && driver.id !== booking.driverId;
+              return (
+                <option key={driver.id} value={driver.id} disabled={blocked}>
+                  {driver.fullName} • {blocked
+                    ? `⛔ ${t(`m4.driverReason.${reason}`, String(reason).replaceAll("_", " "))}`
+                    : driver.isOnline ? "🟢" : "⚫"}
                 </option>
-              )
-            )}
+              );
+            })}
           </select>
+          <p className="mt-2 text-xs leading-5 text-gray-600">
+            {t("m4.booking.manualAssignmentHint", "Ineligible drivers are disabled. Offline drivers can be selected for manual assignment when eligible. The server performs final booking, payment, and schedule checks.")}
+          </p>
         </Section>
 
-        <Section title="Change Status">
+        <Section title={t("m4.booking.changeStatus")}>
           <div className="flex flex-wrap gap-2">
             {STATUS_OPTIONS.map(
               (status) => (
@@ -1244,7 +1312,7 @@ function BookingPanel({
                       : "bg-gray-100 hover:bg-gray-200 text-gray-700"
                   }`}
                 >
-                  {status}
+                  {presentStatus("booking", status, locale)}
                 </button>
               )
             )}
@@ -1372,29 +1440,6 @@ function Info({
   );
 }
 
-function yesNo(value: unknown) {
-  return value ? "Yes" : "No";
-}
-
-function formatValue(value: unknown) {
-  if (value === null || value === undefined || value === "") return "N/A";
-  return String(value).replaceAll("_", " ");
-}
-
-function formatMoney(value: unknown) {
-  const amount = Number(value || 0);
-  if (!Number.isFinite(amount)) return "EUR 0.00";
-  return `EUR ${amount.toFixed(2)}`;
-}
-
-function formatOptionalFees(value?: Record<string, number> | null) {
-  if (!value || Object.keys(value).length === 0) return "EUR 0.00";
-
-  return Object.entries(value)
-    .map(([key, amount]) => `${formatValue(key)}: ${formatMoney(amount)}`)
-    .join(", ");
-}
-
 function parseChildrenDays(value?: string | null) {
   const match = value?.match(/\d+/);
   if (!match) return null;
@@ -1439,17 +1484,21 @@ function getChildrenServiceDays(booking: Booking) {
   return 1;
 }
 
-function getChildrenPriceBreakdown(booking: Booking) {
+function getChildrenPriceBreakdown(booking: Booking, locale: Parameters<typeof formatEuro>[1], t: (key: string) => string) {
   const serviceDays = getChildrenServiceDays(booking);
   const returnLegs = booking.returnDate && booking.returnTime ? 2 : 1;
   const total = Number(booking.fareTotalFare || booking.estimatedPrice || 0);
 
-  return `Pricing Engine V1 x ${returnLegs} trip leg${returnLegs === 1 ? "" : "s"} x ${serviceDays} service day${serviceDays === 1 ? "" : "s"} = EUR ${total.toFixed(2)}`;
+  return t("m4.booking.priceBreakdown")
+    .replace("{legs}", formatNumber(returnLegs, locale))
+    .replace("{days}", formatNumber(serviceDays, locale))
+    .replace("{total}", formatEuro(total, locale));
 }
 
 function StatusBadge({
   status,
 }: any) {
+  const { locale } = useLanguage();
   const styles: any = {
     PENDING:
       "bg-amber-100 text-amber-700",
@@ -1473,7 +1522,7 @@ function StatusBadge({
     <div
       className={`px-3 py-2 rounded-2xl text-xs font-black text-center ${styles[status]}`}
     >
-      {status}
+      {presentStatus("booking", status, locale)}
     </div>
   );
 }
@@ -1481,6 +1530,7 @@ function StatusBadge({
 function DispatchBadge({
   status,
 }: any) {
+  const { locale } = useLanguage();
   const value =
     status || "NOT_STARTED";
 
@@ -1491,9 +1541,14 @@ function DispatchBadge({
     SEARCHING_DRIVER:
       "bg-blue-100 text-blue-700",
 
+    DISPATCHING:
+      "bg-yellow-100 text-yellow-700",
+
     ACCEPTED:
       "bg-green-100 text-green-700",
 
+    DISPATCH_EXHAUSTED:
+      "bg-red-50 text-red-700",
     NO_DRIVER_AVAILABLE:
       "bg-red-100 text-red-700",
   };
@@ -1502,7 +1557,7 @@ function DispatchBadge({
     <div
       className={`px-3 py-2 rounded-2xl text-xs font-black text-center ${styles[value]}`}
     >
-      {value}
+      {presentStatus("dispatch", value, locale)}
     </div>
   );
 }

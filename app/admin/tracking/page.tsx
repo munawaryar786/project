@@ -1,7 +1,12 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { formatMarketDateTime, formatMarketTime, formatNumber } from "@/lib/i18n/format";
+import { presentStatus } from "@/lib/i18n/status-catalog";
 
 interface Driver {
   id: string;
@@ -25,26 +30,21 @@ interface Driver {
 
 export default function DriverTrackingPage() {
   const router = useRouter();
+  const { t, locale } = useLanguage();
 
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [lastUpdate, setLastUpdate] = useState<string>("");
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
-    checkAuth();
     fetchDrivers();
 
     const interval = setInterval(fetchDrivers, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  const checkAuth = () => {
-    const token = localStorage.getItem("drivo-admin-access-token");
-    if (!token) {
-      router.push("/admin/login");
-    }
-  };
 
   const safeJson = async (res: Response) => {
     const text = await res.text();
@@ -58,23 +58,22 @@ export default function DriverTrackingPage() {
 
   const fetchDrivers = async () => {
     try {
-      const token = localStorage.getItem("drivo-admin-access-token");
 
-      const res = await fetch("/api/admin/drivers/tracking", {
+      const res = await csrfFetch("admin", "/api/admin/drivers/tracking", {
         cache: "no-store",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
       });
 
       const data: any = await safeJson(res);
 
       if (res.ok) {
         setDrivers(data.drivers || []);
-        setLastUpdate(new Date().toLocaleTimeString("sk-SK"));
+        setLastUpdate(new Date().toISOString());
+        setLoadError(false);
+      } else {
+        setLoadError(true);
       }
     } catch (err) {
-      console.error("Failed to fetch drivers:", err);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -97,22 +96,21 @@ export default function DriverTrackingPage() {
   }, [drivers]);
 
   const getTimeAgo = (timestamp: string | null) => {
-    if (!timestamp) return "Nikdy";
+    if (!timestamp) return t("m4.tracking.never");
 
     const date = new Date(timestamp);
     const now = new Date();
     const diff = Math.floor((now.getTime() - date.getTime()) / 1000);
 
-    if (diff < 60) return `pred ${diff} s`;
-    if (diff < 3600) return `pred ${Math.floor(diff / 60)} min`;
-    if (diff < 86400) return `pred ${Math.floor(diff / 3600)} h`;
-    return `pred ${Math.floor(diff / 86400)} d`;
+    const key = diff < 60 ? "secondsAgo" : diff < 3600 ? "minutesAgo" : diff < 86400 ? "hoursAgo" : "daysAgo";
+    const count = diff < 60 ? diff : diff < 3600 ? Math.floor(diff / 60) : diff < 86400 ? Math.floor(diff / 3600) : Math.floor(diff / 86400);
+    return t(`m4.tracking.${key}`).replace("{count}", formatNumber(Math.max(0, count), locale));
   };
 
   const getDriverState = (driver: Driver) => {
     if (driver.isOnTrip) {
       return {
-        label: "Na jazde",
+        label: t("m4.tracking.onTrip"),
         icon: "🚕",
         className: "bg-amber-100 text-amber-800 border-amber-200",
       };
@@ -120,14 +118,14 @@ export default function DriverTrackingPage() {
 
     if (driver.isOnline) {
       return {
-        label: "Dostupný",
+        label: t("adminDrivers.available"),
         icon: "🟢",
         className: "bg-green-100 text-green-800 border-green-200",
       };
     }
 
     return {
-      label: "Offline",
+      label: t("adminDrivers.offline"),
       icon: "⚫",
       className: "bg-gray-100 text-gray-700 border-gray-200",
     };
@@ -146,7 +144,7 @@ export default function DriverTrackingPage() {
       <div className="min-h-[60vh] flex items-center justify-center">
         <div className="text-center">
           <div className="text-5xl animate-pulse mb-3">🗺️</div>
-          <p className="text-gray-500">Načítavam sledovanie vodičov...</p>
+          <p className="text-gray-500">{t("m4.tracking.loading")}</p>
         </div>
       </div>
     );
@@ -157,13 +155,13 @@ export default function DriverTrackingPage() {
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
         <div>
           <p className="text-xs uppercase tracking-wide text-gray-400 font-bold">
-            Admin operácie
+            {t("admin.operations")}
           </p>
           <h1 className="text-2xl font-black text-gray-900">
-            🗺️ Sledovanie vodičov
+            🗺️ {t("m4.tracking.title")}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            Posledná aktualizácia: {lastUpdate || "Načítava sa..."}
+            {t("m4.tracking.lastUpdate")}: {lastUpdate ? formatMarketTime(lastUpdate, locale) : t("common.loading")}
           </p>
         </div>
 
@@ -172,32 +170,33 @@ export default function DriverTrackingPage() {
             onClick={fetchDrivers}
             className="px-4 py-2 bg-green-700 text-white rounded-xl hover:bg-green-800 transition-colors text-sm font-bold"
           >
-            🔄 Obnoviť
+            🔄 {t("m4.tracking.refresh")}
           </button>
 
           <button
             onClick={() => router.push("/admin/dashboard")}
             className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors text-sm font-bold"
           >
-            ← Späť na dashboard
+            ← {t("m4.tracking.back")}
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
-        <StatCard label="Všetci" value={stats.total} tone="gray" />
-        <StatCard label="Online" value={stats.online} tone="green" />
-        <StatCard label="Dostupní" value={stats.available} tone="blue" />
-        <StatCard label="Na jazde" value={stats.onTrip} tone="amber" />
-        <StatCard label="Offline" value={stats.offline} tone="gray" />
+        <StatCard label={t("m4.tracking.all")} value={stats.total} tone="gray" />
+        <StatCard label={t("adminDrivers.online")} value={stats.online} tone="green" />
+        <StatCard label={t("adminDrivers.available")} value={stats.available} tone="blue" />
+        <StatCard label={t("m4.tracking.onTrip")} value={stats.onTrip} tone="amber" />
+        <StatCard label={t("adminDrivers.offline")} value={stats.offline} tone="gray" />
       </div>
 
+      {loadError && <p role="alert" className="mb-4 text-sm text-red-700">{t("m4.tracking.loadFailed")}</p>}
       <div className="grid lg:grid-cols-[1fr,420px] gap-6">
         <div className="bg-white rounded-3xl border border-gray-200 shadow-sm p-4">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-black text-gray-900">Vodiči v prevádzke</h2>
+            <h2 className="font-black text-gray-900">{t("m4.tracking.working")}</h2>
             <span className="text-xs text-gray-400 font-bold">
-              Auto-refresh 10 s
+              {t("m4.tracking.refreshInterval")}
             </span>
           </div>
 
@@ -233,7 +232,7 @@ export default function DriverTrackingPage() {
 
                     <div className="space-y-2 text-sm text-gray-600">
                       <div>
-                        🚕 {driver.vehicleType || "Vozidlo nezadané"}
+                        🚕 {driver.vehicleType || t("m4.common.vehiclePending")}
                         {driver.vehiclePlate && ` • ${driver.vehiclePlate}`}
                       </div>
 
@@ -249,7 +248,7 @@ export default function DriverTrackingPage() {
                         </>
                       ) : (
                         <div className="text-xs text-gray-400 italic">
-                          Poloha zatiaľ nie je dostupná
+                          {t("m4.tracking.noLocation")}
                         </div>
                       )}
                     </div>
@@ -261,10 +260,10 @@ export default function DriverTrackingPage() {
             <div className="p-12 text-center">
               <div className="text-5xl mb-3">📍</div>
               <h3 className="text-lg font-black text-gray-700 mb-1">
-                Žiadni vodiči
+                {t("m4.tracking.noDrivers")}
               </h3>
               <p className="text-gray-500">
-                Momentálne nie sú dostupní žiadni aktívni vodiči.
+                {t("m4.tracking.noActiveDrivers")}
               </p>
             </div>
           )}
@@ -276,7 +275,7 @@ export default function DriverTrackingPage() {
               <div className="flex items-start justify-between gap-3 mb-5">
                 <div>
                   <p className="text-xs uppercase tracking-wide text-gray-400 font-bold">
-                    Detail vodiča
+                    {t("m4.tracking.driverDetails")}
                   </p>
                   <h2 className="text-xl font-black text-gray-900">
                     {selectedDriver.fullName}
@@ -285,6 +284,7 @@ export default function DriverTrackingPage() {
 
                 <button
                   onClick={() => setSelectedDriver(null)}
+                  aria-label={t("m4.common.close")}
                   className="text-gray-400 hover:text-gray-600"
                 >
                   ✕
@@ -292,22 +292,22 @@ export default function DriverTrackingPage() {
               </div>
 
               <div className="space-y-3 text-sm">
-                <DetailRow label="Telefón" value={selectedDriver.phone} />
+                <DetailRow label={t("common.phone")} value={selectedDriver.phone} />
                 <DetailRow
-                  label="Email"
-                  value={selectedDriver.email || "Nezadaný"}
+                  label={t("common.email")}
+                  value={selectedDriver.email || t("m4.common.notProvided")}
                 />
                 <DetailRow
-                  label="Vozidlo"
-                  value={`${selectedDriver.vehicleType || "N/A"} • ${
-                    selectedDriver.vehiclePlate || "N/A"
+                  label={t("adminVehicles.vehicle")}
+                  value={`${selectedDriver.vehicleType || t("m4.common.notProvided")} • ${
+                    selectedDriver.vehiclePlate || t("m4.common.notProvided")
                   }`}
                 />
-                <DetailRow label="Stav účtu" value={selectedDriver.status} />
+                <DetailRow label={t("m4.tracking.accountStatus")} value={presentStatus("driverAccount", selectedDriver.status, locale)} />
 
                 <div className="flex justify-between items-start gap-3">
                   <span className="text-gray-500 text-xs font-bold">
-                    Prevádzkový stav
+                    {t("m4.tracking.operationalStatus")}
                   </span>
                   <span
                     className={`px-2 py-1 rounded-full text-xs font-black border ${
@@ -320,20 +320,20 @@ export default function DriverTrackingPage() {
                 </div>
 
                 <DetailRow
-                  label="Posledná poloha"
+                  label={t("m4.tracking.lastLocation")}
                   value={getTimeAgo(selectedDriver.lastLocationUpdate)}
                 />
 
                 <DetailRow
-                  label="Latitude"
+                  label={t("m4.tracking.latitude")}
                   value={
-                    selectedDriver.currentLat?.toFixed(6) || "Nedostupné"
+                    selectedDriver.currentLat?.toFixed(6) || t("m4.tracking.locationUnavailable")
                   }
                 />
                 <DetailRow
-                  label="Longitude"
+                  label={t("m4.tracking.longitude")}
                   value={
-                    selectedDriver.currentLng?.toFixed(6) || "Nedostupné"
+                    selectedDriver.currentLng?.toFixed(6) || t("m4.tracking.locationUnavailable")
                   }
                 />
               </div>
@@ -343,7 +343,7 @@ export default function DriverTrackingPage() {
                   href={`tel:${selectedDriver.phone}`}
                   className="text-center px-3 py-3 bg-blue-50 text-blue-700 rounded-2xl text-sm font-black hover:bg-blue-100"
                 >
-                  📞 Zavolať
+                  📞 {t("m4.tracking.call")}
                 </a>
 
                 <button
@@ -351,14 +351,14 @@ export default function DriverTrackingPage() {
                   disabled={!selectedDriver.currentLat || !selectedDriver.currentLng}
                   className="px-3 py-3 bg-green-700 text-white rounded-2xl text-sm font-black hover:bg-green-800 disabled:opacity-50"
                 >
-                  🗺️ Otvoriť mapu
+                  🗺️ {t("m4.tracking.openMap")}
                 </button>
               </div>
 
               {selectedDriver.locationHistory?.length > 0 && (
                 <div className="mt-6">
                   <h3 className="font-black text-gray-900 mb-2">
-                    História polohy
+                    {t("m4.tracking.locationHistory")}
                   </h3>
 
                   <div className="bg-gray-50 rounded-2xl p-3 max-h-64 overflow-y-auto">
@@ -373,7 +373,7 @@ export default function DriverTrackingPage() {
                             {loc.lat.toFixed(6)}, {loc.lng.toFixed(6)}
                           </span>
                           <span className="text-xs text-gray-500">
-                            {new Date(loc.timestamp).toLocaleString("sk-SK")}
+                            {formatMarketDateTime(loc.timestamp, locale)}
                           </span>
                         </div>
                       ))}
@@ -385,10 +385,10 @@ export default function DriverTrackingPage() {
             <div className="text-center p-8">
               <div className="text-5xl mb-3">👈</div>
               <h3 className="font-black text-gray-900 mb-1">
-                Vyberte vodiča
+                {t("m4.tracking.selectDriver")}
               </h3>
               <p className="text-sm text-gray-500">
-                Kliknite na vodiča pre detail polohy a prevádzkového stavu.
+                {t("m4.tracking.selectHelp")}
               </p>
             </div>
           )}

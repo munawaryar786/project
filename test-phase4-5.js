@@ -141,7 +141,7 @@ test('Environment Variable Structure', () => {
 
 // Test 8: Stripe Webhook Signature
 test('Stripe Webhook Structure', () => {
-  const webhookSecret = 'whsec_test12345678901234567890';
+  const webhookSecret = 'drivo_local_webhook_fixture_not_a_secret';
   
   if (!webhookSecret.startsWith('whsec_')) {
     throw new Error('Invalid webhook secret format');

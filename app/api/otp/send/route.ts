@@ -1,20 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { sendOTPWithFallback } from "@/lib/twilio";
-import type { OTPDeliveryResult } from "@/lib/twilio";
-import { normalizePassengerPhone } from "@/lib/passenger-auth";
-import { rateLimits, withRateLimit } from "@/lib/rate-limit";
+import { sendWhatsAppMessagingOtp, sendWhatsAppVerification } from "@/lib/twilio";
+import { createMessagingOtpChallenge, registrationOtpProvider } from "@/lib/otp-challenge";
+import { isValidE164Phone, normalizePassengerPhone } from "@/lib/passenger-auth";
+import { authRateLimitResponse, enforceAuthRateLimit, rateLimits, resolveClientIp } from "@/lib/rate-limit";
+import { publicBookingAccess, validBookingId } from "@/lib/booking-access";
+import { getPassengerFromRequest } from "@/lib/passenger-auth";
+import { isAllowedOrigin } from "@/lib/env";
+import { isUiLocale } from "@/lib/i18n/locale-resolution";
 
-const PassengerOtpPurposeSchema = z.enum([
-  "PASSENGER_REGISTRATION",
-  "PASSENGER_LEGACY_PASSWORD_SETUP",
-]);
-
+const PassengerOtpPurposeSchema = z.enum(["PASSENGER_REGISTRATION", "PASSENGER_LEGACY_PASSWORD_SETUP"]);
 const OTPSchema = z.object({
   bookingId: z.string().min(1),
   phone: z.string().min(6),
   purpose: PassengerOtpPurposeSchema.optional().default("PASSENGER_REGISTRATION"),
+  locale: z.unknown().optional(),
 });
 
 function otpError(code: string, message: string, status = 400) {
@@ -22,112 +23,75 @@ function otpError(code: string, message: string, status = 400) {
 }
 
 async function handler(request: NextRequest) {
+  if (!isAllowedOrigin(request.headers.get("origin"))) return otpError("ORIGIN_REJECTED", "Request origin is not allowed", 403);
   try {
     const parsed = OTPSchema.safeParse(await request.json());
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid request", details: parsed.error.flatten().fieldErrors },
-        { status: 400 }
-      );
-    }
-
+    if (!parsed.success) return otpError("INVALID_REQUEST", "Invalid verification request.");
     const { bookingId, purpose } = parsed.data;
+    if (!validBookingId(bookingId)) return otpError("BOOKING_NOT_FOUND", "Booking unavailable", 404);
     const normalizedPhone = normalizePassengerPhone(parsed.data.phone);
+    if (!isValidE164Phone(normalizedPhone)) return otpError("PHONE_INVALID", "Enter a valid mobile number.");
+
+    // Phase 3J registration_otp_phone (3 requests / 5 minutes) is now Redis-backed.
+    const distributedLimit = await enforceAuthRateLimit({
+      domain: "otp-send",
+      identities: [
+        { dimension: "ip", value: resolveClientIp(request), max: rateLimits.passengerRegistrationOtpSend.max, windowMs: rateLimits.passengerRegistrationOtpSend.windowMs },
+        { dimension: "phone", value: normalizedPhone, max: rateLimits.passengerRegistrationOtpPhone.max, windowMs: rateLimits.passengerRegistrationOtpPhone.windowMs },
+      ],
+      cooldown: { value: `${purpose}:${normalizedPhone}`, windowMs: 30_000 },
+    });
+    if (!distributedLimit.allowed) return authRateLimitResponse(distributedLimit, "Too many OTP requests. Please try again later.");
 
     const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
-    if (!booking) {
-      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
-    }
+    const passengerActor = booking?.passengerId ? await getPassengerFromRequest(request) : null;
+    if (!booking || !(await publicBookingAccess(request, booking, passengerActor?.id)).allowed) return otpError("BOOKING_NOT_FOUND", "Booking unavailable. Restart your booking.", 404);
+    const bookingPhone = booking.normalizedPhone || normalizePassengerPhone(`${booking.customerPhoneCode}${booking.customerPhone}`, booking.customerPhoneCode);
+    if (bookingPhone !== normalizedPhone) return otpError("PHONE_MISMATCH", "Phone number does not match booking.");
 
-    if (booking.normalizedPhone && booking.normalizedPhone !== normalizedPhone) {
-      return NextResponse.json({ error: "Phone number does not match booking" }, { status: 400 });
-    }
+    const passenger = await prisma.passenger.findFirst({ where: { OR: [{ phone: normalizedPhone }, { normalizedPhone }] }, select: { id: true, passwordHash: true } });
+    if (purpose === "PASSENGER_REGISTRATION" && passenger?.passwordHash) return otpError("ACCOUNT_EXISTS_LOGIN_REQUIRED", "This phone already has a Drivo account. Please log in or reset your password.", 409);
+    if (purpose === "PASSENGER_REGISTRATION" && passenger) return otpError("LEGACY_SETUP_REQUIRED", "Please verify your phone and create a password to continue.", 409);
+    if (purpose === "PASSENGER_LEGACY_PASSWORD_SETUP" && !passenger) return otpError("REGISTRATION_REQUIRED", "Please verify your phone and create an account.", 404);
+    if (purpose === "PASSENGER_LEGACY_PASSWORD_SETUP" && passenger?.passwordHash) return otpError("ACCOUNT_EXISTS_LOGIN_REQUIRED", "This phone already has a Drivo account. Please log in or reset your password.", 409);
 
-    const passenger = await prisma.passenger.findFirst({
-      where: { OR: [{ phone: normalizedPhone }, { normalizedPhone }] },
-      select: { id: true, passwordHash: true },
+    const latest = await prisma.oTP.findFirst({ where: { bookingId, phone: normalizedPhone, purpose, used: false }, orderBy: { createdAt: "desc" } });
+    if (latest && Date.now() - latest.createdAt.getTime() < 30_000) return otpError("RESEND_COOLDOWN", "Please wait before requesting another code.", 429);
+
+    // Never silently downgrade on a Verify failure. Switching providers is explicit.
+    // The Messaging HMAC key must be present before any provider call.
+    const providerMode = registrationOtpProvider();
+    const messagingChallenge = providerMode === "messaging"
+      ? createMessagingOtpChallenge({ bookingId, phone: normalizedPhone, purpose })
+      : null;
+    const provider = messagingChallenge
+      ? await sendWhatsAppMessagingOtp(normalizedPhone, messagingChallenge.otp)
+      : await sendWhatsAppVerification(normalizedPhone, isUiLocale(parsed.data.locale) ? parsed.data.locale : undefined);
+    if (!provider.success) return otpError("PROVIDER_UNAVAILABLE", provider.error, 503);
+
+    await prisma.$transaction(async tx => {
+      const current = await tx.booking.findUnique({ where: { id: bookingId } });
+      if (!current || !(await publicBookingAccess(request, current, passengerActor?.id, tx)).allowed) throw new Error("BOOKING_ACCESS_CONFLICT");
+      await tx.oTP.updateMany({ where: { bookingId, phone: normalizedPhone, purpose, used: false }, data: { used: true } });
+      await tx.oTP.create({
+        data: {
+          // Verify keeps a sentinel; Messaging stores only a keyed, scoped HMAC.
+          code: messagingChallenge?.storedCode ?? "TWILIO_VERIFY",
+          phone: normalizedPhone,
+          purpose,
+          bookingId,
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        },
+      });
+      await tx.booking.update({ where: { id: bookingId }, data: { normalizedPhone, passengerAuthStatus: "PENDING_PHONE_VERIFICATION" } });
     });
 
-    if (purpose === "PASSENGER_REGISTRATION") {
-      if (passenger?.passwordHash) {
-        return otpError(
-          "ACCOUNT_EXISTS_LOGIN_REQUIRED",
-          "This phone already has a Drivo account. Please log in or reset your password.",
-          409
-        );
-      }
-      if (passenger) {
-        return otpError(
-          "LEGACY_SETUP_REQUIRED",
-          "Please verify your phone and create a password to continue.",
-          409
-        );
-      }
-    }
-
-    if (purpose === "PASSENGER_LEGACY_PASSWORD_SETUP") {
-      if (!passenger) {
-        return otpError("REGISTRATION_REQUIRED", "Please verify your phone and create an account.", 404);
-      }
-      if (passenger.passwordHash) {
-        return otpError(
-          "ACCOUNT_EXISTS_LOGIN_REQUIRED",
-          "This phone already has a Drivo account. Please log in or reset your password.",
-          409
-        );
-      }
-    }
-
-    await prisma.oTP.updateMany({
-      where: {
-        bookingId,
-        phone: normalizedPhone,
-        purpose,
-        used: false,
-      },
-      data: { used: true },
-    });
-
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    await prisma.oTP.create({
-      data: {
-        code: otp,
-        phone: normalizedPhone,
-        purpose,
-        bookingId,
-        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
-      },
-    });
-
-    let deliveryResult: OTPDeliveryResult = { success: true, method: "console" };
-    if (process.env.TWILIO_ACCOUNT_SID && process.env.NODE_ENV === "production") {
-      deliveryResult = await sendOTPWithFallback(normalizedPhone, otp);
-      if (!deliveryResult.success) {
-        console.error("Passenger auth OTP delivery failed:", deliveryResult.error);
-      }
-    }
-
-    await prisma.booking.update({
-      where: { id: bookingId },
-      data: {
-        normalizedPhone,
-        passengerAuthStatus: "PENDING_PHONE_VERIFICATION",
-      },
-    });
-
-    return NextResponse.json({
-      success: true,
-      message: "A new verification code has been sent.",
-      method: deliveryResult.method,
-      purpose,
-    });
+    return NextResponse.json({ success: true, message: "A WhatsApp verification code has been sent.", method: "whatsapp", channel: "whatsapp", purpose });
   } catch (error) {
-    console.error("OTP send error:", error);
-    return NextResponse.json(
-      { error: "Failed to send OTP. Please try again." },
-      { status: 500 }
-    );
+    console.error("OTP send error", { type: error instanceof Error ? error.name : "unknown" });
+    return otpError("OTP_SEND_FAILED", "We could not send a verification code. Please try again.", 500);
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.passengerRegistrationOtpSend);
+export const runtime = "nodejs";
+export const POST = handler;

@@ -1,25 +1,23 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { LocalizedServicePage } from "@/components/shared/LocalizedPublicPages";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
+import { requestLocale } from "@/lib/i18n/request-locale";
+import { publicPageMetadata } from "@/lib/i18n/metadata";
 
-export const metadata: Metadata = {
-  title: "Special Needs Children Transport Bratislava",
-  description:
-    "School Pick-up & Drop-off and safe, gentle transport for children with physical or developmental disabilities in Bratislava.",
-  keywords: [
-    "children transport Bratislava",
-    "special needs taxi",
-    "disability children transport Slovakia",
-    "school transport ZTP",
-  ],
-  openGraph: {
-    title: "Special Needs Children Transport | Drivo Bratislava",
-    description: "School Pick-up & Drop-off and safe, gentle transport for children with disabilities.",
-    url: "https://drivo.sk/children",
-  },
-  alternates: { canonical: "/children" },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  if (!FEATURE_FLAGS.childrenTransport) {
+    return { title: "Page Not Found", robots: { index: false, follow: false } };
+  }
+  return {
+    ...publicPageMetadata("/children", await requestLocale()),
+    keywords: ["children transport Bratislava", "special needs taxi", "disability children transport Slovakia", "school transport ZTP"],
+  };
+}
 
 export default function ChildrenPage() {
+  if (!FEATURE_FLAGS.childrenTransport) notFound();
+
   return (
     <LocalizedServicePage
       badge="Children"

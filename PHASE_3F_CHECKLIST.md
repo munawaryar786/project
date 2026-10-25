@@ -1,0 +1,82 @@
+# DRIVO PHASE 3F SCHEDULED RIDE MARKETPLACE CHECKLIST
+
+Created before implementation on the clean approved Phase 3E baseline.
+
+- [x] 1. Baseline branch, commit, and clean worktree verified
+- [x] 2. Existing scheduled booking model audited
+- [x] 3. UTC and market timezone model audited
+- [x] 4. Immediate versus scheduled helper defined
+- [x] 5. Booking marketplace eligibility defined
+- [x] 6. Driver/vehicle eligibility defined
+- [x] 7. Pre-claim privacy boundary defined
+- [x] 8. Exact-address-after-claim boundary defined
+- [x] 9. Secure marketplace API designed
+- [x] 10. Atomic claim transaction designed
+- [x] 11. Assignment primitive decision documented
+- [x] 12. Claim idempotency designed
+- [x] 13. Competing claim race covered
+- [x] 14. Driver future-ride conflict policy defined
+- [x] 15. Route feasibility check defined
+- [x] 16. Route feasibility cost control defined
+- [x] 17. Service-duration semantics defined
+- [x] 18. Central scheduling buffer policy defined
+- [x] 19. Claim lead-time policy defined
+- [x] 20. Deterministic marketplace sorting defined
+- [x] 21. Current GPS future-ride policy defined
+- [x] 22. Active-trip compatibility defined
+- [x] 23. Multi-city compatibility defined
+- [x] 24. Assisted compatibility defined
+- [x] 25. WAV capability fail-closed behavior defined
+- [x] 26. Children compatibility defined
+- [x] 27. Luggage/capacity compatibility defined
+- [x] 28. Passenger fare isolation defined
+- [x] 29. Driver earnings boundary preserved
+- [x] 30. Driver marketplace information architecture defined
+- [x] 31. Safe marketplace card defined
+- [x] 32. Claim confirmation UX defined
+- [x] 33. Claimed rides view defined
+- [x] 34. Release/unclaim policy defined
+- [x] 35. T-30 reminder designed
+- [x] 36. T-20 warning designed
+- [x] 37. T-15 readiness check designed
+- [x] 38. Readiness state machine defined
+- [x] 39. Readiness failure recovery defined
+- [x] 40. BullMQ jobs designed
+- [x] 41. Outbox events/notifications designed
+- [x] 42. Realtime signal/refetch integration designed
+- [x] 43. Reminder reconciliation designed
+- [x] 44. Reschedule/cancellation safety designed
+- [x] 45. Return-trip compatibility audited
+- [x] 46. Recurrence compatibility audited
+- [x] 47. Admin compatibility preserved
+- [x] 48. Phase 3C fallback integration preserved
+- [x] 49. Future rides excluded from immediate dispatch
+- [x] 50. Phase 3E navigation boundary preserved
+- [x] 51. Scheduled route preview cost boundary preserved
+- [x] 52. Route-provider failure fail-closed behavior defined
+- [x] 53. Error contracts defined
+- [x] 54. Security controls preserved
+- [x] 55. Prisma/data-model safety audited
+- [x] 56. Index/existing-data safety audited
+- [x] 57. Phase 3F test command and 73 required scenarios covered
+- [x] 58. Phase 3E regression run
+- [x] 59. Phase 3D regression run
+- [x] 60. Phase 3C regression run
+- [x] 61. Phase 3B regression run
+- [x] 62. Phase 3A security regression run
+- [x] 63. UX1 regression run
+- [x] 64. Build/typecheck/lint/Prisma checks run
+- [x] 65. Read-only production audit queries prepared, not executed
+- [x] 66. Real Mongo concurrency prerequisite documented
+- [x] 67. Real route-feasibility prerequisite documented
+- [x] 68. Reminder staging prerequisite documented
+- [x] 69. Full Phase 3F staging E2E prepared
+- [x] 70. Production prerequisites consolidated
+- [x] 71. Phase 3G exclusion verified
+- [x] 72. Phase 3H exclusion verified
+- [x] 73. No commit/push/deploy/migration/db-push/seed performed
+- [x] 74. Final report sections A-AS prepared
+
+## Evidence boundary
+
+Static/source and isolated tests do not replace real transaction-capable Mongo concurrency, Redis/BullMQ workers, Google route feasibility, browser, mobile, staging, or production read-only verification.

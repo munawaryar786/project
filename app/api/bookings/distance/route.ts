@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { calculateDistance } from "@/lib/google-maps";
-import { getPricingEngineConfig } from "@/lib/pricing-engine-config";
-import { calculateFare, type FareBreakdown, type OptionalServiceCharge } from "@/lib/pricing-engine";
+import { rateLimits, withRateLimit } from "@/lib/rate-limit";
+import { calculateAuthoritativeBookingQuote } from "@/lib/booking-quote";
 
 const DistanceSchema = z.object({
   pickupAddress: z.string().min(3),
   dropoffAddress: z.string().min(3),
   serviceType: z.string().optional().default("standard"),
+  assistanceLevel: z.enum(["LIGHT", "DOOR_TO_DOOR", "BOARDING_HELP"]).optional().nullable(),
   passengerCount: z.coerce.number().min(1).optional().default(1),
   waitingMinutes: z.coerce.number().min(0).optional().default(0),
   scheduledDate: z.string().optional().nullable(),
@@ -35,73 +35,7 @@ function childrenServiceDays(recurrenceType: string | null | undefined, recurren
   return 1;
 }
 
-function buildPickupDateTime(date?: string | null, time?: string | null) {
-  if (!date || !time) return null;
-  return `${date}T${time}:00`;
-}
-
-function optionalChargesFor(serviceType: string, waitAndGreet: boolean) {
-  const normalized = serviceType.toLowerCase();
-  const optionalCharges: Partial<Record<OptionalServiceCharge, boolean>> = {};
-
-  if (normalized === "airport") {
-    optionalCharges.airportPickup = true;
-    optionalCharges.airportMeetGreet = waitAndGreet;
-  }
-  if (normalized === "accessible" || normalized === "senior") {
-    optionalCharges.assistedTransport = true;
-  }
-  if (normalized === "children") {
-    optionalCharges.childTransport = true;
-  }
-
-  return optionalCharges;
-}
-
-function childrenBreakdown(
-  breakdown: FareBreakdown,
-  recurrenceType: string | null | undefined,
-  recurrenceCustom: string | null | undefined,
-  returnDate: string | null | undefined,
-  returnTime: string | null | undefined
-) {
-  const serviceDays = childrenServiceDays(recurrenceType, recurrenceCustom);
-  const returnLegs = returnDate && returnTime ? 2 : 1;
-  const multiplier = returnLegs * serviceDays;
-  const multiply = (value: number) => Number((value * multiplier).toFixed(2));
-  const optionalServiceCharges = Object.fromEntries(
-    Object.entries(breakdown.optionalServiceCharges).map(([key, value]) => [
-      key,
-      multiply(value),
-    ])
-  );
-
-  return {
-    ...breakdown,
-    baseFare: multiply(breakdown.baseFare),
-    distanceCharge: multiply(breakdown.distanceCharge),
-    distanceTiers: breakdown.distanceTiers.map((tier) => ({
-      ...tier,
-      amount: multiply(tier.amount),
-      chargedKm: multiply(tier.chargedKm),
-    })),
-    waitingCharge: multiply(breakdown.waitingCharge),
-    bookingFee: multiply(breakdown.bookingFee),
-    optionalServiceCharges,
-    nightServiceCharge: multiply(breakdown.nightServiceCharge),
-    minimumFareAdjustment: multiply(breakdown.minimumFareAdjustment),
-    totalFare: multiply(breakdown.totalFare),
-    childTransport: {
-      returnIncluded: Boolean(returnDate && returnTime),
-      recurrence: recurrenceType || "ONE_TIME",
-      estimatedServiceDays: serviceDays,
-      returnLegs,
-      pricingSource: "Pricing Engine V1",
-    },
-  };
-}
-
-export async function POST(request: NextRequest) {
+async function calculateBookingDistance(request: NextRequest) {
   try {
     const body = await request.json();
     const parsed = DistanceSchema.safeParse(body);
@@ -114,40 +48,33 @@ export async function POST(request: NextRequest) {
     }
 
     const data = parsed.data;
-    const distanceResult = await calculateDistance(data.pickupAddress, data.dropoffAddress);
-    const { config, distanceTiers } = await getPricingEngineConfig();
-    const pickupDateTime = buildPickupDateTime(data.scheduledDate, data.scheduledTime);
-    const fare = calculateFare({
-      distanceKm: distanceResult.distanceKm,
+    const quote = await calculateAuthoritativeBookingQuote({
+      pickupAddress: data.pickupAddress,
+      dropoffAddress: data.dropoffAddress,
+      serviceType: data.serviceType,
+      assistanceLevel: data.assistanceLevel,
       waitingMinutes: data.waitingMinutes,
-      pickupDateTime,
-      optionalCharges: optionalChargesFor(data.serviceType, data.waitAndGreet),
-      config,
-      distanceTiers,
+      scheduledDate: data.scheduledDate,
+      scheduledTime: data.scheduledTime,
+      waitAndGreet: data.waitAndGreet,
+      recurrenceType: data.recurrenceType,
+      recurrenceCustom: data.recurrenceCustom,
+      returnDate: data.returnDate,
+      returnTime: data.returnTime,
     });
-    const breakdown =
-      data.serviceType.toLowerCase() === "children"
-        ? childrenBreakdown(
-            fare.breakdown,
-            data.recurrenceType,
-            data.recurrenceCustom,
-            data.returnDate,
-            data.returnTime
-          )
-        : fare.breakdown;
 
     return NextResponse.json({
       success: true,
       distance: {
-        km: distanceResult.distanceKm,
-        duration: distanceResult.durationMinutes,
-        origin: distanceResult.origin,
-        destination: distanceResult.destination,
+        km: quote.distance.distanceKm,
+        duration: quote.distance.durationMinutes,
+        origin: quote.distance.origin,
+        destination: quote.distance.destination,
       },
       pricing: {
-        estimatedPrice: breakdown.totalFare,
-        breakdown,
-        currency: "EUR",
+        estimatedPrice: quote.breakdown.totalFare,
+        breakdown: quote.breakdown,
+        currency: quote.currency,
       },
     });
   } catch (error: any) {
@@ -155,12 +82,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: "Failed to calculate distance. Please check addresses and try again.",
-        details: error.message,
       },
       { status: 500 }
     );
   }
 }
+
+export const POST = withRateLimit(calculateBookingDistance, {
+  ...rateLimits.public,
+  scope: "booking_distance",
+  max: 30,
+});
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -175,20 +107,18 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const distanceResult = await calculateDistance(pickup, dropoff);
-    const { config, distanceTiers } = await getPricingEngineConfig();
-    const fare = calculateFare({
-      distanceKm: distanceResult.distanceKm,
-      config,
-      distanceTiers,
+    const quote = await calculateAuthoritativeBookingQuote({
+      pickupAddress: pickup,
+      dropoffAddress: dropoff,
+      serviceType: "standard",
     });
 
     return NextResponse.json({
       success: true,
-      distanceKm: distanceResult.distanceKm,
-      durationMinutes: distanceResult.durationMinutes,
-      estimatedPrice: fare.totalFare,
-      breakdown: fare.breakdown,
+      distanceKm: quote.distance.distanceKm,
+      durationMinutes: quote.distance.durationMinutes,
+      estimatedPrice: quote.breakdown.totalFare,
+      breakdown: quote.breakdown,
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

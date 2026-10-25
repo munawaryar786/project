@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { rateLimits, withRateLimit } from "@/lib/rate-limit";
 import { estimateBookingPrice, PRICING_RATES } from "@/lib/pricing";
 import { prisma } from "@/lib/prisma";
 
@@ -16,7 +17,7 @@ const EstimateSchema = z.object({
   wavRequired: z.boolean().default(false),
 });
 
-export async function POST(request: NextRequest) {
+async function estimateBooking(request: NextRequest) {
   try {
     const body = await request.json();
     
@@ -59,3 +60,8 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+export const POST = withRateLimit(estimateBooking, {
+  ...rateLimits.public,
+  scope: "booking_estimate",
+  max: 30,
+});

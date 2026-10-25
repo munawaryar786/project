@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import type {
@@ -23,6 +25,36 @@ import BookingConfirmation from "./BookingConfirmation";
 import AddressAutocomplete from "./AddressAutocomplete";
 import PriceEstimate from "./PriceEstimate";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { messageKeyForCode, presentMessage } from "@/lib/i18n/message-catalog";
+import { isCustomerServiceEnabled } from "@/lib/feature-flags";
+import type { SavedRouteView } from "@/lib/saved-route-types";
+import {
+  beginGuestDraftTransition,
+  clearBookingDraft,
+  clearGuestDraftTransition,
+  clearBookingSubmissionUncertain,
+  clearBookingOperationId,
+  eligibleGuestDraftForPassenger,
+  hasPassengerHistoryInTab,
+  hasUncertainBookingSubmission,
+  markBookingSubmissionUncertain,
+  notePassengerHistoryInTab,
+  readBookingOperationId,
+  readBookingDraft,
+  readGuestDraftTransition,
+  removeLegacyBookingDraft,
+  saveBookingDraft,
+  saveBookingOperationId,
+  scopeForPassenger,
+  type BookingDraft,
+  type BookingDraftFields,
+  type DraftBookingLanguage,
+  type DraftScope,
+} from "@/lib/booking-draft";
+
+function isBookingLanguage(value: string): value is DraftBookingLanguage {
+  return value === "sk" || value === "de" || value === "uk" || value === "en" || value === "cs";
+}
 
 type Coords = {
   lat: number;
@@ -40,8 +72,7 @@ type AuthMode =
   | "existingAccountLogin"
   | "legacyPasswordSetupOtp"
   | "legacyPasswordSetup"
-  | "forgotPasswordOtp"
-  | "resetPassword"
+  | "emailRecovery"
   | "loginStepUp"
   | "authenticated";
 
@@ -123,6 +154,8 @@ function translatedBookingAuthError(t: Translate, key: string) {
 function localizedError(data: unknown, fallbackKey: string, t: Translate) {
   const codeKey = bookingAuthErrorKeyFromCode(readCode(data));
   if (codeKey) return translatedBookingAuthError(t, codeKey);
+  const sharedKey = messageKeyForCode(readCode(data));
+  if (sharedKey !== 'error.unknown' && sharedKey !== 'error.retryAfter') return t(sharedKey);
 
   const rawMessage = readError(data, "");
   const messageKey = bookingAuthErrorKeyFromMessage(rawMessage);
@@ -279,18 +312,20 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 
 export default function BookingForm({
   initialServiceType = "standard",
+  savedRouteId = "",
   onPickupChange,
   onDropoffChange,
   onServiceTypeChange,
 }: {
   initialServiceType?: ServiceType;
+  savedRouteId?: string;
   onPickupChange?: (v: string) => void;
   onDropoffChange?: (v: string) => void;
   onServiceTypeChange?: (v: ServiceType) => void;
 }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const [step, setStep] = useState<BookingStep>(1);
-  const [serviceType, setServiceType] = useState<ServiceType>(initialServiceType);
+  const [serviceType, setServiceType] = useState<ServiceType>(isCustomerServiceEnabled(initialServiceType) ? initialServiceType : "standard");
   const [passengers, setPassengers] = useState(2);
   const [luggage, setLuggage] = useState<LuggageType>("none");
   const [smallBags, setSmallBags] = useState(0);
@@ -315,7 +350,8 @@ export default function BookingForm({
   const [customerEmail, setCustomerEmail] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [phoneCode, setPhoneCode] = useState("+421");
-  const [languagePref, setLanguagePref] = useState("sk");
+  const [languagePref, setLanguagePref] = useState<DraftBookingLanguage>(() => locale);
+  const languagePrefExplicit = useRef(false);
   const [specialNotes, setSpecialNotes] = useState("");
   const [flightNumber, setFlightNumber] = useState("");
   const [airline, setAirline] = useState("");
@@ -367,33 +403,94 @@ export default function BookingForm({
   const [authError, setAuthError] = useState("");
   const [accountNeedsPhoneReverification, setAccountNeedsPhoneReverification] = useState(false);
   const [loginPassword, setLoginPassword] = useState("");
+  const [earlyLoginOpen, setEarlyLoginOpen] = useState(false);
+  const [earlyRecoveryOpen, setEarlyRecoveryOpen] = useState(false);
+  const [earlyPhoneCode, setEarlyPhoneCode] = useState("+421");
+  const [earlyPhoneNumber, setEarlyPhoneNumber] = useState("");
+  const [earlyAuthErrorCode, setEarlyAuthErrorCode] = useState("");
+  const [lateLoginErrorCode, setLateLoginErrorCode] = useState("");
+  const [recoveryEmail, setRecoveryEmail] = useState("");
+  const [recoveryRequested, setRecoveryRequested] = useState(false);
+  const [recoveryErrorCode, setRecoveryErrorCode] = useState("");
+  const [logoutFailed, setLogoutFailed] = useState(false);
   const [loginAttemptId, setLoginAttemptId] = useState("");
   const [loginOtp, setLoginOtp] = useState("");
   const [rememberDevice, setRememberDevice] = useState(true);
-  const [resetAttemptId, setResetAttemptId] = useState("");
-  const [resetOtp, setResetOtp] = useState("");
-  const [passwordResetProofToken, setPasswordResetProofToken] = useState("");
-  const [passwordResetProofExpiresAt, setPasswordResetProofExpiresAt] = useState("");
-  const [resetPassword, setResetPassword] = useState("");
-  const [resetConfirmPassword, setResetConfirmPassword] = useState("");
   const [accountPassword, setAccountPassword] = useState("");
   const [accountConfirmPassword, setAccountConfirmPassword] = useState("");
   const [showAccountPassword, setShowAccountPassword] = useState(false);
   const [showLoginPassword, setShowLoginPassword] = useState(false);
-  const [showResetPassword, setShowResetPassword] = useState(false);
   const [estimatedPrice, setEstimatedPrice] = useState<number | undefined>();
   const [fareBreakdown, setFareBreakdown] = useState<FareBreakdown | null>(null);
+  const [showWavModal, setShowWavModal] = useState(false);
   const [passengerProfile, setPassengerProfile] = useState<Record<string, unknown> | null>(null);
   const accountCreateInFlight = useRef(false);
+  const loginInFlight = useRef(false);
+  const recoveryInFlight = useRef(false);
+  const authEpoch = useRef(0);
+  const submissionInFlight = useRef(false);
+  const autoCheckedOperation = useRef("");
+  const lastSubmittedPayload = useRef<string | null>(null);
+  const bookingCreated = useRef(false);
+  const formTouchedSinceMount = useRef(false);
+  const [draftScope, setDraftScope] = useState<DraftScope>("guest");
+  const [draftReady, setDraftReady] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState<{ draft: BookingDraft; scheduleNeedsCorrection: boolean } | null>(null);
+  const [guestAdoption, setGuestAdoption] = useState(false);
+  const [guestAdoptionFromReset, setGuestAdoptionFromReset] = useState(false);
+  const guestAdoptionInFlight = useRef(false);
+  const guestAdoptionHeading = useRef<HTMLHeadingElement>(null);
+  const [draftNoticeKey, setDraftNoticeKey] = useState("");
+  const [savedRouteNotice, setSavedRouteNotice] = useState("");
+  const restoreRequestKey = useRef("");
+  const [submissionUncertain, setSubmissionUncertain] = useState(false);
+  const [bookingOperationId, setBookingOperationId] = useState("");
+  const [operationChecking, setOperationChecking] = useState(false);
+  const [operationNoticeKey, setOperationNoticeKey] = useState("");
+  const [recoveredBooking, setRecoveredBooking] = useState<{ id: string; ref: string; guest: boolean } | null>(null);
+  const latestDraftState = useRef<{
+    ready: boolean; pending: boolean; progress: boolean; uncertain: boolean; createdId: boolean;
+    scope: DraftScope; fields: BookingDraftFields;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!languagePrefExplicit.current) setLanguagePref(locale);
+  }, [locale]);
 
   const clearPassengerAuthErrors = () => {
     setAuthError("");
     setError((current) => (isAuthenticationRequiredMessage(current) ? "" : current));
   };
 
-  const markPassengerAuthenticated = (passenger: Record<string, unknown>) => {
+  const markPassengerAuthenticated = (passenger: Record<string, unknown>, fromSessionCheck = false) => {
+    authEpoch.current += 1;
+    notePassengerHistoryInTab();
+    if (!fromSessionCheck) {
+      latestDraftState.current = null;
+      clearGuestDraftTransition();
+      clearBookingDraft();
+      setPendingDraft(null);
+      setGuestAdoption(false);
+      setGuestAdoptionFromReset(false);
+      const scope = scopeForPassenger(passenger);
+      setDraftScope(scope || "guest");
+      setDraftReady(Boolean(scope));
+    }
     setPassengerProfile(passenger);
     setAuthMode("authenticated");
+    setEarlyLoginOpen(false);
+    setEarlyRecoveryOpen(false);
+    setEarlyAuthErrorCode("");
+    setLogoutFailed(false);
+    setLoginPassword("");
+    if (typeof passenger.fullName === "string") setCustomerName((current) => current || String(passenger.fullName));
+    if (typeof passenger.email === "string") setCustomerEmail((current) => current || String(passenger.email));
+    if (typeof passenger.normalizedPhone === "string" || typeof passenger.phone === "string") {
+      const phone = splitPhoneForForm(String(passenger.normalizedPhone || passenger.phone));
+      setPhoneCode(phone.code);
+      setCustomerPhone(phone.number);
+      setRegistrationProofPhone(phone.normalized);
+    }
     setRegistrationProofToken("");
     setLegacyPasswordSetupProofToken("");
     setProofExpiresAt("");
@@ -404,7 +501,7 @@ export default function BookingForm({
   };
 
   useEffect(() => {
-    setServiceType(initialServiceType);
+    setServiceType(isCustomerServiceEnabled(initialServiceType) ? initialServiceType : "standard");
   }, [initialServiceType]);
 
   useEffect(() => {
@@ -426,7 +523,7 @@ export default function BookingForm({
 
   const today = useMemo(() => new Date().toISOString().split("T")[0], []);
   const assistedTransport = serviceType === "accessible";
-  const quoteOnlyTransport = serviceType === "accessible" || serviceType === "senior";
+  const quoteOnlyTransport = false;
   const passengerAuthenticated = Boolean(passengerProfile) || authMode === "authenticated";
   const submitButtonLabel = passengerAuthenticated
     ? quoteOnlyTransport
@@ -483,10 +580,6 @@ export default function BookingForm({
     setAuthError("");
     setError("");
     setDevOtp(undefined);
-    setResetAttemptId("");
-    setResetOtp("");
-    setPasswordResetProofToken("");
-    setPasswordResetProofExpiresAt("");
   };
   const updateChildDetail = (index: number, patch: Partial<ChildDetail>) => {
     setChildrenDetails((current) =>
@@ -579,67 +672,339 @@ export default function BookingForm({
       setCustomWaitingDuration("");
     }
   }, [seniorPassenger, wheelchairUser, companionRequired, medicalAppointment, showWaitingDuration]);
-useEffect(() => {
-  const draftRaw = localStorage.getItem("drivo_booking_draft");
-  if (!draftRaw) return;
-
-  try {
-    const draft = JSON.parse(draftRaw);
-
-    if (typeof draft.pickupAddress === "string") {
-      setPickupAddress(draft.pickupAddress);
-    }
-
-    if (typeof draft.dropoffAddress === "string") {
-      setDropoffAddress(draft.dropoffAddress);
-    }
-
-    if (typeof draft.passengers === "number") {
-      setPassengers(Math.min(6, Math.max(1, draft.passengers)));
-    }
-
-    if (draft.rideMode === "now" || draft.rideMode === "schedule") {
-      setRideMode(draft.rideMode);
-    }
-
-    if (typeof draft.scheduledDate === "string") {
-      setScheduledDate(draft.scheduledDate);
-    }
-
-    if (typeof draft.scheduledTime === "string") {
-      setScheduledTime(draft.scheduledTime);
-    }
-  } catch {
-    localStorage.removeItem("drivo_booking_draft");
-  }
-}, []);
-
   useEffect(() => {
-    fetch("/api/passenger/me", { cache: "no-store", credentials: "include" })
-      .then((res) => (res.ok ? res.json() : null))
+    removeLegacyBookingDraft();
+    const savedOperation = readBookingOperationId();
+    setSubmissionUncertain(hasUncertainBookingSubmission() || Boolean(savedOperation));
+    setBookingOperationId(savedOperation || "");
+    const requestEpoch = authEpoch.current;
+    csrfFetch("passenger","/api/passenger/me", { cache: "no-store", credentials: "include" })
+      .then(async (res) => {
+        if (res.status !== 401 && !res.ok) throw new Error("Session check unavailable");
+        return res.ok ? res.json() : null;
+      })
       .then((data) => {
-        if (!data?.passenger) return;
-        markPassengerAuthenticated(data.passenger);
-        if (!customerName && data.passenger.fullName) {
-          setCustomerName(data.passenger.fullName);
+        if (requestEpoch !== authEpoch.current) return;
+        const passenger = isRecord(data) && isRecord(data.passenger) ? data.passenger : null;
+        const scope = passenger ? scopeForPassenger(passenger) : "guest";
+        if (!scope) throw new Error("Invalid passenger scope");
+        const adoptable = passenger ? eligibleGuestDraftForPassenger(passenger) : null;
+        if (passenger && !adoptable) clearGuestDraftTransition();
+        if (!passenger && hasPassengerHistoryInTab()) {
+          clearGuestDraftTransition();
+          clearBookingDraft();
+          setDraftNoticeKey("phase43.privacyDiscarded");
+          setDraftScope("guest");
+          setDraftReady(true);
+          return;
         }
-        if (!customerEmail && data.passenger.email) {
-          setCustomerEmail(data.passenger.email);
-        }
-        if (data.passenger.normalizedPhone || data.passenger.phone) {
-          const phone = splitPhoneForForm(String(data.passenger.normalizedPhone || data.passenger.phone));
-          setRegistrationProofPhone(phone.normalized);
-          setPhoneCode(phone.code);
-          setCustomerPhone(phone.number);
+        if (!passenger) clearGuestDraftTransition();
+        if (passenger) markPassengerAuthenticated(passenger, true);
+        setDraftScope(scope);
+        const result = adoptable || readBookingDraft(scope);
+        if (formTouchedSinceMount.current) {
+          clearGuestDraftTransition();
+          clearBookingDraft();
+          setDraftReady(true);
+        } else if (result.status === "ready") {
+          setPendingDraft(result);
+          setGuestAdoption(Boolean(adoptable));
+          const transition = adoptable ? readGuestDraftTransition() : null;
+          setGuestAdoptionFromReset(transition?.state === "authenticated" && transition.via === "reset");
+        } else if (result.status === "unavailable") {
+          setDraftNoticeKey("phase4.saveUnavailable");
+        } else {
+          if (result.status !== "empty") setDraftNoticeKey(`phase4.${result.status}`);
+          setDraftReady(true);
         }
       })
-      .catch(() => {});
+      .catch(() => { setDraftNoticeKey("phase4.sessionUnavailable"); });
   }, []);
+
+  const draftFields: BookingDraftFields = {
+    step: 1,
+    serviceType: serviceType === "accessible" || serviceType === "children" || serviceType === "airport" ? serviceType : "standard",
+    passengers,
+    smallBags: childrenTransport ? 0 : smallBags,
+    largeBags: childrenTransport ? 0 : largeBags,
+    pickupAddress,
+    dropoffAddress,
+    rideMode: childrenTransport ? "schedule" : rideMode,
+    scheduledDate: childrenTransport || rideMode === "schedule" ? scheduledDate : "",
+    scheduledTime: childrenTransport || rideMode === "schedule" ? scheduledTime : "",
+    airline: serviceType === "airport" && ["Ryanair", "Wizz Air", "Austrian", "Other"].includes(airline)
+      ? airline as BookingDraftFields["airline"] : "",
+    waitAndGreet: serviceType === "airport" && waitAndGreet,
+    bookingLanguage: languagePrefExplicit.current ? languagePref : null,
+  };
+  const hasDraftProgress = Boolean(
+    pickupAddress || dropoffAddress || passengers !== 2 || smallBags || largeBags ||
+    scheduledDate || scheduledTime || airline || waitAndGreet ||
+    serviceType !== (isCustomerServiceEnabled(initialServiceType) ? initialServiceType : "standard") ||
+    languagePrefExplicit.current
+  );
+  latestDraftState.current = {
+    ready: draftReady, pending: Boolean(pendingDraft), progress: hasDraftProgress,
+    uncertain: submissionUncertain, createdId: Boolean(bookingId),
+    scope: draftScope, fields: draftFields,
+  };
+
+  const prepareGuestDraftNavigation = () => {
+    if (draftScope !== "guest" || !draftReady || pendingDraft || !hasDraftProgress ||
+        step !== 1 || bookingId || submissionUncertain || hasUncertainBookingSubmission() ||
+        readBookingOperationId() || submissionInFlight.current || bookingCreated.current) return;
+    if (!saveBookingDraft("guest", draftFields) || !beginGuestDraftTransition()) {
+      clearGuestDraftTransition();
+      setDraftNoticeKey("phase43.unavailable");
+    }
+  };
+
+  useEffect(() => {
+    const persistLatest = () => {
+      const current = latestDraftState.current;
+      if (current?.ready && !current.pending && current.progress && !current.uncertain && !current.createdId &&
+          !submissionInFlight.current && !bookingCreated.current && !hasUncertainBookingSubmission()) {
+        saveBookingDraft(current.scope, current.fields);
+      }
+    };
+    window.addEventListener("pagehide", persistLatest);
+    return () => { window.removeEventListener("pagehide", persistLatest); persistLatest(); };
+  }, []);
+
+  useEffect(() => {
+    if (!draftReady || pendingDraft || step !== 1 || bookingId || bookingCreated.current || submissionInFlight.current || submissionUncertain) return;
+    if (!hasDraftProgress) { clearBookingDraft(); return; }
+    const timer = window.setTimeout(() => {
+      if (!saveBookingDraft(draftScope, draftFields)) setDraftNoticeKey("phase4.saveUnavailable");
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [draftReady, pendingDraft, draftScope, step, bookingId, submissionUncertain, hasDraftProgress,
+      serviceType, passengers, smallBags, largeBags, pickupAddress, dropoffAddress,
+      rideMode, scheduledDate, scheduledTime, airline, waitAndGreet, languagePref]);
+
+  const resumeDraft = async () => {
+    if (!pendingDraft || formTouchedSinceMount.current) return;
+    let selectedDraft = readBookingDraft(guestAdoption ? "guest" : draftScope);
+    if (selectedDraft.status !== "ready") {
+      clearGuestDraftTransition(); setPendingDraft(null); setGuestAdoption(false);
+      setGuestAdoptionFromReset(false);
+      setDraftReady(true);
+      setDraftNoticeKey(guestAdoption ? "phase43.unavailable" : selectedDraft.status === "unavailable" ? "phase4.saveUnavailable" : selectedDraft.status === "empty" ? "phase4.invalid" : `phase4.${selectedDraft.status}`);
+      return;
+    }
+    if (guestAdoption) {
+      if (guestAdoptionInFlight.current) return;
+      guestAdoptionInFlight.current = true;
+      try {
+        if (submissionUncertain || hasUncertainBookingSubmission() || readBookingOperationId()) throw new Error("Booking outcome uncertain");
+        const response = await csrfFetch("passenger", "/api/passenger/me", { cache: "no-store", credentials: "include" });
+        if (!response.ok) throw new Error("Session unavailable");
+        const data = await response.json();
+        const passenger = isRecord(data) && isRecord(data.passenger) ? data.passenger : null;
+        if (!passenger || scopeForPassenger(passenger) !== draftScope) throw new Error("Draft transition unavailable");
+        const current = eligibleGuestDraftForPassenger(passenger);
+        if (!current || current.status !== "ready") throw new Error("Draft transition unavailable");
+        selectedDraft = current;
+      } catch {
+        clearGuestDraftTransition(); clearBookingDraft(); setPendingDraft(null); setGuestAdoption(false);
+        setGuestAdoptionFromReset(false);
+        setDraftReady(true); resetUnsubmittedForm(); setDraftNoticeKey("phase43.unavailable");
+        guestAdoptionInFlight.current = false;
+        return;
+      }
+      guestAdoptionInFlight.current = false;
+    }
+    const { fields } = selectedDraft.draft;
+    setServiceType(fields.serviceType);
+    setPassengers(fields.passengers);
+    setSmallBags(fields.smallBags);
+    setLargeBags(fields.largeBags);
+    setPickupAddress(fields.pickupAddress);
+    setDropoffAddress(fields.dropoffAddress);
+    setPickupCoords(null);
+    setDropoffCoords(null);
+    onPickupChange?.(fields.pickupAddress);
+    onDropoffChange?.(fields.dropoffAddress);
+    setRideMode(fields.rideMode);
+    setScheduledDate(selectedDraft.scheduleNeedsCorrection ? "" : fields.scheduledDate);
+    setScheduledTime(selectedDraft.scheduleNeedsCorrection ? "" : fields.scheduledTime);
+    setAirline(fields.airline);
+    setWaitAndGreet(fields.waitAndGreet);
+    if (fields.bookingLanguage) {
+      languagePrefExplicit.current = true;
+      setLanguagePref(fields.bookingLanguage);
+    }
+    setStep(1);
+    if (guestAdoption) { clearGuestDraftTransition(); clearBookingDraft(); setGuestAdoption(false); setGuestAdoptionFromReset(false); }
+    setPendingDraft(null);
+    setDraftReady(true);
+    setDraftNoticeKey(selectedDraft.scheduleNeedsCorrection ? "phase4.scheduleNeedsCorrection" : "phase4.restored");
+  };
+
+  const resetUnsubmittedForm = () => {
+    setStep(1);
+    setServiceType(isCustomerServiceEnabled(initialServiceType) ? initialServiceType : "standard");
+    setPassengers(2); setSmallBags(0); setLargeBags(0); setLuggage("none");
+    setPickupAddress(""); setDropoffAddress(""); setPickupCoords(null); setDropoffCoords(null);
+    onPickupChange?.(""); onDropoffChange?.("");
+    setRideMode("now"); setScheduledDate(""); setScheduledTime("");
+    setWheelchair(false); setWaitAndGreet(false); setFlightNumber(""); setAirline("");
+    setSeniorPassenger(false); setZtpCardHolder(false); setWheelchairUser(false);
+    setCompanionRequired(false); setMedicalAppointment(false); setWaitingTimeRequired(false);
+    setAssistanceLevel(""); setWheelchairType(""); setCanTransferToSeat(""); setCompanionCount(1);
+    setHospitalName(""); setDepartment(""); setAppointmentDate(""); setAppointmentTime("");
+    setTripType("GO_ONLY"); setReturnDate(""); setReturnTime(""); setWaitingDuration("");
+    setCustomWaitingDuration(""); setRecurrence("ONE_TIME"); setRecurrenceCustom("");
+    setChildrenDetails([createEmptyChild(), createEmptyChild()]);
+    setChildFullName(""); setChildAge(""); setChildSpecialRequirements("");
+    setParentFullName(""); setParentPrimaryPhone(""); setParentEmergencyPhone("");
+    setParentEmail(""); setEducationalInstitutionName(""); setInstitutionSuggestionSelected(false);
+    setCustomerName(""); setCustomerEmail(""); setCustomerPhone(""); setSpecialNotes("");
+    setCashAgreed(false); setPaymentMethod("card"); setEstimatedPrice(undefined); setFareBreakdown(null);
+    setError(""); setAuthError(""); setEarlyAuthErrorCode(""); setLateLoginErrorCode("");
+    setEarlyLoginOpen(false); setEarlyRecoveryOpen(false); setRecoveryEmail(""); setRecoveryRequested(false);
+    setRecoveryErrorCode(""); setLoginPassword(""); setLoginOtp("");
+    languagePrefExplicit.current = false; setLanguagePref(locale);
+  };
+
+  const discardDraft = () => {
+    latestDraftState.current = null;
+    clearGuestDraftTransition();
+    clearBookingDraft();
+    setPendingDraft(null);
+    setGuestAdoption(false);
+    setGuestAdoptionFromReset(false);
+    setDraftReady(true);
+    resetUnsubmittedForm();
+    setDraftNoticeKey("phase4.discarded");
+  };
+
+  // Route templates are fetched only after passenger authentication and draft
+  // resolution; never trusted from localStorage, URL payloads, or a prior account.
+  useEffect(() => {
+    if (!savedRouteId || !/^[a-f\d]{24}$/i.test(savedRouteId) || bookingId || step !== 1 || submissionUncertain) return;
+    if (pendingDraft) { setSavedRouteNotice("savedRoutes.draftConflict"); return; }
+    if (!draftReady) return;
+    if (!passengerProfile) { setSavedRouteNotice("savedRoutes.loginRequired"); return; }
+    const key = `${draftScope}:${savedRouteId}`;
+    if (restoreRequestKey.current === key) return;
+    restoreRequestKey.current = key;
+    let active = true;
+    csrfFetch("passenger", `/api/passenger/saved-routes/${savedRouteId}`, { cache: "no-store" })
+      .then(async (response) => { if (!response.ok) throw Error("ROUTE_UNAVAILABLE"); return response.json(); })
+      .then((data: { route?: SavedRouteView }) => {
+        if (!active || !data.route) return;
+        const route = data.route;
+        const service = route.serviceType.toLowerCase();
+        if (!["standard", "accessible", "senior", "children", "airport"].includes(service) || !isCustomerServiceEnabled(service)) throw Error("SERVICE_UNAVAILABLE");
+        if (route.passengerCount < 1 || route.passengerCount > 6) throw Error("CAPACITY_UNAVAILABLE");
+        if (hasUncertainBookingSubmission() || readBookingOperationId() || bookingCreated.current) throw Error("BOOKING_UNCERTAIN");
+        latestDraftState.current = null;
+        clearBookingDraft();
+        resetUnsubmittedForm();
+        setDraftNoticeKey("");
+        // Rehydrate contact details from the currently authenticated account,
+        // never from saved templates or a previous guest session.
+        if (typeof passengerProfile.fullName === "string") setCustomerName(passengerProfile.fullName);
+        if (typeof passengerProfile.email === "string") setCustomerEmail(passengerProfile.email);
+        const currentPhone = typeof passengerProfile.normalizedPhone === "string"
+          ? passengerProfile.normalizedPhone : typeof passengerProfile.phone === "string" ? passengerProfile.phone : "";
+        if (currentPhone) {
+          const parsed = splitPhoneForForm(currentPhone);
+          setPhoneCode(parsed.code); setCustomerPhone(parsed.number);
+        }
+        const selected = service === "senior" ? "accessible" : service as ServiceType;
+        setServiceType(selected);
+        if (service === "senior") setSeniorPassenger(true);
+        setPassengers(route.passengerCount);
+        setSmallBags(route.smallBags);
+        setLargeBags(route.largeBags);
+        setPickupAddress(route.pickupAddress);
+        setDropoffAddress(route.dropoffAddress);
+        // Edited route addresses have null coordinates and must be revalidated by
+        // the existing quote / booking pipeline. No quote or payment is reused.
+        setPickupCoords(route.pickupLat != null && route.pickupLng != null ? { lat: route.pickupLat, lng: route.pickupLng } : null);
+        setDropoffCoords(route.dropoffLat != null && route.dropoffLng != null ? { lat: route.dropoffLat, lng: route.dropoffLng } : null);
+        onPickupChange?.(route.pickupAddress);
+        onDropoffChange?.(route.dropoffAddress);
+        setRideMode(service === "children" ? "schedule" : "now");
+        setScheduledDate(""); setScheduledTime("");
+        setAirline(service === "airport" ? route.airline || "" : "");
+        setWaitAndGreet(service === "airport" && route.waitAndGreet);
+        setEstimatedPrice(undefined); setFareBreakdown(null);
+        setSavedRouteNotice(service === "children" ? "savedRoutes.reviewChildren" : "savedRoutes.restored");
+      })
+      .catch(() => { if (active) { restoreRequestKey.current = ""; setSavedRouteNotice("savedRoutes.error"); } });
+    return () => { active = false; };
+  // Request runs once per account/route. Do not depend on form fields it changes.
+  }, [savedRouteId, bookingId, step, submissionUncertain, pendingDraft, draftReady, passengerProfile, draftScope]);
+
+  useEffect(() => {
+    if (guestAdoption && pendingDraft && !formTouchedSinceMount.current) guestAdoptionHeading.current?.focus();
+  }, [guestAdoption, pendingDraft]);
+
+  useEffect(() => {
+    if (bookingId || bookingCreated.current ||
+        ((!draftReady && !pendingDraft) || (!hasDraftProgress && !passengerProfile && !pendingDraft))) return;
+    const verifyScope = async () => {
+      const requestEpoch = authEpoch.current;
+      try {
+        const response = await csrfFetch("passenger", "/api/passenger/me", { cache: "no-store", credentials: "include" });
+        if (response.status !== 401 && !response.ok) throw new Error("Session check unavailable");
+        const data = response.ok ? await response.json() : null;
+        if (requestEpoch !== authEpoch.current) return;
+        const passenger = isRecord(data) && isRecord(data.passenger) ? data.passenger : null;
+        const currentScope = passenger ? scopeForPassenger(passenger) : "guest";
+        if (!currentScope || currentScope === draftScope) return;
+        authEpoch.current += 1;
+        latestDraftState.current = null;
+        notePassengerHistoryInTab();
+        clearGuestDraftTransition();
+        clearBookingDraft();
+        const hadOperation = Boolean(readBookingOperationId()) || hasUncertainBookingSubmission();
+        clearBookingOperationId();
+        setBookingOperationId("");
+        lastSubmittedPayload.current = null;
+        if (hadOperation) {
+          markBookingSubmissionUncertain();
+          setSubmissionUncertain(true);
+          setOperationNoticeKey("phase42.transitionReview");
+        } else {
+          clearBookingSubmissionUncertain();
+          setSubmissionUncertain(false);
+        }
+        setPendingDraft(null);
+        setGuestAdoption(false);
+        setGuestAdoptionFromReset(false);
+        resetUnsubmittedForm();
+        if (passenger) markPassengerAuthenticated(passenger);
+        else { setPassengerProfile(null); setAuthMode("idle"); setDraftScope("guest"); setDraftReady(true); }
+        setDraftNoticeKey("phase4.accountChanged");
+      } catch {
+        if (requestEpoch !== authEpoch.current) return;
+        // A shared browser may have changed accounts while this tab was idle.
+        // If the current identity cannot be checked, discard private trip data.
+        latestDraftState.current = null;
+        clearGuestDraftTransition();
+        clearBookingDraft();
+        setPendingDraft(null);
+        setGuestAdoption(false);
+        setGuestAdoptionFromReset(false);
+        setDraftReady(false);
+        resetUnsubmittedForm();
+        setPassengerProfile(null);
+        setAuthMode("idle");
+        setDraftNoticeKey("phase4.sessionUnavailable");
+      }
+    };
+    window.addEventListener("focus", verifyScope);
+    return () => window.removeEventListener("focus", verifyScope);
+  }, [draftReady, draftScope, hasDraftProgress, passengerProfile, pendingDraft, bookingId]);
 
   const serviceMap: Record<string, string> = {
     standard: "STANDARD",
     accessible: "ACCESSIBLE",
-    senior: "SENIOR",
+    senior: "ACCESSIBLE",
     children: "CHILDREN",
     airport: "AIRPORT",
   };
@@ -653,7 +1018,6 @@ useEffect(() => {
  const paymentMap: Record<string, string> = {
     card: "CARD",
     cash: "CASH",
-    invoice: "INVOICE",
   };
 
   const safeJson = async (res: Response): Promise<unknown> => {
@@ -667,12 +1031,8 @@ useEffect(() => {
   };
 
   const clearPasswordResetState = () => {
-    setResetAttemptId("");
-    setResetOtp("");
-    setPasswordResetProofToken("");
-    setPasswordResetProofExpiresAt("");
-    setResetPassword("");
-    setResetConfirmPassword("");
+    setRecoveryRequested(false);
+    setRecoveryErrorCode("");
   };
 
   const sendBookingOtp = async (
@@ -680,7 +1040,7 @@ useEffect(() => {
     phone: string,
     purpose: "PASSENGER_REGISTRATION" | "PASSENGER_LEGACY_PASSWORD_SETUP"
   ) => {
-    const otpRes = await fetch("/api/otp/send", {
+    const otpRes = await csrfFetch("passenger","/api/otp/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
@@ -688,6 +1048,7 @@ useEffect(() => {
         bookingId: activeBookingId,
         phone,
         purpose,
+        locale,
       }),
     });
 
@@ -702,7 +1063,7 @@ useEffect(() => {
   };
 
   const resolvePassengerPhone = async (activeBookingId: string, phone: string) => {
-    const res = await fetch("/api/passenger/auth/resolve-phone", {
+    const res = await csrfFetch("passenger","/api/passenger/auth/resolve-phone", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
@@ -758,7 +1119,7 @@ useEffect(() => {
     if (!address || address.trim().length < 3) return null;
 
     try {
-      const res = await fetch(
+      const res = await csrfFetch("passenger",
         `/api/addresses/suggest?q=${encodeURIComponent(address)}`,
         { cache: "no-store" }
       );
@@ -787,7 +1148,7 @@ useEffect(() => {
 
   const useCurrentPickupLocation = () => {
     if (!navigator.geolocation) {
-      setError("Location is not supported on this device.");
+      setError(t('booking.locationUnsupported'));
       return;
     }
 
@@ -804,7 +1165,7 @@ useEffect(() => {
         });
 
         try {
-          const res = await fetch(
+          const res = await csrfFetch("passenger",
             `/api/addresses/reverse?lat=${latitude}&lng=${longitude}`,
             { cache: "no-store" }
           );
@@ -829,7 +1190,7 @@ useEffect(() => {
       },
       () => {
         setLocatingPickup(false);
-        setError("Please allow location permission.");
+        setError(t('booking.locationPermission'));
       },
       {
         enableHighAccuracy: true,
@@ -842,37 +1203,37 @@ useEffect(() => {
   const validateForm = () => {
     const trimmedEmail = customerEmail.trim();
 
-    if (pickupAddress.trim().length < 3) return "Pickup address is required.";
-    if (dropoffAddress.trim().length < 3) return "Drop-off address is required.";
+    if (pickupAddress.trim().length < 3) return t('booking.validation.pickup');
+    if (dropoffAddress.trim().length < 3) return t('booking.validation.destination');
    if (rideMode === "schedule") {
-  if (!scheduledDate) return "Please select date.";
-  if (!scheduledTime) return "Please select time.";
-  if (scheduledDate < today) return "Past date is not allowed.";
+  if (!scheduledDate) return t('booking.validation.date');
+  if (!scheduledTime) return t('booking.validation.time');
+  if (scheduledDate < today) return t('booking.validation.pastDate');
 }
-    if (customerName.trim().length < 2) return "Customer name is required.";
-    if (!trimmedEmail) return "Customer email is required.";
-    if (!isValidEmail(trimmedEmail)) return "Valid email address is required.";
-    if (customerPhone.trim().length < 6) return "Valid phone number is required.";
-    if (capacityPassengerCount > 6) return "Maximum 6 passengers including companions allowed.";
+    if (customerName.trim().length < 2) return t('booking.validation.name');
+    if (!trimmedEmail) return t('booking.validation.email');
+    if (!isValidEmail(trimmedEmail)) return t('booking.validation.email');
+    if (customerPhone.trim().length < 6) return t('booking.validation.phone');
+    if (capacityPassengerCount > 6) return t('booking.validation.capacity');
     if (capacityPassengerCount >= 6 && luggageCount > 0) {
-      return "For 6 passengers with luggage, please reduce to 5 passengers or use tourism/airport transfer option.";
+      return t('booking.validation.luggageCapacity');
     }
-    if (assistedTransport && seniorPassenger && !assistanceLevel) return "Please select assistance level.";
-    if (assistedTransport && wheelchairUser && !wheelchairType) return "Please select wheelchair type.";
-    if (assistedTransport && wheelchairUser && !canTransferToSeat) return "Please confirm if the passenger can transfer to a vehicle seat.";
-    if (assistedTransport && companionRequired && companionCount < 1) return "Please select number of companions.";
+    if (assistedTransport && seniorPassenger && !assistanceLevel) return t('booking.validation.assistance');
+    if (assistedTransport && wheelchairUser && !wheelchairType) return t('booking.validation.wheelchair');
+    if (assistedTransport && wheelchairUser && !canTransferToSeat) return t('booking.validation.transfer');
+    if (assistedTransport && companionRequired && companionCount < 1) return t('booking.validation.companions');
     if (assistedTransport && medicalAppointment) {
-      if (!hospitalName.trim()) return "Hospital or clinic name is required.";
-      if (!department.trim()) return "Department is required.";
-      if (!appointmentDate) return "Appointment date is required.";
-      if (!appointmentTime) return "Appointment time is required.";
+      if (!hospitalName.trim()) return t('booking.validation.hospital');
+      if (!department.trim()) return t('booking.validation.department');
+      if (!appointmentDate) return t('booking.validation.appointmentDate');
+      if (!appointmentTime) return t('booking.validation.appointmentTime');
       if (tripType === "GO_RETURN" && (!returnDate || !returnTime)) {
-        return "Return date and time are required.";
+        return t('booking.validation.return');
       }
     }
-    if (showWaitingDuration && !waitingDuration) return "Please select waiting duration.";
+    if (showWaitingDuration && !waitingDuration) return t('booking.validation.waiting');
     if (waitingDuration === "CUSTOM" && !customWaitingDuration.trim()) {
-      return "Please enter custom waiting duration.";
+      return t('booking.validation.customWaiting');
     }
     if (childrenTransport) {
       if (!institutionSuggestionSelected) {
@@ -886,37 +1247,133 @@ useEffect(() => {
         destinationText.includes(term)
       );
 
-      if (!scheduledDate || !scheduledTime) return "Pickup date and time are required for children's transport.";
-      if (!recurrence) return "Please select recurrence.";
-      if (recurrence === "CUSTOM" && !recurrenceCustom.trim()) return "Please enter custom recurrence.";
+      if (!scheduledDate || !scheduledTime) return t('booking.validation.childPickup');
+      if (!recurrence) return t('booking.validation.recurrence');
+      if (recurrence === "CUSTOM" && !recurrenceCustom.trim()) return t('booking.validation.customRecurrence');
       for (let index = 0; index < activeChildrenDetails.length; index += 1) {
         const child = activeChildrenDetails[index];
-        if (!child.fullName.trim()) return `Child ${index + 1} full name is required.`;
-        if (!child.age.trim()) return `Child ${index + 1} age is required.`;
+        if (!child.fullName.trim()) return t('booking.validation.childName');
+        if (!child.age.trim()) return t('booking.validation.childAge');
         const age = Number(child.age);
         if (!Number.isFinite(age) || age < 0 || age > 18) {
-          return `Child ${index + 1} age must be between 0 and 18.`;
+          return t('booking.validation.childAge');
         }
       }
-      if (!parentFullName.trim()) return "Parent full name is required.";
-      if (!parentPrimaryPhone.trim()) return "Parent primary phone is required.";
-      if (!parentEmail.trim() || !isValidEmail(parentEmail.trim())) return "Valid parent email is required.";
+      if (!parentFullName.trim()) return t('booking.validation.parentName');
+      if (!parentPrimaryPhone.trim()) return t('booking.validation.parentPhone');
+      if (!parentEmail.trim() || !isValidEmail(parentEmail.trim())) return t('booking.validation.parentEmail');
       if (!institutionSuggestionSelected && !educationDestination) {
         return t(
           "booking.childrenInstitutionValidation",
           "Please select a verified school, college, university, or approved educational institution."
         );
       }
-      if (paymentMethod === "cash") return "Cash is not available for children's scheduled transport.";
+      if (paymentMethod === "cash") return t('booking.validation.childCash');
     }
     if (paymentMethod === "cash" && !cashAgreed) {
-      return "Please agree to the cash payment rules before continuing.";
+      return t('booking.validation.cashConsent');
     }
     return "";
   };
 
+  const checkBookingOperation = async (id = bookingOperationId, afterRetry = false) => {
+    if (!id || (operationChecking && !afterRetry)) return;
+    setOperationChecking(true);
+    setOperationNoticeKey("phase42.checking");
+    try {
+      const response = await csrfFetch("passenger", `/api/bookings/operations/${encodeURIComponent(id)}`, { cache: "no-store", credentials: "include" });
+      const data = await safeJson(response);
+      if (!isRecord(data)) throw new Error("INVALID_STATUS");
+      if (response.ok && data.state === "CREATED" && typeof data.bookingId === "string" && typeof data.bookingRef === "string") {
+        if (data.guestAccessRecoveryRequired === true) {
+          const access = await csrfFetch("passenger", `/api/bookings/operations/${encodeURIComponent(id)}/access`, {
+            method: "POST", cache: "no-store", credentials: "include",
+          });
+          if (!access.ok) { setOperationNoticeKey("phase42.guestUnavailable"); return; }
+        }
+        bookingCreated.current = true;
+        lastSubmittedPayload.current = null;
+        clearBookingSubmissionUncertain();
+        if (data.guestAccessRecoveryRequired !== true) clearBookingOperationId();
+        clearBookingDraft();
+        setSubmissionUncertain(false);
+        if (data.guestAccessRecoveryRequired !== true) setBookingOperationId("");
+        setBookingId(data.bookingId);
+        setBookingRef(data.bookingRef);
+        setRecoveredBooking({ id: data.bookingId, ref: data.bookingRef, guest: data.guestAccessRecoveryRequired === true });
+        setOperationNoticeKey("phase42.recovered");
+      } else if (data.state === "PROCESSING") setOperationNoticeKey("phase42.processing");
+      else if (data.state === "RETRYABLE") setOperationNoticeKey("phase42.retryable");
+      else if (data.state === "EXPIRED") setOperationNoticeKey("phase42.expired");
+      else setOperationNoticeKey("phase42.unavailable");
+    } catch { setOperationNoticeKey("phase42.network"); }
+    finally { setOperationChecking(false); }
+  };
+
+  const handleAccountTransitionRecovery = (response: Response) => {
+    lastSubmittedPayload.current = null;
+    const hadUncertainOutcome = hasUncertainBookingSubmission() || Boolean(readBookingOperationId());
+    clearBookingOperationId();
+    setBookingOperationId("");
+    const warning = response.headers.get("X-Drivo-Booking-Recovery");
+    if ((warning || hadUncertainOutcome) && !bookingCreated.current) {
+      markBookingSubmissionUncertain();
+      setSubmissionUncertain(true);
+      setOperationNoticeKey(warning === "BOOKING_CREATED" ? "phase42.transitionCreated" : "phase42.transitionReview");
+    } else if (!bookingCreated.current) {
+      clearBookingSubmissionUncertain();
+      setSubmissionUncertain(false);
+    }
+  };
+
+  const continueRecoveredGuest = async () => {
+    if (!recoveredBooking?.guest || !customerPhone.trim()) return;
+    setAuthLoading(true);
+    try {
+      const phone = phoneCode + customerPhone.trim();
+      const state = await resolvePassengerPhone(recoveredBooking.id, phone);
+      const normalizedPhone = typeof state.normalizedPhone === "string" ? state.normalizedPhone : phone;
+      setRegistrationProofPhone(normalizedPhone);
+      if (state.mode === "LOGIN") { setAuthMode("existingAccountLogin"); setRecoveredBooking(null); }
+      else {
+        const purpose = state.mode === "LEGACY_SETUP" ? "PASSENGER_LEGACY_PASSWORD_SETUP" : "PASSENGER_REGISTRATION";
+        await sendBookingOtp(recoveredBooking.id, normalizedPhone, purpose);
+        setAuthMode(state.mode === "LEGACY_SETUP" ? "legacyPasswordSetupOtp" : "registrationOtp");
+        setRecoveredBooking(null);
+        setStep(2);
+      }
+    } catch { setOperationNoticeKey("phase42.guestUnavailable"); }
+    finally { setAuthLoading(false); }
+  };
+
+  const retryBookingOperation = async () => {
+    if (!bookingOperationId || !lastSubmittedPayload.current || submissionInFlight.current || operationChecking) return;
+    submissionInFlight.current = true;
+    setOperationChecking(true);
+    try {
+      const result = await csrfFetch("passenger", "/api/bookings", {
+        method: "POST", headers: { "Content-Type": "application/json", "X-Drivo-Booking-Operation": bookingOperationId },
+        body: lastSubmittedPayload.current, cache: "no-store", credentials: "include",
+      });
+      if (result.status === 202) { setOperationNoticeKey("phase42.processing"); return; }
+      await checkBookingOperation(bookingOperationId, true);
+    } catch { setOperationNoticeKey("phase42.network"); }
+    finally { submissionInFlight.current = false; setOperationChecking(false); }
+  };
+
+  useEffect(() => {
+    if (bookingOperationId && submissionUncertain && !submissionInFlight.current &&
+        autoCheckedOperation.current !== bookingOperationId) {
+      autoCheckedOperation.current = bookingOperationId;
+      void checkBookingOperation(bookingOperationId);
+    }
+    // The saved ID is checked once after hydration; subsequent checks use the
+    // explicit button so a pending operation cannot create a polling loop.
+  }, [bookingOperationId, submissionUncertain]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submissionInFlight.current || submissionUncertain || bookingCreated.current || bookingId || pendingDraft) return;
     setError("");
 
     const validationError = validateForm();
@@ -925,7 +1382,9 @@ useEffect(() => {
       return;
     }
 
+    submissionInFlight.current = true;
     setLoading(true);
+    let submittedOperationId = "";
 
     try {
       const trimmedEmail = customerEmail.trim();
@@ -946,12 +1405,41 @@ useEffect(() => {
       }));
       const firstChild = childrenPayload[0];
 
-      const bookingRes = await fetch("/api/bookings", {
+      const preflight = await csrfFetch("passenger", "/api/bookings/operations", {
+        method: "POST", cache: "no-store", credentials: "include",
+      });
+      const preflightData = await safeJson(preflight);
+      if (!preflight.ok || !isRecord(preflightData)) throw new Error(t("phase42.preflightUnavailable"));
+      if (preflightData.mode !== "disabled") {
+        if (typeof preflightData.operationId !== "string" || !saveBookingOperationId(preflightData.operationId)) {
+          throw new Error(t("phase42.preflightUnavailable"));
+        }
+        submittedOperationId = preflightData.operationId;
+        setBookingOperationId(submittedOperationId);
+        // The status request proves that the browser has the operation-bound
+        // HttpOnly credential before any booking can be submitted.
+        const ready = await csrfFetch("passenger", `/api/bookings/operations/${encodeURIComponent(submittedOperationId)}`, {
+          cache: "no-store", credentials: "include",
+        });
+        const readyData = await safeJson(ready);
+        if (ready.status !== 202 || !isRecord(readyData) || readyData.state !== "PROCESSING") {
+          clearBookingOperationId(); setBookingOperationId(""); submittedOperationId = "";
+          throw new Error(t("phase42.preflightUnavailable"));
+        }
+      }
+
+      // A server response may be lost after creation. A refresh must not turn
+      // an unfinished form draft into another automatic booking request.
+      latestDraftState.current = null;
+      clearBookingDraft();
+      markBookingSubmissionUncertain();
+      setSubmissionUncertain(true);
+      const bookingRes = await csrfFetch("passenger","/api/bookings", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(submittedOperationId ? { "X-Drivo-Booking-Operation": submittedOperationId } : {}) },
         cache: "no-store",
         credentials: "include",
-        body: JSON.stringify({
+        body: (lastSubmittedPayload.current = JSON.stringify({
           serviceType: serviceMap[serviceType],
           pickupAddress: pickupAddress.trim(),
           dropoffAddress: dropoffAddress.trim(),
@@ -1033,17 +1521,43 @@ scheduledTime:
           cashAgreed,
           estimatedPrice: estimatedPrice ?? null,
           fareBreakdown,
-        }),
+        })),
       });
 
       const bookingData = await safeJson(bookingRes);
 
+      if (submittedOperationId && bookingRes.status === 202) {
+        setOperationNoticeKey("phase42.processing");
+        return;
+      }
+
       if (!bookingRes.ok) {
+        if (bookingRes.status === 428 && isRecord(bookingData) && bookingData.state === "PREFLIGHT_REQUIRED") {
+          clearBookingSubmissionUncertain(); setSubmissionUncertain(false);
+          throw new Error(t("phase42.preflightUnavailable"));
+        }
+        if (bookingRes.status === 409 && isRecord(bookingData) && bookingData.state === "PAYLOAD_CONFLICT") {
+          setOperationNoticeKey("phase42.payloadConflict");
+          throw new Error(t("phase42.payloadConflict"));
+        }
+        // This exact schema-validation response returns before creation.
+        // Other responses may follow a committed write and stay uncertain.
+        if (bookingRes.status === 400 && isRecord(bookingData) && bookingData.error === "Validation failed") {
+          clearBookingSubmissionUncertain();
+          clearBookingOperationId();
+          setBookingOperationId("");
+          submittedOperationId = "";
+          setSubmissionUncertain(false);
+        }
         throw new Error(localizedError(bookingData, "bookingAuth.errors.unknown", t));
       }
 
       if (!isRecord(bookingData)) {
-        throw new Error("Booking response was invalid");
+        throw new Error(t('booking.responseInvalid'));
+      }
+      if (submittedOperationId && bookingData.state === "CREATED") {
+        await checkBookingOperation(submittedOperationId);
+        return;
       }
 
       const newBookingId =
@@ -1052,9 +1566,20 @@ scheduledTime:
         typeof bookingData.bookingRef === "string" ? bookingData.bookingRef : "";
 
       if (!newBookingId || !newBookingRef) {
-        throw new Error("Booking response was missing confirmation details");
+        throw new Error(t('booking.responseInvalid'));
       }
 
+      bookingCreated.current = true;
+      lastSubmittedPayload.current = null;
+      clearBookingSubmissionUncertain();
+      // A guest keeps the non-secret operation ID until account transition or
+      // expiry. The original capability cookie might not survive the response;
+      // the pre-issued operation credential can still recover it.
+      if (bookingData.passengerAuthenticated === true || !submittedOperationId) {
+        clearBookingOperationId();
+        setBookingOperationId("");
+      }
+      setSubmissionUncertain(false);
       setBookingId(newBookingId);
       setBookingRef(newBookingRef);
       resetOtpAttemptState();
@@ -1064,7 +1589,7 @@ scheduledTime:
         setEstimatedPrice(price);
       }
 
-      if (passengerProfile) {
+      if (passengerProfile && bookingData.passengerAuthenticated === true) {
         setAuthMode("authenticated");
         setAuthError("");
         setError("");
@@ -1100,6 +1625,7 @@ scheduledTime:
       setAuthMode("registrationOtp");
       setStep(2);
     } catch (err: unknown) {
+      if (submittedOperationId && !bookingCreated.current) void checkBookingOperation(submittedOperationId);
       const message = localizeThrownError(err, "bookingAuth.errors.unknown", t);
       if (isAuthenticationRequiredMessage(message)) {
         setAuthError(translatedBookingAuthError(t, "bookingAuth.errors.authContinue"));
@@ -1108,6 +1634,7 @@ scheduledTime:
         setError(message);
       }
     } finally {
+      submissionInFlight.current = false;
       setLoading(false);
     }
   };
@@ -1120,7 +1647,7 @@ scheduledTime:
         ? "PASSENGER_LEGACY_PASSWORD_SETUP"
         : "PASSENGER_REGISTRATION";
 
-    const res = await fetch("/api/otp/verify", {
+    const res = await csrfFetch("passenger","/api/otp/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
@@ -1149,11 +1676,11 @@ scheduledTime:
     }
 
     if (!isRecord(data)) {
-      throw new Error("Verification response was invalid");
+      throw new Error(translatedBookingAuthError(t, 'bookingAuth.errors.verificationFailed'));
     }
 
     if (typeof data.bookingId === "string" && data.bookingId !== bookingId) {
-      throw new Error("Verification could not be completed. Please request a new code.");
+      throw new Error(translatedBookingAuthError(t, 'bookingAuth.errors.verificationFailed'));
     }
 
     const normalizedPhone =
@@ -1170,7 +1697,7 @@ scheduledTime:
       const nextLegacyProofToken =
         typeof data.legacyPasswordSetupProofToken === "string" ? data.legacyPasswordSetupProofToken : "";
       if (data.success !== true || !nextLegacyProofToken) {
-        throw new Error("Verification could not be completed. Please request a new code.");
+        throw new Error(translatedBookingAuthError(t, 'bookingAuth.errors.verificationFailed'));
       }
       setRegistrationProofToken("");
       setLegacyPasswordSetupProofToken(nextLegacyProofToken);
@@ -1183,7 +1710,7 @@ scheduledTime:
       typeof data.registrationProofToken === "string" ? data.registrationProofToken : "";
 
     if (data.success !== true || !nextRegistrationProofToken) {
-      throw new Error("Verification could not be completed. Please request a new code.");
+      throw new Error(translatedBookingAuthError(t, 'bookingAuth.errors.verificationFailed'));
     }
 
     setLegacyPasswordSetupProofToken("");
@@ -1204,10 +1731,10 @@ scheduledTime:
     }
 
     if (!activeBookingId) {
-      throw new Error("Booking could not continue because booking details are missing.");
+      throw new Error(t('booking.responseInvalid'));
     }
 
-    const res = await fetch("/api/passenger/booking/continue", {
+    const res = await csrfFetch("passenger","/api/passenger/booking/continue", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
@@ -1255,7 +1782,7 @@ scheduledTime:
     accountCreateInFlight.current = true;
     setAuthLoading(true);
     try {
-      const res = await fetch("/api/passenger/account/create", {
+      const res = await csrfFetch("passenger","/api/passenger/account/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
@@ -1297,6 +1824,7 @@ scheduledTime:
         setAuthError(localizedError(data, "bookingAuth.errors.unknown", t));
         return;
       }
+      handleAccountTransitionRecovery(res);
       clearPassengerAuthErrors();
       await continueAuthenticatedBooking(isRecord(data) && isRecord(data.passenger) ? data.passenger : null);
     } catch (err) {
@@ -1308,26 +1836,42 @@ scheduledTime:
     }
   };
 
-  const handlePassengerLogin = async (e: React.FormEvent | React.MouseEvent) => {
+  const handlePassengerLogin = async (e: React.SyntheticEvent) => {
     e.preventDefault();
+    if (loginInFlight.current) return;
+    loginInFlight.current = true;
     setAuthError("");
+    setEarlyAuthErrorCode("");
+    setLateLoginErrorCode("");
     setAuthLoading(true);
 
     try {
       const activeBookingId = bookingId;
-      const res = await fetch("/api/passenger/login/password", {
+      const loginPhone = activeBookingId
+        ? registrationProofPhone || phoneCode + customerPhone.trim()
+        : earlyPhoneCode + earlyPhoneNumber.trim();
+      const res = await csrfFetch("passenger","/api/passenger/login/password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
         credentials: "include",
         body: JSON.stringify({
-          phone: registrationProofPhone || phoneCode + customerPhone.trim(),
+          phone: loginPhone,
           password: loginPassword,
           bookingId: activeBookingId || null,
         }),
       });
       const data = await safeJson(res);
-      if (!res.ok) throw new Error(localizedError(data, "bookingAuth.errors.invalidPassword", t));
+      if (!res.ok) {
+        if (!activeBookingId) {
+          setEarlyAuthErrorCode(res.status === 429 ? "RATE_LIMITED_GENERIC" : res.status === 401 ? "AUTH_INVALID_CREDENTIALS" : "SERVICE_UNAVAILABLE");
+          return;
+        }
+        setLateLoginErrorCode(res.status === 429 ? "RATE_LIMITED_GENERIC" : res.status === 401 ? "AUTH_INVALID_CREDENTIALS" : "SERVICE_UNAVAILABLE");
+        return;
+      }
+
+      handleAccountTransitionRecovery(res);
 
       if (isRecord(data) && data.stepUpRequired) {
         setLoginAttemptId(String(data.loginAttemptId || ""));
@@ -1337,27 +1881,35 @@ scheduledTime:
       }
 
       clearPassengerAuthErrors();
-      await continueAuthenticatedBooking(isRecord(data) && isRecord(data.passenger) ? data.passenger : null, activeBookingId);
+      const passenger = isRecord(data) && isRecord(data.passenger) ? data.passenger : null;
+      if (!activeBookingId) {
+        if (!passenger) throw new Error(t("booking.responseInvalid"));
+        markPassengerAuthenticated(passenger);
+      } else {
+        await continueAuthenticatedBooking(passenger, activeBookingId);
+      }
     } catch (err) {
-      setAuthError(localizeThrownError(err, "bookingAuth.errors.invalidPassword", t));
+      if (bookingId) setAuthError(localizeThrownError(err, "bookingAuth.errors.invalidPassword", t));
+      else setEarlyAuthErrorCode("SERVICE_UNAVAILABLE");
     } finally {
+      loginInFlight.current = false;
       setAuthLoading(false);
     }
   };
 
-  const handleLoginStepUp = async (e: React.FormEvent | React.MouseEvent) => {
+  const handleLoginStepUp = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     setAuthError("");
     setAuthLoading(true);
 
     try {
-      const res = await fetch("/api/passenger/login/otp/verify", {
+      const res = await csrfFetch("passenger","/api/passenger/login/otp/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
         credentials: "include",
         body: JSON.stringify({
-          phone: registrationProofPhone || phoneCode + customerPhone.trim(),
+          phone: bookingId ? registrationProofPhone || phoneCode + customerPhone.trim() : earlyPhoneCode + earlyPhoneNumber.trim(),
           otpCode: loginOtp,
           loginAttemptId,
           bookingId: bookingId || null,
@@ -1366,8 +1918,12 @@ scheduledTime:
       });
       const data = await safeJson(res);
       if (!res.ok) throw new Error(localizedError(data, "bookingAuth.errors.verificationFailed", t));
+      handleAccountTransitionRecovery(res);
       clearPassengerAuthErrors();
-      await continueAuthenticatedBooking(isRecord(data) && isRecord(data.passenger) ? data.passenger : null);
+      const passenger = isRecord(data) && isRecord(data.passenger) ? data.passenger : null;
+      if (bookingId) await continueAuthenticatedBooking(passenger);
+      else if (passenger) markPassengerAuthenticated(passenger);
+      else throw new Error(t("booking.responseInvalid"));
     } catch (err) {
       setAuthError(localizeThrownError(err, "bookingAuth.errors.verificationFailed", t));
     } finally {
@@ -1375,115 +1931,58 @@ scheduledTime:
     }
   };
 
-  const handleForgotSend = async (e: React.FormEvent | React.MouseEvent) => {
+  const handleForgotSend = async (e: React.SyntheticEvent) => {
     e.preventDefault();
-    setAuthError("");
+    if (recoveryInFlight.current) return;
+    setRecoveryErrorCode("");
+    if (!isValidEmail(recoveryEmail.trim())) {
+      setRecoveryErrorCode("INVALID_EMAIL");
+      return;
+    }
+    recoveryInFlight.current = true;
     setAuthLoading(true);
 
     try {
-      const res = await fetch("/api/passenger/password-reset/send", {
+      const res = await csrfFetch("passenger","/api/passenger/password-reset/email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
-        body: JSON.stringify({ phone: registrationProofPhone || phoneCode + customerPhone.trim() }),
+        body: JSON.stringify({ email: recoveryEmail.trim(), locale }),
       });
-      const data = await safeJson(res);
-      if (!res.ok) throw new Error(localizedError(data, "bookingAuth.errors.unknown", t));
-      if (isRecord(data)) {
-        setResetAttemptId(String(data.resetAttemptId || ""));
-        setResetOtp("");
-        setPasswordResetProofToken("");
-        setPasswordResetProofExpiresAt("");
-        if (typeof data.devOtp === "string") setDevOtp(data.devOtp);
+      if (!res.ok) {
+        setRecoveryErrorCode(res.status === 429 ? "RATE_LIMITED_GENERIC" : "SERVICE_UNAVAILABLE");
+        return;
       }
-    } catch (err) {
-      setAuthError(localizeThrownError(err, "bookingAuth.errors.unknown", t));
+      // The response is deliberately generic, including for unknown accounts.
+      setRecoveryRequested(true);
+      if (!bookingId) prepareGuestDraftNavigation();
+    } catch {
+      setRecoveryErrorCode("SERVICE_UNAVAILABLE");
     } finally {
+      recoveryInFlight.current = false;
       setAuthLoading(false);
     }
   };
 
-  const handleForgotVerify = async (e: React.FormEvent | React.MouseEvent) => {
-    e.preventDefault();
-    setAuthError("");
-    setAuthLoading(true);
+  const recoveryFields = () => (
+    <div className="space-y-3">
+      <p className="text-sm text-drivo-text-secondary">{t("passenger.resetDescription")}</p>
+      <label htmlFor="booking-recovery-email" className="block text-sm font-semibold text-drivo-text">
+        {t("passenger.email")}
+        <input id="booking-recovery-email" className="input mt-2 w-full" type="email" autoComplete="email" value={recoveryEmail} onChange={(event) => { setRecoveryEmail(event.target.value); setRecoveryRequested(false); }} onKeyDown={(event) => { if (event.key === "Enter") void handleForgotSend(event); }} aria-describedby={recoveryErrorCode ? "booking-recovery-error" : undefined} />
+      </label>
+      {recoveryErrorCode && <p id="booking-recovery-error" role="alert" className="text-sm text-red-700">{recoveryErrorCode === "INVALID_EMAIL" ? t("phase3.invalidEmail") : presentMessage(recoveryErrorCode, locale)}</p>}
+      {recoveryRequested && <p role="status" aria-live="polite" className="text-sm text-drivo-text">{t("passenger.resetRequested")}</p>}
+      <button type="button" onClick={handleForgotSend} disabled={authLoading || recoveryRequested} className="btn-primary w-full min-h-11">
+        {authLoading ? t("passenger.loading") : t("passenger.sendResetEmail")}
+      </button>
+      <button type="button" onClick={() => { clearPasswordResetState(); setEarlyRecoveryOpen(false); if (bookingId) setAuthMode("existingAccountLogin"); }} className="min-h-11 text-sm font-semibold text-drivo-green hover:underline">
+        {t("passenger.backToLogin")}
+      </button>
+    </div>
+  );
 
-    try {
-      const res = await fetch("/api/passenger/password-reset/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({
-          phone: registrationProofPhone || phoneCode + customerPhone.trim(),
-          otpCode: resetOtp,
-          resetAttemptId,
-        }),
-      });
-      const data = await safeJson(res);
-      if (!res.ok) throw new Error(localizedError(data, "bookingAuth.errors.verificationFailed", t));
-      if (isRecord(data) && typeof data.passwordResetProofToken === "string") {
-        setPasswordResetProofToken(data.passwordResetProofToken);
-        setPasswordResetProofExpiresAt(typeof data.proofExpiresAt === "string" ? data.proofExpiresAt : "");
-        if (typeof data.normalizedPhone === "string") setRegistrationProofPhone(data.normalizedPhone);
-        setAuthMode("resetPassword");
-      } else {
-        throw new Error(translatedBookingAuthError(t, "bookingAuth.errors.verificationFailed"));
-      }
-    } catch (err) {
-      setAuthError(localizeThrownError(err, "bookingAuth.errors.verificationFailed", t));
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const handleResetComplete = async (e: React.FormEvent | React.MouseEvent) => {
-    e.preventDefault();
-    setAuthError("");
-    if (!passwordResetProofToken) {
-      setAuthError(translatedBookingAuthError(t, "bookingAuth.errors.verificationExpired"));
-      setAuthMode("forgotPasswordOtp");
-      return;
-    }
-    if (passwordResetProofExpiresAt && new Date(passwordResetProofExpiresAt).getTime() <= Date.now()) {
-      setAuthError(translatedBookingAuthError(t, "bookingAuth.errors.verificationExpired"));
-      setPasswordResetProofToken("");
-      setAuthMode("forgotPasswordOtp");
-      return;
-    }
-    if (resetPassword !== resetConfirmPassword) {
-      setAuthError(t("passenger.passwordMismatch", "Passwords do not match."));
-      return;
-    }
-    setAuthLoading(true);
-
-    try {
-      const res = await fetch("/api/passenger/password-reset/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        credentials: "include",
-        body: JSON.stringify({
-          phone: registrationProofPhone || phoneCode + customerPhone.trim(),
-          passwordResetProofToken,
-          resetAttemptId,
-          bookingId: bookingId || null,
-          password: resetPassword,
-          confirmPassword: resetConfirmPassword,
-          rememberDevice,
-        }),
-      });
-      const data = await safeJson(res);
-      if (!res.ok) throw new Error(localizedError(data, "bookingAuth.errors.unknown", t));
-      clearPassengerAuthErrors();
-      await continueAuthenticatedBooking(isRecord(data) && isRecord(data.passenger) ? data.passenger : null);
-    } catch (err) {
-      setAuthError(localizeThrownError(err, "bookingAuth.errors.unknown", t));
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
-  const serviceOptions: {
+  const allServiceOptions: {
     value: ServiceType;
     label: string;
     icon: string;
@@ -1491,11 +1990,11 @@ scheduledTime:
     img: string;
   }[] = [
     {
-      value: "standard",
-      label: t("services.taxi.title"),
-      icon: "🚕",
-      desc: t("services.taxi.tagline"),
-      img: "/drivo-taxi-service.jpeg",
+      value: "accessible",
+      label: t("services.accessible.title"),
+      icon: "♿",
+      desc: t("services.accessible.tagline"),
+      img: "/drivo-wav-wheelchair.jpeg",
     },
     {
       value: "airport",
@@ -1505,11 +2004,11 @@ scheduledTime:
       img: "/drivo-airport-transfer.jpeg",
     },
     {
-      value: "accessible",
-      label: t("services.accessible.title"),
-      icon: "♿",
-      desc: "ZŤP / Seniorská doprava",
-      img: "/drivo-wav-wheelchair.jpeg",
+      value: "standard",
+      label: t("services.taxi.title"),
+      icon: "🚕",
+      desc: t("services.taxi.tagline"),
+      img: "/drivo-taxi-service.jpeg",
     },
     {
       value: "children",
@@ -1519,6 +2018,7 @@ scheduledTime:
       img: "/drivo-children-dropoff.jpeg",
     },
   ];
+  const serviceOptions = allServiceOptions.filter((service) => isCustomerServiceEnabled(service.value));
 
   if (step === 2) {
     return (
@@ -1721,7 +2221,106 @@ scheduledTime:
   }
 
   return (
-    <div className="space-y-6">
+    <div
+      className="space-y-6"
+      onChangeCapture={() => {
+        formTouchedSinceMount.current = true;
+        if (pendingDraft) { clearGuestDraftTransition(); clearBookingDraft(); setPendingDraft(null); setGuestAdoption(false); setGuestAdoptionFromReset(false); setDraftReady(true); }
+      }}
+      onClickCapture={(event) => {
+        if (event.target instanceof Element && event.target.closest("[data-draft-action]")) return;
+        formTouchedSinceMount.current = true;
+        if (pendingDraft) { clearGuestDraftTransition(); clearBookingDraft(); setPendingDraft(null); setGuestAdoption(false); setGuestAdoptionFromReset(false); setDraftReady(true); }
+      }}
+    >
+      {showWavModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-drivo-navy/70 p-4"
+          role="presentation"
+          onMouseDown={() => setShowWavModal(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="wav-dialog-title"
+            className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <h2 id="wav-dialog-title" className="text-lg font-extrabold text-drivo-navy">
+              {t("booking.wavAvailabilityNoticeTitle")}
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-drivo-text-secondary">
+              {t("booking.wavAvailabilityNoticeBody")}
+            </p>
+            <button
+              type="button"
+              autoFocus
+              className="btn-primary mt-5 w-full"
+              onClick={() => setShowWavModal(false)}
+            >
+              {t("common understood", "Understood")}
+            </button>
+          </div>
+        </div>
+      )}
+      {savedRouteId && savedRouteNotice && (
+        <div role="status" className="mb-4 rounded-2xl border border-drivo-border-light bg-drivo-bg-soft p-4 text-sm font-semibold text-drivo-text">
+          {t(savedRouteNotice)} {savedRouteNotice === "savedRoutes.loginRequired" && <Link href="/passenger/login" className="ml-2 underline">{t("savedRoutes.bookAgain")}</Link>}
+        </div>
+      )}
+      {pendingDraft && !submissionUncertain && (
+        <section className="card border-2 border-drivo-green" aria-labelledby="booking-draft-title">
+          <h2 id="booking-draft-title" ref={guestAdoptionHeading} tabIndex={guestAdoption ? -1 : undefined} className="text-lg font-bold text-drivo-text">{t(guestAdoption ? "phase43.reviewTitle" : "phase4.found")}</h2>
+          {guestAdoption && <p className="mt-2 text-sm text-drivo-text-secondary">{t("phase43.guestExplanation")}</p>}
+          {guestAdoptionFromReset && <p role="status" aria-live="polite" className="mt-2 text-sm font-semibold text-drivo-text">{t("phase43.resetCompleted")}</p>}
+          {guestAdoption && <p className="mt-2 text-sm font-semibold text-drivo-text">{t("phase43.signedInContext")}</p>}
+          <p className="mt-2 text-sm text-drivo-text-secondary">{t("phase4.privacy")}</p>
+          <p className="mt-2 text-sm text-drivo-text-secondary">{t("phase4.reenter")}</p>
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+            <button data-draft-action type="button" onClick={() => void resumeDraft()} className="btn-primary min-h-11 flex-1">{t(guestAdoption ? "phase43.continueAccount" : "phase4.resume")}</button>
+            <button data-draft-action type="button" onClick={discardDraft} className="btn-outline min-h-11 flex-1">{t(guestAdoption ? "phase43.discard" : "phase4.startOver")}</button>
+          </div>
+        </section>
+      )}
+      {draftNoticeKey && <p role="status" aria-live="polite" className="rounded-xl bg-drivo-bg-soft p-3 text-sm text-drivo-text">{t(draftNoticeKey)}</p>}
+      {recoveredBooking && (
+        <section role="status" aria-live="polite" className="rounded-xl border-2 border-drivo-green bg-drivo-green-light/40 p-4 text-sm">
+          <h2 className="font-bold">{t("phase42.recovered")}</h2>
+          <p className="mt-2">{t("phase42.alreadyCreated")}: {recoveredBooking.ref}</p>
+          {recoveredBooking.guest ? (
+            <div className="mt-3 space-y-3">
+              <p>{t("phase42.guestContinue")}</p>
+              <div className="flex flex-wrap gap-2">
+                <label className="sr-only" htmlFor="recovered-phone-code">{t("phase42.phoneCode")}</label>
+                <input id="recovered-phone-code" className="input w-24" value={phoneCode} onChange={event => setPhoneCode(event.target.value)} autoComplete="tel-country-code" />
+                <label className="sr-only" htmlFor="recovered-phone">{t("booking.phone")}</label>
+                <input id="recovered-phone" className="input min-w-40 flex-1" value={customerPhone} onChange={event => setCustomerPhone(event.target.value)} autoComplete="tel-national" />
+              </div>
+              <button type="button" className="btn-primary min-h-11" disabled={authLoading || !customerPhone.trim()} onClick={continueRecoveredGuest}>{t("phase42.continue")}</button>
+            </div>
+          ) : <Link href="/passenger/dashboard" className="mt-3 inline-flex min-h-11 items-center font-semibold text-drivo-green underline">{t("phase42.viewBooking")}</Link>}
+        </section>
+      )}
+      {submissionUncertain && !bookingId && (
+        <section role="status" aria-live="polite" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <p>{t(operationNoticeKey || "phase4.submissionUncertain")}</p>
+          {bookingOperationId && <button type="button" className="mt-3 min-h-11 rounded-lg border border-amber-800 px-4 font-semibold" disabled={operationChecking} onClick={() => void checkBookingOperation()}>{t("phase42.check")}</button>}
+          {bookingOperationId && operationNoticeKey === "phase42.retryable" && lastSubmittedPayload.current && <button type="button" className="ml-2 mt-3 min-h-11 rounded-lg border border-amber-800 px-4 font-semibold" disabled={operationChecking} onClick={() => void retryBookingOperation()}>{t("phase42.retrySame")}</button>}
+          {bookingOperationId && operationNoticeKey === "phase42.retryable" && <button type="button" className="ml-2 mt-3 min-h-11 rounded-lg border border-amber-800 px-4 font-semibold" disabled={operationChecking} onClick={() => {
+            clearBookingOperationId(); clearBookingSubmissionUncertain(); lastSubmittedPayload.current = null;
+            setBookingOperationId(""); setSubmissionUncertain(false); setOperationNoticeKey("");
+          }}>{t("phase42.startCorrected")}</button>}
+          {!bookingOperationId && <p className="mt-2">{t("phase42.contactSupport")}</p>}
+        </section>
+      )}
+      {draftReady && hasDraftProgress && !pendingDraft && !bookingId && (
+        <div className="flex flex-col gap-2 rounded-xl border border-drivo-border p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <span className="text-drivo-text-secondary">{t("phase4.privacy")}</span>
+          <button data-draft-action type="button" onClick={discardDraft} className="min-h-11 rounded-lg px-3 font-semibold text-drivo-green hover:underline">
+            {t("phase4.discard")}
+          </button>
+        </div>
+      )}
       {error && (
         <div className="p-4 bg-drivo-red-light border-2 border-red-300 rounded-2xl animate-fade-in">
           <p className="text-[14px] text-red-700 font-medium">⚠️ {error}</p>
@@ -1748,6 +2347,8 @@ scheduledTime:
             <button
               key={s.value}
               type="button"
+              aria-pressed={serviceType === s.value}
+              aria-label={s.label}
               onClick={() => {
                 if (serviceType !== s.value) {
                   setError("");
@@ -1772,13 +2373,13 @@ scheduledTime:
                   setWaitAndGreet(false);
                 }
               }}
-              className={`group relative rounded-2xl border-2 overflow-hidden transition-all ${
+              className={`group relative min-h-[180px] overflow-hidden rounded-2xl border-2 transition-all focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-drivo-green/30 ${
                 serviceType === s.value
                   ? "border-drivo-green ring-4 ring-drivo-green/10"
                   : "border-drivo-border hover:border-drivo-green/30"
               }`}
             >
-              <div className="relative h-20 overflow-hidden">
+              <div className="relative h-32 overflow-hidden">
                 <Image
                   src={s.img}
                   alt={s.label}
@@ -1791,7 +2392,7 @@ scheduledTime:
 
               <div className="absolute bottom-0 left-0 right-0 p-2 text-center">
                 <span className="text-[12px] font-semibold text-white block">
-                  {s.icon} {s.label}
+                  {s.label}
                 </span>
                 <span className="text-[10px] text-white/60">{s.desc}</span>
               </div>
@@ -1856,8 +2457,8 @@ scheduledTime:
                 type="button"
                 onClick={useCurrentPickupLocation}
                 className="absolute right-3 top-[38px] z-10 rounded-full bg-white px-2 py-1 text-[13px] font-semibold text-drivo-green shadow-sm hover:bg-drivo-green-light"
-                aria-label="Use current location"
-                title="Use current location"
+                aria-label={t('booking.useCurrentLocation')}
+                title={t('booking.useCurrentLocation')}
               >
                 {locatingPickup ? "..." : "📍"}
               </button>
@@ -1943,6 +2544,7 @@ scheduledTime:
                 scheduledTime={estimateScheduledTime}
                 waitAndGreet={waitAndGreet}
                 waitingMinutes={estimateWaitingMinutes}
+                assistanceLevel={assistanceLevel}
                 onPriceChange={setEstimatedPrice}
                 onFareChange={handleFareChange}
               />
@@ -2258,8 +2860,8 @@ onChange={(e) => {
               </div>
               {wavRequired && (
                 <div className="sm:col-span-2 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-[13px] text-blue-800">
-                  <strong>{t("booking.wavRequired", "WAV required")}.</strong>{" "}
-                  {t("booking.passengerRemainsWheelchair", "Passenger remains in wheelchair. Vehicle must support wheelchair entry.")}
+                  <strong>{t("booking.wavAvailabilityNoticeTitle")}</strong>
+                  <p className="mt-1">{t("booking.wavAvailabilityNoticeBody")}</p>
                 </div>
               )}
             </div>
@@ -2458,7 +3060,8 @@ onChange={(e) => {
                   scheduledDate={estimateScheduledDate}
                   scheduledTime={estimateScheduledTime}
                   waitAndGreet={waitAndGreet}
-                  waitingMinutes={estimateWaitingMinutes}
+                waitingMinutes={estimateWaitingMinutes}
+                assistanceLevel={assistanceLevel}
                   onPriceChange={setEstimatedPrice}
                   onFareChange={handleFareChange}
                 />
@@ -2473,7 +3076,7 @@ onChange={(e) => {
                     className="space-y-3 rounded-2xl border border-drivo-border-light bg-white p-4"
                   >
                     <div className="text-[12px] font-black uppercase tracking-wide text-drivo-text-secondary">
-                      Child {index + 1}
+                      {t('booking.childLabel').replace('{index}', String(index + 1))}
                     </div>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <input
@@ -2544,7 +3147,7 @@ onChange={(e) => {
                   <option>Ryanair</option>
                   <option>Wizz Air</option>
                   <option>Austrian</option>
-                  <option>Other</option>
+                  <option value="Other">{t('booking.otherAirline')}</option>
                 </select>
               </div>
 
@@ -2582,49 +3185,70 @@ onChange={(e) => {
             </h3>
           </div>
 
+          {!passengerProfile && !bookingId && (
+            <div className="mb-5 rounded-2xl border border-drivo-border-light bg-drivo-bg-soft/60 p-4">
+              <div className="grid grid-cols-2 gap-2" role="group" aria-label={t("phase3.accountChoice")}>
+                <button type="button" className="min-h-11 rounded-xl border px-3 py-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-drivo-green" aria-pressed={!earlyLoginOpen} onClick={() => { setEarlyLoginOpen(false); setEarlyRecoveryOpen(false); setEarlyAuthErrorCode(""); }}>
+                  {t("phase3.newCustomer")}
+                </button>
+                <button type="button" className="min-h-11 rounded-xl border px-3 py-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-drivo-green" aria-pressed={earlyLoginOpen} onClick={() => { setEarlyLoginOpen(true); setEarlyRecoveryOpen(false); setEarlyAuthErrorCode(""); }}>
+                  {t("phase3.existingCustomer")}
+                </button>
+              </div>
+              {earlyLoginOpen && <div className="mt-4 space-y-3" aria-label={t("passenger.loginToContinueTitle")}>
+                {earlyRecoveryOpen ? recoveryFields() : authMode === "loginStepUp" ? <>
+                  <label className="block text-sm font-semibold text-drivo-text">{t("passenger.otpCode")}
+                    <input className="input mt-2 w-full" inputMode="numeric" maxLength={6} value={loginOtp} onChange={(event) => setLoginOtp(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void handleLoginStepUp(event); }} />
+                  </label>
+                  <label className="flex min-h-11 items-center gap-2 text-sm text-drivo-text"><input type="checkbox" checked={rememberDevice} onChange={(event) => setRememberDevice(event.target.checked)} />{t("passenger.rememberDevice")}</label>
+                  {authError && <p role="alert" className="text-sm text-red-700">{authError}</p>}
+                  <button type="button" onClick={handleLoginStepUp} disabled={authLoading || loginOtp.length !== 6} className="btn-primary min-h-11 w-full">{authLoading ? t("otp.verifying") : t("passenger.verifyOtp")}</button>
+                </> : <>
+                  <div className="flex gap-2">
+                    <label className="block w-28 shrink-0 text-sm font-semibold text-drivo-text">{t("phase3.dialingCode")}
+                      <select className="input mt-2 w-full" value={earlyPhoneCode} onChange={(event) => setEarlyPhoneCode(event.target.value)}>
+                        {["+421", "+420", "+43", "+49", "+44", "+92"].map((code) => <option key={code} value={code}>{code}</option>)}
+                      </select>
+                    </label>
+                    <label className="block min-w-0 flex-1 text-sm font-semibold text-drivo-text">{t("booking.phone")}
+                      <input className="input mt-2 w-full" type="tel" autoComplete="tel-national" inputMode="tel" value={earlyPhoneNumber} onChange={(event) => setEarlyPhoneNumber(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void handlePassengerLogin(event); }} aria-describedby={earlyAuthErrorCode ? "booking-early-login-error" : undefined} />
+                    </label>
+                  </div>
+                  <PasswordInput label={t("passenger.password")} value={loginPassword} onChange={setLoginPassword} visible={showLoginPassword} onToggle={() => setShowLoginPassword((current) => !current)} autoComplete="current-password" errorId={earlyAuthErrorCode ? "booking-early-login-error" : undefined} onEnter={handlePassengerLogin} />
+                  {earlyAuthErrorCode && <p id="booking-early-login-error" role="alert" className="text-sm text-red-700">{presentMessage(earlyAuthErrorCode, locale)}</p>}
+                  <button type="button" onClick={handlePassengerLogin} disabled={authLoading || !earlyPhoneNumber.trim() || !loginPassword} className="btn-primary min-h-11 w-full">
+                    {authLoading ? t("passenger.loading") : t("passenger.loginContinue")}
+                  </button>
+                  <button type="button" onClick={() => { setRecoveryEmail(customerEmail); clearPasswordResetState(); setEarlyRecoveryOpen(true); }} className="min-h-11 text-sm font-semibold text-drivo-green hover:underline">
+                    {t("passenger.forgotPassword")}
+                  </button>
+                  <Link href="/passenger/login" onClick={prepareGuestDraftNavigation} className="inline-flex min-h-11 items-center text-sm font-semibold text-drivo-green underline">
+                    {t("phase43.separateLogin")}
+                  </Link>
+                </>}
+              </div>}
+            </div>
+          )}
+
           <div className="space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <input
-                type="text"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                placeholder={`${t("booking.name")} *`}
-                className="input"
-                required
-              />
-
-              <input
-                type="email"
-                value={customerEmail}
-                onChange={(e) => setCustomerEmail(e.target.value)}
-                placeholder={t("booking.email")}
-                className="input"
-                required
-              />
+              <label className="block text-sm font-semibold text-drivo-text">{t("booking.name")}
+                <input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder={`${t("booking.name")} *`} className="input mt-2 w-full" autoComplete="name" required />
+              </label>
+              <label className="block text-sm font-semibold text-drivo-text">{t("booking.email")}
+                <input type="email" value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} placeholder={t("booking.email")} className="input mt-2 w-full" autoComplete="email" required />
+              </label>
             </div>
 
             <div className="flex gap-2">
-              <select
-                value={phoneCode}
-                onChange={(e) => setPhoneCode(e.target.value)}
-                className="input w-24 shrink-0"
-              >
-                <option>+421</option>
-                <option>+420</option>
-                <option>+43</option>
-                <option>+49</option>
-                <option>+44</option>
-                <option>+92</option>
-              </select>
-
-              <input
-                type="tel"
-                value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-                placeholder={`${t("booking.phone")} *`}
-                className="input"
-                required
-              />
+              <label className="block w-28 shrink-0 text-sm font-semibold text-drivo-text">{t("phase3.dialingCode")}
+                <select value={phoneCode} onChange={(e) => setPhoneCode(e.target.value)} className="input mt-2 w-full">
+                  <option>+421</option><option>+420</option><option>+43</option><option>+49</option><option>+44</option><option>+92</option>
+                </select>
+              </label>
+              <label className="block min-w-0 flex-1 text-sm font-semibold text-drivo-text">{t("booking.phone")}
+                <input type="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} placeholder={`${t("booking.phone")} *`} className="input mt-2 w-full" autoComplete="tel-national" required />
+              </label>
             </div>
 
             {passengerProfile ? (
@@ -2638,9 +3262,37 @@ onChange={(e) => {
                     type="button"
                     className="text-left text-[13px] font-bold text-drivo-green hover:underline"
                     onClick={async () => {
-                      await fetch("/api/passenger/logout", { method: "POST", credentials: "include" }).catch(() => null);
+                      authEpoch.current += 1;
+                      const logout = await csrfFetch("passenger","/api/passenger/logout", { method: "POST", credentials: "include" }).catch(() => null);
+                      if (!logout?.ok) { setLogoutFailed(true); return; }
+                      const recoveryWarning = Boolean(logout.headers.get("X-Drivo-Booking-Recovery"));
+                      lastSubmittedPayload.current = null;
+                      latestDraftState.current = null;
+                      notePassengerHistoryInTab();
+                      clearGuestDraftTransition();
+                      clearBookingDraft();
+                      clearBookingOperationId();
+                      setBookingOperationId("");
+                      if (recoveryWarning) {
+                        markBookingSubmissionUncertain();
+                        setSubmissionUncertain(true);
+                        setOperationNoticeKey(logout.headers.get("X-Drivo-Booking-Recovery") === "BOOKING_CREATED" ? "phase42.transitionCreated" : "phase42.transitionReview");
+                      } else {
+                        clearBookingSubmissionUncertain();
+                        setSubmissionUncertain(false);
+                      }
+                      setPendingDraft(null);
+                      setDraftScope("guest");
+                      setDraftReady(true);
+                      resetUnsubmittedForm();
+                      setDraftNoticeKey("phase4.accountChanged");
+                      setLogoutFailed(false);
                       setPassengerProfile(null);
                       setLoginPassword("");
+                      setCustomerName("");
+                      setCustomerEmail("");
+                      setCustomerPhone("");
+                      setRegistrationProofPhone("");
                       setAuthError("");
                       setError((current) => (isAuthenticationRequiredMessage(current) ? "" : current));
                       setAuthMode("idle");
@@ -2649,20 +3301,21 @@ onChange={(e) => {
                     {t("passenger.useAnotherAccount", "Use another account")}
                   </button>
                 </div>
+                {logoutFailed && <p role="alert" className="mt-2 text-sm text-red-700">{t("phase3.logoutFailed")}</p>}
               </div>
-            ) : (
+            ) : !earlyLoginOpen || bookingId ? (
               <div className="rounded-2xl border border-drivo-border-light bg-drivo-bg-soft/60 p-4">
                 <div className="mb-4 flex flex-col gap-1">
                   <p className="text-[13px] font-semibold text-drivo-text">
                     {authMode === "existingAccountLogin"
                       ? t("passenger.loginToContinueTitle", "Log in to continue")
-                      : authMode === "forgotPasswordOtp" || authMode === "resetPassword"
+                      : authMode === "emailRecovery"
                         ? t("passenger.resetPasswordTitle", "Reset your password")
                         : authMode === "legacyPasswordSetupOtp" || authMode === "legacyPasswordSetup"
                           ? t("passenger.createPasswordTitle", "Create a password to continue")
                           : t("passenger.firstTimePrompt", "First time with Drivo? Verify phone and create account.")}
                   </p>
-                  {(authMode === "existingAccountLogin" || authMode === "forgotPasswordOtp" || authMode === "resetPassword") && (
+                  {authMode === "existingAccountLogin" && (
                     <p className="text-[12px] text-drivo-text-secondary">
                       {t("passenger.existingAccountMessage", "This phone already has a Drivo account.")}
                     </p>
@@ -2687,10 +3340,13 @@ onChange={(e) => {
                       onChange={setLoginPassword}
                       visible={showLoginPassword}
                       onToggle={() => setShowLoginPassword((current) => !current)}
+                      autoComplete="current-password"
+                      errorId={authError || lateLoginErrorCode ? "booking-login-error" : undefined}
+                      onEnter={handlePassengerLogin}
                     />
-                    {authError && (
-                      <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] font-semibold text-red-700">
-                        {authError}
+                    {(authError || lateLoginErrorCode) && (
+                      <div id="booking-login-error" role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] font-semibold text-red-700">
+                        {lateLoginErrorCode ? presentMessage(lateLoginErrorCode, locale) : authError}
                       </div>
                     )}
                     <button
@@ -2708,7 +3364,8 @@ onChange={(e) => {
                         onClick={() => {
                           setAuthError("");
                           clearPasswordResetState();
-                          setAuthMode("forgotPasswordOtp");
+                          setRecoveryEmail(customerEmail);
+                          setAuthMode("emailRecovery");
                         }}
                       >
                         {t("passenger.forgotPassword", "Forgot password?")}
@@ -2767,102 +3424,26 @@ onChange={(e) => {
                   </div>
                 )}
 
-                {authMode === "forgotPasswordOtp" && (
-                  <div className="space-y-3">
-                    {!resetAttemptId && (
-                      <button
-                        type="button"
-                        onClick={(e) => handleForgotSend(e)}
-                        className="btn-primary w-full"
-                        disabled={authLoading}
-                      >
-                        {authLoading ? t("passenger.loading") : t("passenger.sendResetCode", "Send reset code")}
-                      </button>
-                    )}
-                    {resetAttemptId && !passwordResetProofToken && (
-                      <div className="space-y-3">
-                        <input
-                          className="input"
-                          inputMode="numeric"
-                          maxLength={6}
-                          value={resetOtp}
-                          onChange={(e) => setResetOtp(e.target.value)}
-                          placeholder={t("passenger.otpCode")}
-                          required
-                        />
-                        <button
-                          type="button"
-                          onClick={(e) => handleForgotVerify(e)}
-                          className="btn-primary w-full"
-                          disabled={authLoading}
-                        >
-                          {authLoading ? t("otp.verifying", "Verifying...") : t("passenger.verifyOtp")}
-                        </button>
-                      </div>
-                    )}
-                    {authError && (
-                      <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] font-semibold text-red-700">
-                        {authError}
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      className="text-[13px] font-bold text-drivo-green hover:underline"
-                      onClick={() => {
-                        setAuthError("");
-                        clearPasswordResetState();
-                        setAuthMode("existingAccountLogin");
-                      }}
-                    >
-                      {t("passenger.backToLogin", "Back to login")}
-                    </button>
-                  </div>
-                )}
-
-                {authMode === "resetPassword" && passwordResetProofToken && (
-                  <div className="space-y-3">
-                    <PasswordInput
-                      label={t("passenger.newPassword")}
-                      value={resetPassword}
-                      onChange={setResetPassword}
-                      visible={showResetPassword}
-                      onToggle={() => setShowResetPassword((current) => !current)}
-                    />
-                    <PasswordInput
-                      label={t("passenger.confirmPassword", "Confirm password")}
-                      value={resetConfirmPassword}
-                      onChange={setResetConfirmPassword}
-                      visible={showResetPassword}
-                      onToggle={() => setShowResetPassword((current) => !current)}
-                    />
-                    {authError && (
-                      <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-[13px] font-semibold text-red-700">
-                        {authError}
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      onClick={(e) => handleResetComplete(e)}
-                      className="btn-primary w-full"
-                      disabled={authLoading}
-                    >
-                      {authLoading ? t("passenger.saving") : t("passenger.resetContinue", "Reset Password & Continue")}
-                    </button>
-                  </div>
-                )}
+                {authMode === "emailRecovery" && recoveryFields()}
               </div>
-            )}
+            ) : null}
 
             <select
+              aria-label={t('booking.languagePreference')}
               value={languagePref}
-              onChange={(e) => setLanguagePref(e.target.value)}
+              onChange={(e) => {
+                if (isBookingLanguage(e.target.value)) {
+                  languagePrefExplicit.current = true;
+                  setLanguagePref(e.target.value);
+                }
+              }}
               className="input"
             >
-              <option value="sk">🇸🇰 Slovak</option>
-              <option value="en">🇬🇧 English</option>
-              <option value="de">🇩🇪 German</option>
-              <option value="uk">🇺🇦 Ukrainian</option>
-              <option value="cs">🇨🇿 Czech</option>
+              <option value="sk">🇸🇰 {t('language.option.sk')}</option>
+              <option value="en">🇬🇧 {t('language.option.en')}</option>
+              <option value="de">🇩🇪 {t('language.option.de')}</option>
+              <option value="uk">🇺🇦 {t('language.option.uk')}</option>
+              <option value="cs">🇨🇿 {t('language.option.cs')}</option>
             </select>
 
             <div>
@@ -2874,7 +3455,6 @@ onChange={(e) => {
                 {[
                   ["card", "💳", t("booking.paymentCard"), t("booking.paymentCardDesc"), t("booking.recommended", "Recommended")],
                   ["cash", "💰", t("booking.paymentCash"), t("booking.paymentCashDesc"), t("booking.rulesApply", "Rules apply")],
-                  ["invoice", "🏢", t("booking.paymentInvoice"), t("booking.paymentInvoiceDesc"), "Net 30"],
                 ].filter(([v]) => !(childrenTransport && v === "cash")).map(([v, icon, label, sub, tag]) => (
                   <button
                     key={v}
@@ -2912,14 +3492,6 @@ onChange={(e) => {
               <CashWarning agreed={cashAgreed} onAgreeChange={setCashAgreed} />
             )}
 
-            {paymentMethod === "invoice" && (
-              <div className="p-4 bg-drivo-blue-light rounded-2xl border border-blue-200 animate-fade-in">
-                <p className="text-[13px] text-blue-700">
-                  <strong>🏢 {t("booking.paymentInvoice")}:</strong> {t("booking.invoiceNotice", "For municipalities, healthcare, insurers. Details confirmed via email.")}
-                </p>
-              </div>
-            )}
-
             <textarea
               value={specialNotes}
               onChange={(e) => setSpecialNotes(e.target.value)}
@@ -2949,6 +3521,8 @@ onChange={(e) => {
             className="btn-primary w-full text-[16px] py-4 disabled:opacity-50"
             disabled={
               loading ||
+              submissionUncertain ||
+              (earlyLoginOpen && !passengerAuthenticated && !bookingId) ||
               (paymentMethod === "cash" && !cashAgreed) ||
               (!["idle", "authenticated"].includes(authMode) && Boolean(bookingId))
             }
@@ -2983,33 +3557,47 @@ function PasswordInput({
   onChange,
   visible,
   onToggle,
+  autoComplete = "new-password",
+  errorId,
+  onEnter,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   visible: boolean;
   onToggle: () => void;
+  autoComplete?: "current-password" | "new-password";
+  errorId?: string;
+  onEnter?: (event: React.KeyboardEvent<HTMLInputElement>) => void;
 }) {
+  const id = useId();
+  const { t } = useLanguage();
   return (
     <div>
-      <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">
+      <label htmlFor={id} className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">
         {label}
       </label>
       <div className="relative">
         <input
-          className="input pr-20"
+          id={id}
+          className="input pr-36"
           type={visible ? "text" : "password"}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          autoComplete="new-password"
+          onKeyDown={(event) => { if (event.key === "Enter" && onEnter) onEnter(event); }}
+          autoComplete={autoComplete}
+          aria-describedby={errorId}
+          aria-invalid={Boolean(errorId)}
           required
         />
         <button
           type="button"
           onClick={onToggle}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] font-bold text-drivo-green"
+          aria-label={visible ? t("phase3.hidePassword") : t("phase3.showPassword")}
+          aria-pressed={visible}
+          className="absolute right-2 top-1/2 min-h-11 -translate-y-1/2 px-2 text-[12px] font-bold text-drivo-green"
         >
-          {visible ? "Hide" : "Show"}
+          {visible ? t("phase3.hidePassword") : t("phase3.showPassword")}
         </button>
       </div>
     </div>

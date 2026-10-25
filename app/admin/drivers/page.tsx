@@ -1,7 +1,11 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { useEffect, useState } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { formatNumber } from "@/lib/i18n/format";
+import { presentStatus } from "@/lib/i18n/status-catalog";
 
 interface Vehicle {
   id: string;
@@ -38,7 +42,7 @@ const emptyForm = {
 };
 
 export default function AdminDriversPage() {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,23 +65,23 @@ export default function AdminDriversPage() {
   const fetchDrivers = async () => {
     setError("");
     try {
-      const res = await fetch("/api/admin/drivers", { cache: "no-store" });
+      const res = await csrfFetch("admin", "/api/admin/drivers", { cache: "no-store" });
       const data = await safeJson(res);
-      if (!res.ok) throw new Error(data.error || t("adminDrivers.errors.fetch"));
+      if (!res.ok) throw new Error("adminDrivers.errors.fetch");
       setDrivers(data.drivers || []);
     } catch (err: any) {
-      setError(err?.message || t("adminDrivers.errors.fetch"));
+      setError("adminDrivers.errors.fetch");
     }
   };
 
   const fetchVehicles = async () => {
     try {
-      const res = await fetch("/api/admin/vehicles", { cache: "no-store" });
+      const res = await csrfFetch("admin", "/api/admin/vehicles", { cache: "no-store" });
       const data = await safeJson(res);
-      if (!res.ok) throw new Error(data.error || t("adminDrivers.errors.vehicles"));
+      if (!res.ok) throw new Error("adminDrivers.errors.vehicles");
       setVehicles(data.vehicles || []);
     } catch (err: any) {
-      setError(err?.message || t("adminDrivers.errors.vehicles"));
+      setError("adminDrivers.errors.vehicles");
     }
   };
 
@@ -107,12 +111,12 @@ export default function AdminDriversPage() {
     setError("");
 
     if (!formData.fullName.trim() || !formData.phone.trim()) {
-      setError(t("adminDrivers.errors.required"));
+      setError("adminDrivers.errors.required");
       return;
     }
 
     if (!editing && !formData.password.trim()) {
-      setError(t("adminDrivers.errors.password"));
+      setError("adminDrivers.errors.password");
       return;
     }
 
@@ -127,20 +131,20 @@ export default function AdminDriversPage() {
         if (!payload.password) delete payload.password;
       }
 
-      const res = await fetch("/api/admin/drivers", {
+      const res = await csrfFetch("admin", "/api/admin/drivers", {
         method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       const data = await safeJson(res);
-      if (!res.ok) throw new Error(data.error || t("adminDrivers.errors.save"));
+      if (!res.ok) throw new Error("adminDrivers.errors.save");
 
       setShowForm(false);
       setEditing(null);
       setFormData(emptyForm);
       await fetchDrivers();
     } catch (err: any) {
-      setError(err?.message || t("adminDrivers.errors.save"));
+      setError("adminDrivers.errors.save");
     } finally {
       setSaving(false);
     }
@@ -154,16 +158,16 @@ export default function AdminDriversPage() {
     setError("");
 
     try {
-      const res = await fetch("/api/admin/drivers", {
+      const res = await csrfFetch("admin", "/api/admin/drivers", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ driverId, ...payload }),
       });
       const data = await safeJson(res);
-      if (!res.ok) throw new Error(data.error || t("adminDrivers.errors.save"));
+      if (!res.ok) throw new Error("adminDrivers.errors.save");
       await fetchDrivers();
     } catch (err: any) {
-      setError(err?.message || t("adminDrivers.errors.save"));
+      setError("adminDrivers.errors.save");
     } finally {
       setUpdatingDriverId(null);
     }
@@ -178,7 +182,7 @@ export default function AdminDriversPage() {
       <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{t("adminDrivers.title")}</h1>
-          <p className="text-sm text-gray-500">{drivers.length} {t("adminDrivers.count")}</p>
+          <p className="text-sm text-gray-500">{formatNumber(drivers.length, locale)} {t("adminDrivers.count")}</p>
         </div>
         <div className="flex gap-3">
           <button onClick={fetchDrivers} className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
@@ -191,8 +195,8 @@ export default function AdminDriversPage() {
       </div>
 
       {error && (
-        <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-          {error}
+        <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          {t(error)}
         </div>
       )}
 
@@ -216,7 +220,7 @@ export default function AdminDriversPage() {
                 <option value="">{t("adminDrivers.noVehicle")}</option>
                 {vehicles.map((vehicle) => (
                   <option key={vehicle.id} value={vehicle.id}>
-                    {vehicle.plateNumber} - {vehicle.brand} {vehicle.model} ({vehicle.type})
+                    {vehicle.plateNumber} - {vehicle.brand} {vehicle.model} ({t(`m4.vehicleType.${vehicle.type}`, t("m4.common.unknownState"))})
                   </option>
                 ))}
               </select>
@@ -269,18 +273,18 @@ export default function AdminDriversPage() {
                       {driver.vehicle ? (
                         <div>
                           <div className="font-semibold text-gray-900">{driver.vehicle.plateNumber}</div>
-                          <div>{driver.vehicle.brand} {driver.vehicle.model} · {driver.vehicle.type}</div>
+                          <div>{driver.vehicle.brand} {driver.vehicle.model} · {t(`m4.vehicleType.${driver.vehicle.type}`, t("m4.common.unknownState"))}</div>
                         </div>
                       ) : driver.vehiclePlate ? (
-                        <div>{driver.vehiclePlate} · {driver.vehicleType}</div>
+                        <div>{driver.vehiclePlate} · {t(`m4.vehicleType.${driver.vehicleType}`, t("m4.common.unknownState"))}</div>
                       ) : (
                         "-"
                       )}
                     </td>
-                    <td className="p-3"><Badge value={driver.status} /></td>
+                    <td className="p-3"><Badge value={presentStatus("driverAccount", driver.status, locale)} /></td>
                     <td className="p-3"><Badge value={driver.isOnline ? t("adminDrivers.online") : t("adminDrivers.offline")} /></td>
                     <td className="p-3"><Badge value={driver.isOnTrip ? t("adminDrivers.onTrip") : t("adminDrivers.available")} /></td>
-                    <td className="p-3 text-gray-600">{driver.bookings?.length || 0}</td>
+                    <td className="p-3 text-gray-600">{formatNumber(driver.bookings?.length || 0, locale)}</td>
                     <td className="p-3">
                       <div className="flex flex-wrap gap-2">
                         <button onClick={() => openEdit(driver)} className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">

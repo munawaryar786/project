@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { finishGuestOperationTransition } from "@/lib/public-booking-operation";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import {
   createPassengerSession,
-  getPassengerFromRequest,
+  authorizePassenger,
   publicPassenger,
   setPassengerCookie,
   validatePassengerPassword,
@@ -18,12 +19,9 @@ const ProfileSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const passenger = await getPassengerFromRequest(request);
-
-  if (!passenger) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  }
-
+  const auth = await authorizePassenger(request);
+  if (!auth.ok) return auth.response;
+  const passenger = auth.actor;
   const body = await request.json();
   const parsed = ProfileSchema.safeParse(body);
 
@@ -58,15 +56,17 @@ export async function POST(request: NextRequest) {
       email,
       passwordHash,
       profileCompleted: true,
+      authVersion: { increment: 1 },
     },
   });
 
-  if (parsed.data.bookingId) {
-    await prisma.booking.updateMany({
-      where: { id: parsed.data.bookingId, passengerId: null },
-      data: { passengerId: passenger.id },
-    });
-  }
+  await prisma.passengerSession.updateMany({
+    where: { passengerId: passenger.id, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+
+  // Profile changes never acquire an unowned booking. The existing continuation
+  // endpoint verifies ownership/capability independently.
 
   const token = await createPassengerSession(updated);
   const response = NextResponse.json({
@@ -75,5 +75,5 @@ export async function POST(request: NextRequest) {
   });
   setPassengerCookie(response, token);
 
-  return response;
+  return finishGuestOperationTransition(request, response);
 }

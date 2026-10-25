@@ -1,5 +1,7 @@
 "use client";
 
+import { csrfFetch } from "@/lib/client/csrf-fetch";
+
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -13,19 +15,28 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const { t } = useLanguage();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [adminRole, setAdminRole] = useState("");
   const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem("drivo-admin-access-token");
-
-    if (!token && pathname !== "/admin/login") {
-      router.push("/admin/login");
-    } else {
-      setIsAuthenticated(true);
-    }
-
-    setLoading(false);
+    let cancelled = false;
+    const restoreSession = async () => {
+      const response = await csrfFetch("admin", "/api/admin/me", { cache: "no-store", credentials: "include" });
+      if (!response.ok) {
+        router.push("/admin/login");
+        if (!cancelled) setLoading(false);
+        return;
+      }
+      const payload = await response.json().catch(() => null);
+      if (!cancelled) {
+        setIsAuthenticated(true);
+        setAdminRole(payload?.admin?.role || "");
+        setLoading(false);
+      }
+    };
+    void restoreSession();
+    return () => { cancelled = true; };
   }, [pathname, router]);
 
   if (pathname === "/admin/login") {
@@ -53,6 +64,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       label: t("admin.dashboard"),
       icon: "DB",
       active: pathname === "/admin/dashboard",
+    },
+    {
+      href: "/admin/operations",
+      label: t("admin.operations", "Operations"),
+      icon: "OP",
+      active: pathname.startsWith("/admin/operations"),
     },
     {
       href: "/admin/bookings",
@@ -90,15 +107,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       icon: "FN",
       active: pathname.startsWith("/admin/financial"),
     },
+    ...(adminRole === "SUPER_ADMIN" ? [{
+      href: "/admin/dispatch-team",
+      label: t("dispatchAdmin.title", "Dispatch Team"),
+      icon: "DT",
+      active: pathname.startsWith("/admin/dispatch-team"),
+    }] : []),
   ];
 
-  const handleLogout = () => {
-    localStorage.removeItem("drivo-admin-access-token");
-    localStorage.removeItem("drivo-admin-refresh-token");
-    localStorage.removeItem("drivo-admin-user");
+  const handleLogout = async () => {
+    await csrfFetch("admin", "/api/admin/logout", { method: "POST" }).catch(() => null);
     router.push("/admin/login");
   };
-
   return (
     <div className="min-h-screen bg-gray-100">
       <header className="fixed top-0 left-0 right-0 z-50 bg-green-900 text-white shadow-lg">
@@ -107,7 +127,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="lg:hidden p-2 hover:bg-white/10 rounded-lg"
-              aria-label="Toggle menu"
+              aria-label={t("m4.admin.toggleMenu")}
             >
               <span className="text-xl">{sidebarOpen ? "x" : "="}</span>
             </button>
@@ -115,7 +135,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <Link href="/admin/dashboard" className="flex items-center gap-2 font-bold text-lg">
               <BrandLogo className="h-9 w-28" />
               <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full font-normal">
-                Admin
+                {t("m4.admin.role")}
               </span>
             </Link>
           </div>

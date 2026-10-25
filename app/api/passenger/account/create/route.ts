@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { finishGuestOperationTransition } from "@/lib/public-booking-operation";
 import { z } from "zod";
 import {
-  consumeVerificationProofById,
   createPassengerSession,
   hashSecret,
+  normalizePassengerEmail,
   normalizePassengerPhone,
   publicPassenger,
   setPassengerCookie,
@@ -12,7 +13,9 @@ import {
   validatePassengerPassword,
 } from "@/lib/passenger-auth";
 import { prisma } from "@/lib/prisma";
-import { rateLimits, withRateLimit } from "@/lib/rate-limit";
+import { authRateLimitResponse, enforceAuthRateLimit, rateLimits, resolveClientIp } from "@/lib/rate-limit";
+import { bindPublicBookingOwner, publicBookingAccess, validBookingId } from "@/lib/booking-access";
+import { isAllowedOrigin } from "@/lib/env";
 
 const CreateAccountSchema = z
   .object({
@@ -37,6 +40,7 @@ function proofError(code: string, message: string, status = 400) {
 }
 
 async function handler(request: NextRequest) {
+  if (!isAllowedOrigin(request.headers.get("origin"))) return proofError("ORIGIN_REJECTED", "Request origin is not allowed", 403);
   try {
     const body = await request.json();
     const parsed = CreateAccountSchema.safeParse(body);
@@ -48,6 +52,7 @@ async function handler(request: NextRequest) {
     }
 
     const data = parsed.data;
+    if (!validBookingId(data.bookingId)) return proofError("BOOKING_ACCESS_DENIED", "Booking unavailable", 404);
     const isLegacySetup = data.authMode === "LEGACY_SETUP" || Boolean(data.legacyPasswordSetupProofToken);
     const proofToken = isLegacySetup ? data.legacyPasswordSetupProofToken : data.registrationProofToken;
     const expectedPurpose = isLegacySetup
@@ -67,14 +72,21 @@ async function handler(request: NextRequest) {
     }
 
     const normalizedPhone = normalizePassengerPhone(data.phone);
+    const normalizedEmail = normalizePassengerEmail(data.email);
+    const distributedLimit = await enforceAuthRateLimit({ domain: "account-create", identities: [
+      { dimension: "ip", value: resolveClientIp(request), max: rateLimits.passengerAccountCreate.max, windowMs: rateLimits.passengerAccountCreate.windowMs },
+      { dimension: "phone", value: normalizedPhone, max: rateLimits.passengerAccountCreate.max, windowMs: rateLimits.passengerAccountCreate.windowMs },
+      { dimension: "email", value: normalizedEmail, max: rateLimits.passengerAccountCreate.max, windowMs: rateLimits.passengerAccountCreate.windowMs },
+    ] });
+    if (!distributedLimit.allowed) return authRateLimitResponse(distributedLimit, "Too many account creation attempts. Please wait and try again.");
     const booking = await prisma.booking.findUnique({ where: { id: data.bookingId } });
-    if (!booking) {
+    if (!booking || !(await publicBookingAccess(request, booking)).allowed) {
       return NextResponse.json({ error: "Booking not found" }, { status: 404 });
     }
 
     const bookingPhone =
       booking.normalizedPhone ||
-      normalizePassengerPhone(`${booking.customerPhoneCode}${booking.customerPhone}`);
+      normalizePassengerPhone(`${booking.customerPhoneCode}${booking.customerPhone}`, booking.customerPhoneCode);
     if (bookingPhone !== normalizedPhone) {
       return proofError(
         "PROOF_PHONE_MISMATCH",
@@ -120,6 +132,10 @@ async function handler(request: NextRequest) {
       },
     });
 
+    const emailOwner = await prisma.passenger.findFirst({ where: { email: { equals: normalizedEmail, mode: "insensitive" } } });
+    if (emailOwner && emailOwner.id !== existing?.id) {
+      return proofError("EMAIL_ALREADY_IN_USE", "This email is already linked to another Drivo account. Please use a different email.", 409);
+    }
     if (existing?.passwordHash) {
       return NextResponse.json(
         {
@@ -153,8 +169,21 @@ async function handler(request: NextRequest) {
     }
 
     const passwordHash = await bcrypt.hash(data.password, 12);
-    const passenger = existing
-      ? await prisma.passenger.update({
+    if (existing && existing.status !== "ACTIVE") return proofError("ACCOUNT_UNAVAILABLE", "Account setup is unavailable", 403);
+    const completed = await prisma.$transaction(async tx => {
+      const currentBooking = await tx.booking.findUnique({ where: { id: data.bookingId } });
+      if (!currentBooking || !(await publicBookingAccess(request, currentBooking, undefined, tx)).allowed) throw new Error("BOOKING_ACCESS_DENIED");
+      const consumed = await tx.passengerVerificationProof.updateMany({ where: {
+        id: proof.id, purpose: expectedPurpose, bookingId: data.bookingId, normalizedPhone,
+        consumedAt: null, expiresAt: { gt: new Date() },
+      }, data: { consumedAt: new Date() } });
+      if (consumed.count !== 1) throw new Error("PROOF_REPLAYED");
+      if (existing) {
+        const unchanged = await tx.passenger.updateMany({ where: { id: existing.id, status: "ACTIVE", OR: [{ passwordHash: null }, { passwordHash: { isSet: false } }] }, data: { lastLoginAt: new Date() } });
+        if (unchanged.count !== 1) throw new Error("ACCOUNT_SETUP_CONFLICT");
+      }
+      const passenger = existing
+      ? await tx.passenger.update({
           where: { id: existing.id },
           data: {
             phone: normalizedPhone,
@@ -162,21 +191,22 @@ async function handler(request: NextRequest) {
             phoneVerified: true,
             phoneVerifiedAt: existing.phoneVerifiedAt || new Date(),
             fullName: data.fullName,
-            email: data.email.toLowerCase(),
+            email: normalizedEmail,
             passwordHash,
             profileCompleted: true,
             status: "ACTIVE",
             lastLoginAt: new Date(),
+            authVersion: { increment: 1 },
           },
         })
-      : await prisma.passenger.create({
+      : await tx.passenger.create({
           data: {
             phone: normalizedPhone,
             normalizedPhone,
             phoneVerified: true,
             phoneVerifiedAt: new Date(),
             fullName: data.fullName,
-            email: data.email.toLowerCase(),
+            email: normalizedEmail,
             passwordHash,
             profileCompleted: true,
             status: "ACTIVE",
@@ -184,35 +214,40 @@ async function handler(request: NextRequest) {
           },
         });
 
-    await prisma.booking.update({
-      where: { id: data.bookingId },
-      data: {
-        passengerId: passenger.id,
-        phoneVerified: true,
-        normalizedPhone,
-        customerEmail: data.email.toLowerCase(),
-        customerName: data.fullName,
-        passengerAuthStatus: "AUTHENTICATED",
-        passengerAuthCompletedAt: new Date(),
-      },
+      await bindPublicBookingOwner(tx, request, currentBooking, passenger.id);
+      await tx.booking.update({
+        where: { id: data.bookingId },
+        data: {
+          passengerId: passenger.id,
+          phoneVerified: true,
+          normalizedPhone,
+          customerEmail: data.email.toLowerCase(),
+          customerName: data.fullName,
+          passengerAuthStatus: "AUTHENTICATED",
+          passengerAuthCompletedAt: new Date(),
+        },
+      });
+
+      await tx.passengerSession.updateMany({ where: { passengerId: passenger.id, OR: [{ revokedAt: null }, { revokedAt: { isSet: false } }] }, data: { revokedAt: new Date() } });
+      const token = await createPassengerSession(passenger, tx);
+      return { passenger, token };
     });
-
-    await consumeVerificationProofById(proof.id);
-
-    const token = await createPassengerSession(passenger);
+    const { passenger, token } = completed;
     const response = NextResponse.json({
       success: true,
       passenger: publicPassenger(passenger),
     });
     setPassengerCookie(response, token);
     if (data.rememberDevice) {
-      await setTrustedDeviceCookie(request, response, passenger.id);
+      try { await setTrustedDeviceCookie(request, response, passenger.id); }
+      catch { console.error("[passenger.trusted-device.deferred]", { code: "TRUSTED_DEVICE_UNAVAILABLE" }); }
     }
 
-    console.log(`Passenger account setup completed: ${passenger.id}`);
-    return response;
+    console.info("[passenger.account.setup.completed]");
+    return finishGuestOperationTransition(request, response);
   } catch (error) {
-    console.error("Passenger account create error:", error);
+    if (error instanceof Error && ["BOOKING_ACCESS_DENIED", "BOOKING_ACCESS_CONFLICT", "PROOF_REPLAYED", "ACCOUNT_SETUP_CONFLICT"].includes(error.message)) return proofError("ACCOUNT_SETUP_CONFLICT", "Account setup could not be completed. Sign in or restart verification.", 409);
+    console.error("[passenger.account.create.failed]", { code: "ACCOUNT_CREATE_FAILED" });
     return NextResponse.json(
       { error: "Could not create account. Please try again." },
       { status: 500 }
@@ -220,4 +255,5 @@ async function handler(request: NextRequest) {
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.passengerAccountCreate);
+export const runtime = "nodejs";
+export const POST = handler;

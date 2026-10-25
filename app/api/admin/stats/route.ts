@@ -1,7 +1,10 @@
-import { NextResponse } from "next/server";
+import { authorizeAdmin } from "@/lib/security/authorization";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await authorizeAdmin(request);
+  if (!auth.ok) return auth.response;
   try {
     const today = new Date().toISOString().split("T")[0];
 
@@ -98,7 +101,7 @@ export async function GET() {
         },
         take: 10,
         include: {
-          driver: true,
+          driver: { omit: { passwordHash: true, authVersion: true } },
         },
       }),
     ]);

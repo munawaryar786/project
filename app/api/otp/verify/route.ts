@@ -1,167 +1,76 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import {
-  createVerificationProof,
-  normalizePassengerPhone,
-} from "@/lib/passenger-auth";
-import { rateLimits, withRateLimit } from "@/lib/rate-limit";
+import { checkWhatsAppVerification } from "@/lib/twilio";
+import { verifyMessagingOtpChallenge } from "@/lib/otp-challenge";
+import { createVerificationProof, isValidE164Phone, normalizePassengerPhone } from "@/lib/passenger-auth";
+import { authRateLimitResponse, enforceAuthRateLimit, rateLimits, resolveClientIp } from "@/lib/rate-limit";
+import { publicBookingAccess, validBookingId } from "@/lib/booking-access";
+import { getPassengerFromRequest } from "@/lib/passenger-auth";
+import { isAllowedOrigin } from "@/lib/env";
 
-const OTP_PURPOSES = new Set([
-  "PASSENGER_REGISTRATION",
-  "PASSENGER_LEGACY_PASSWORD_SETUP",
-]);
-
-function otpError(code: string, message: string, status = 400) {
-  return NextResponse.json({ success: false, code, message, error: message }, { status });
-}
+const OTP_PURPOSES = new Set(["PASSENGER_REGISTRATION", "PASSENGER_LEGACY_PASSWORD_SETUP"]);
+function otpError(code: string, message: string, status = 400) { return NextResponse.json({ success: false, code, message, error: message }, { status }); }
 
 async function handler(request: NextRequest) {
+  if (!isAllowedOrigin(request.headers.get("origin"))) return otpError("ORIGIN_REJECTED", "Request origin is not allowed", 403);
   try {
     const body = await request.json();
     const bookingId = String(body.bookingId || body.booking_id || "");
     const code = String(body.code || body.otp || body.otpCode || "").trim();
-    const purpose = OTP_PURPOSES.has(String(body.purpose))
-      ? String(body.purpose)
-      : "PASSENGER_REGISTRATION";
-
-    if (!bookingId || code.length !== 6) {
-      return otpError("OTP_INVALID", "Invalid verification code.");
-    }
+    const purpose = OTP_PURPOSES.has(String(body.purpose)) ? String(body.purpose) : "PASSENGER_REGISTRATION";
+    if (!bookingId || !/^\d{6}$/.test(code)) return otpError("OTP_INVALID", "Invalid verification code.");
+    if (!validBookingId(bookingId)) return otpError("BOOKING_NOT_FOUND", "Booking unavailable", 404);
 
     const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
-    if (!booking) {
-      return otpError("BOOKING_NOT_FOUND", "Booking not found", 404);
-    }
+    const passengerActor = booking?.passengerId ? await getPassengerFromRequest(request) : null;
+    if (!booking || !(await publicBookingAccess(request, booking, passengerActor?.id)).allowed) return otpError("BOOKING_NOT_FOUND", "Booking unavailable. Restart your booking.", 404);
+    const normalizedPhone = booking.normalizedPhone || normalizePassengerPhone(`${booking.customerPhoneCode}${booking.customerPhone}`, booking.customerPhoneCode);
+    if (!isValidE164Phone(normalizedPhone)) return otpError("PHONE_INVALID", "The booking phone number is invalid.");
 
-    const normalizedPhone =
-      booking.normalizedPhone ||
-      normalizePassengerPhone(`${booking.customerPhoneCode}${booking.customerPhone}`);
-
-    const otpRecord = await prisma.oTP.findFirst({
-      where: {
-        bookingId,
-        phone: normalizedPhone,
-        purpose,
-        used: false,
-      },
-      orderBy: { createdAt: "desc" },
+    const distributedLimit = await enforceAuthRateLimit({
+      domain: "otp-verify",
+      identities: [
+        { dimension: "ip", value: resolveClientIp(request), max: rateLimits.passengerRegistrationOtpVerify.max, windowMs: rateLimits.passengerRegistrationOtpVerify.windowMs },
+        { dimension: "phone", value: normalizedPhone, max: rateLimits.passengerRegistrationOtpVerify.max, windowMs: rateLimits.passengerRegistrationOtpVerify.windowMs },
+      ],
     });
+    if (!distributedLimit.allowed) return authRateLimitResponse(distributedLimit, "Too many verification attempts. Please request a new code.");
 
-    if (!otpRecord) {
-      return otpError("OTP_INVALID", "Invalid verification code.");
+    const otpRecord = await prisma.oTP.findFirst({ where: { bookingId, phone: normalizedPhone, purpose, used: false, expiresAt: { gt: new Date() }, attempts: { lt: 5 } }, orderBy: { createdAt: "desc" } });
+    if (!otpRecord) return otpError("OTP_EXPIRED", "Verification code expired. Please request a new code.");
+
+    // Record format allows in-flight challenges to survive explicit provider switches.
+    const provider = otpRecord.code === "TWILIO_VERIFY"
+      ? await checkWhatsAppVerification(normalizedPhone, code)
+      : verifyMessagingOtpChallenge({ storedCode: otpRecord.code, bookingId, phone: normalizedPhone, purpose, otp: code })
+        ? { success: true as const, status: "approved" }
+        : { success: false as const, error: "Invalid or expired verification code." };
+    if (!provider.success) {
+      await prisma.oTP.updateMany({ where: { id: otpRecord.id, used: false, attempts: { lt: 5 } }, data: { attempts: { increment: 1 } } });
+      return otpError("OTP_INVALID", provider.error);
     }
 
-    if (otpRecord.expiresAt.getTime() <= Date.now()) {
-      return otpError("OTP_EXPIRED", "Verification code expired. Please request a new code.");
-    }
-
-    if (otpRecord.attempts >= otpRecord.maxAttempts || otpRecord.code !== code) {
-      await prisma.oTP.update({
-        where: { id: otpRecord.id },
-        data: { attempts: { increment: 1 } },
-      });
-      return otpError("OTP_INVALID", "Invalid verification code.");
-    }
-
-    const passenger = await prisma.passenger.findFirst({
-      where: { OR: [{ phone: normalizedPhone }, { normalizedPhone }] },
+    const passenger = await prisma.passenger.findFirst({ where: { OR: [{ phone: normalizedPhone }, { normalizedPhone }] } });
+    if (purpose === "PASSENGER_REGISTRATION" && passenger) return otpError("ACCOUNT_EXISTS_LOGIN_REQUIRED", "Please sign in or use account recovery.", 409);
+    if (purpose === "PASSENGER_LEGACY_PASSWORD_SETUP" && (!passenger || passenger.passwordHash || passenger.status !== "ACTIVE")) return otpError("ACCOUNT_UNAVAILABLE", "Account setup is unavailable", 409);
+    const proof = await prisma.$transaction(async tx => {
+      const current = await tx.booking.findUnique({ where: { id: bookingId } });
+      if (!current || !(await publicBookingAccess(request, current, passengerActor?.id, tx)).allowed) throw new Error("BOOKING_ACCESS_CONFLICT");
+      const consumed = await tx.oTP.updateMany({ where: { id: otpRecord.id, used: false, expiresAt: { gt: new Date() }, attempts: { lt: 5 } }, data: { used: true } });
+      if (consumed.count !== 1) throw new Error("OTP_REPLAYED");
+      const issued = await createVerificationProof({ passengerId: passenger?.id || null, normalizedPhone, purpose, bookingId }, tx);
+      await tx.booking.update({ where: { id: bookingId }, data: { phoneVerified: true, normalizedPhone, passengerAuthStatus: purpose === "PASSENGER_LEGACY_PASSWORD_SETUP" ? "LEGACY_PASSWORD_SETUP_REQUIRED" : "ACCOUNT_SETUP_REQUIRED" } });
+      return issued;
     });
-
-    if (purpose === "PASSENGER_REGISTRATION") {
-      if (passenger?.passwordHash) {
-        return otpError(
-          "ACCOUNT_EXISTS_LOGIN_REQUIRED",
-          "This phone already has a Drivo account. Please log in or reset your password.",
-          409
-        );
-      }
-      if (passenger) {
-        return otpError(
-          "LEGACY_SETUP_REQUIRED",
-          "Please verify your phone and create a password to continue.",
-          409
-        );
-      }
-    }
-
-    if (purpose === "PASSENGER_LEGACY_PASSWORD_SETUP") {
-      if (!passenger) {
-        return otpError("REGISTRATION_REQUIRED", "Please verify your phone and create an account.", 404);
-      }
-      if (passenger.passwordHash) {
-        return otpError(
-          "ACCOUNT_EXISTS_LOGIN_REQUIRED",
-          "This phone already has a Drivo account. Please log in or reset your password.",
-          409
-        );
-      }
-    }
-
-    let proof: { proofToken: string; expiresAt: Date };
-    try {
-      proof = await createVerificationProof({
-        passengerId: passenger?.id || null,
-        normalizedPhone,
-        purpose,
-        bookingId,
-      });
-    } catch (error) {
-      console.error("Passenger auth proof creation failed:", error);
-      return otpError(
-        "PROOF_CREATE_FAILED",
-        "Verification could not be completed. Please request a new code.",
-        500
-      );
-    }
-
-    await prisma.oTP.update({
-      where: { id: otpRecord.id },
-      data: { used: true },
-    });
-
-    await prisma.booking.update({
-      where: { id: bookingId },
-      data: {
-        phoneVerified: true,
-        normalizedPhone,
-        passengerAuthStatus:
-          purpose === "PASSENGER_LEGACY_PASSWORD_SETUP"
-            ? "LEGACY_PASSWORD_SETUP_REQUIRED"
-            : "ACCOUNT_SETUP_REQUIRED",
-      },
-    });
-
-    const base = {
-      success: true,
-      verified: true,
-      proofExpiresAt: proof.expiresAt.toISOString(),
-      normalizedPhone,
-      bookingId,
-      phoneVerified: true,
-      email: booking.customerEmail || "",
-      message: "Phone verified successfully",
-    };
-
-    if (purpose === "PASSENGER_LEGACY_PASSWORD_SETUP") {
-      return NextResponse.json({
-        ...base,
-        legacyPasswordSetupRequired: true,
-        legacyPasswordSetupProofToken: proof.proofToken,
-      });
-    }
-
-    return NextResponse.json({
-      ...base,
-      accountSetupRequired: true,
-      registrationProofToken: proof.proofToken,
-    });
+    const base = { success: true, verified: true, proofExpiresAt: proof.expiresAt.toISOString(), normalizedPhone, bookingId, phoneVerified: true, email: booking.customerEmail || "", message: "Phone verified successfully" };
+    return NextResponse.json(purpose === "PASSENGER_LEGACY_PASSWORD_SETUP" ? { ...base, legacyPasswordSetupRequired: true, legacyPasswordSetupProofToken: proof.proofToken } : { ...base, accountSetupRequired: true, registrationProofToken: proof.proofToken });
   } catch (error) {
-    console.error("OTP verify error:", error);
-    return NextResponse.json(
-      { success: false, code: "OTP_VERIFY_FAILED", message: "Verification failed. Please try again.", error: "Verification failed. Please try again." },
-      { status: 500 }
-    );
+    if (error instanceof Error && error.message === "OTP_REPLAYED") return otpError("OTP_REPLAYED", "Verification could not be completed. Please request a new code.");
+    console.error("OTP verify error", { type: error instanceof Error ? error.name : "unknown" });
+    return otpError("OTP_VERIFY_FAILED", "Verification failed. Please try again.", 500);
   }
 }
 
-export const POST = withRateLimit(handler, rateLimits.passengerRegistrationOtpVerify);
+export const runtime = "nodejs";
+export const POST = handler;

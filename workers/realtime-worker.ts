@@ -1,0 +1,131 @@
+import { processBookingEmailEvent } from "@/lib/email/booking-events";
+import { processTransactionalEmail } from "@/lib/email/send";
+import type { TransactionalEmail } from "@/lib/email/types";
+import { EmailError } from "@/lib/email/config";
+import { Worker, type Job } from "bullmq";
+import { Emitter } from "@socket.io/redis-emitter";
+import { prisma } from "@/lib/prisma";
+import { advanceDispatch, startScheduledRecoveryDispatch } from "@/lib/automatic-dispatch";
+import { processScheduledRideJob, reconcileScheduledRideJobs } from "@/lib/scheduled-jobs";
+import { bookingPickupAt, isFutureScheduledBooking, scheduleScheduledRideJobs } from "@/lib/scheduled-marketplace";
+import { createNotification, notificationDedupe } from "@/lib/notifications";
+import { createRedisConnection, closeRedis } from "@/lib/realtime/redis";
+import { eventTypeForDomain, safeEvent } from "@/lib/realtime/contracts";
+import { OUTBOX_STATES, REALTIME_EVENTS, REALTIME_QUEUES } from "@/lib/realtime/constants";
+import { getOfferExpiryQueue, getScheduledRideQueue, closeQueues } from "@/lib/realtime/queues";
+import { relayOutboxOnce } from "@/lib/outbox-relay";
+import { bookingToEmailData, sendNoDriverAdminEscalation } from "@/lib/email";
+import { isScheduledReminderDeliveryCurrent } from "@/lib/scheduled-reminder-delivery";
+import { activePassengerRealtimeRooms } from "@/lib/security/passenger-session";
+import { isBookingActivationEvent, processBookingActivation } from "@/lib/booking-activation";
+import { reconcilePaymentOperationsOnce } from "@/lib/payment-checkout";
+
+const redis = createRedisConnection("worker-emitter");
+const emitter = new Emitter(redis as any);
+function payloadOf(event: any) { return (event.payload && typeof event.payload === "object" ? event.payload : {}) as Record<string, any>; }
+async function signal(event: any, recipientType: "DRIVER" | "ADMIN" | "PASSENGER", recipientId: string, stateHint?: string) {
+  const type = eventTypeForDomain(event.eventType);
+  const rooms = recipientType === "PASSENGER" ? await activePassengerRealtimeRooms(recipientId) : [`${recipientType.toLowerCase()}:${recipientId}`];
+  if (rooms.length) emitter.of(`/${recipientType.toLowerCase()}`).to(recipientType === "PASSENGER" ? rooms : rooms[0]).emit(type, safeEvent({ eventId: event.id, type, entityId: event.aggregateId, stateHint, actorType: recipientType }));
+}
+async function routeEvent(event: any) {
+  if (isBookingActivationEvent(event.eventType)) {
+    await processBookingActivation(String(event.aggregateId));
+    return;
+  }
+  if (event.eventType === "TRANSACTIONAL_EMAIL") { await processTransactionalEmail(event.payload as TransactionalEmail); return; }
+  if (["BOOKING_EMAIL_CREATED", "BOOKING_EMAIL_ASSIGNED", "BOOKING_EMAIL_PAYMENT"].includes(event.eventType)) { await processBookingEmailEvent(event); return; }
+
+  const p = payloadOf(event); const bookingId = String(p.bookingId || event.aggregateId); const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+  if (event.eventType === "SCHEDULED_REMINDER_30" || event.eventType === "SCHEDULED_WARNING_20") return;
+  if (event.eventType === "SCHEDULED_RIDE_REMINDER") {
+    if (booking?.driverId && isScheduledReminderDeliveryCurrent(booking, p)) await signal(event, "DRIVER", booking.driverId, "scheduled-ride-reminder");
+    return;
+  }
+  // A delayed ready event is meaningful only for the assignment it checked.
+  // Legacy events without assignment identity safely finish without signaling.
+  if (event.eventType === "SCHEDULED_READINESS_CHECKED" && !isScheduledReminderDeliveryCurrent(booking, p)) return;
+  // Recovery intent was committed with readiness release. A transient failure
+  // of the immediate recovery call is retried through this durable event.
+  if (event.eventType === "SCHEDULED_READINESS_FAILED" && booking && !booking.driverId && !["CANCELLED", "COMPLETED", "NO_SHOW"].includes(booking.status)) {
+    const recoveryPickup = bookingPickupAt(booking);
+    if (recoveryPickup && recoveryPickup.toISOString() === p.pickupAt && recoveryPickup.getTime() > Date.now()) await startScheduledRecoveryDispatch(bookingId);
+  }
+  if (event.eventType === "OFFER_CREATED" && p.driverId) { await createNotification({ recipientType: "DRIVER", recipientId: String(p.driverId), type: "DRIVER_OFFER_UPDATED", data: { bookingId, offerId: String(p.offerId || "") }, dedupeKey: notificationDedupe(event.id, "DRIVER", String(p.driverId)) }); await signal(event, "DRIVER", String(p.driverId), "offer-updated"); const offer = p.offerId ? await prisma.rideRequest.findUnique({ where: { id: String(p.offerId) }, select: { expiresAt: true } }) : null; if (offer) { const delay = Math.max(0, offer.expiresAt.getTime() - Date.now()); await getOfferExpiryQueue().add("expire", { offerId: String(p.offerId), bookingId }, { jobId: `offer-expiry-${String(p.offerId)}`, delay }); } return; }
+  if (event.eventType === "DRIVER_OFFER_ACCEPTED") {
+    // The outbox event is committed with the assignment. Queue failures retry
+    // this event instead of affecting the HTTP acceptance response.
+    const admins = await prisma.adminUser.findMany({ select: { id: true } });
+    for (const admin of admins) {
+      await createNotification({ recipientType: "ADMIN", recipientId: admin.id, type: "DRIVER_ASSIGNED", data: { bookingId, bookingRef: booking?.bookingRef || "", driverId: String(p.driverId || booking?.driverId || ""), serviceType: booking?.serviceType || "", status: booking?.status || "ASSIGNED", pickupAt: booking?.pickupAt?.toISOString?.() || null }, dedupeKey: notificationDedupe(event.id, "ADMIN", admin.id) });
+      await signal(event, "ADMIN", admin.id, "driver-assigned");
+    }
+    if (booking?.driverId) await signal(event, "DRIVER", booking.driverId, "assigned");
+    if (booking?.passengerId) await signal(event, "PASSENGER", booking.passengerId, "assigned");
+    if (booking?.scheduledRide === true && isFutureScheduledBooking(booking)) await scheduleScheduledRideJobs(bookingId);
+    return;
+  }
+  if (event.eventType === "DISPATCH_EXHAUSTED") {
+    const admins = await prisma.adminUser.findMany({ select: { id: true } });
+    for (const admin of admins) {
+      await createNotification({ recipientType: "ADMIN", recipientId: admin.id, type: "DISPATCH_EXHAUSTED", data: { bookingId, bookingRef: booking?.bookingRef || "", serviceType: booking?.serviceType || "", status: booking?.status || "", dispatchStatus: booking?.dispatchStatus || "DISPATCH_EXHAUSTED" }, dedupeKey: notificationDedupe(event.id, "ADMIN", admin.id) });
+      await signal(event, "ADMIN", admin.id, "manual-attention");
+    }
+    if (booking) {
+      const email = await sendNoDriverAdminEscalation(bookingToEmailData(booking));
+      if (email?.success === false) throw new EmailError("EMAIL_ESCALATION_ENQUEUE_FAILED", true);
+    }
+    return;
+  }
+  if (booking?.driverId) await signal(event, "DRIVER", booking.driverId, event.eventType.toLowerCase());
+  if (booking?.passengerId) await signal(event, "PASSENGER", booking.passengerId, event.eventType.toLowerCase());
+  const admins = await prisma.adminUser.findMany({ select: { id: true } }); for (const admin of admins) await signal(event, "ADMIN", admin.id, event.eventType.toLowerCase());
+  if (["SCHEDULED_RIDE_CLAIMED", "ADMIN_MANUAL_ASSIGNMENT"].includes(event.eventType) && booking?.scheduledRide === true && isFutureScheduledBooking(booking)) await scheduleScheduledRideJobs(bookingId);
+}
+async function processOutbox(job: Job<{ outboxEventId: string }>) {
+  const event = await prisma.outboxEvent.findUnique({ where: { id: job.data.outboxEventId } }); if (!event) return;
+  if (event.state === OUTBOX_STATES.PUBLISHED) return;
+  // Claim attempts increment on every successful relay claim. Fence the
+  // worker's result to the version it read, so a stale worker cannot
+  // overwrite a newer claim or a published event. claimedAt also fences
+  // a renewed lease when present (legacy records may not have a value).
+  const ownerWhere = {
+    id: event.id,
+    attempts: event.attempts,
+    ...(event.claimedAt ? { claimedAt: event.claimedAt } : {}),
+    state: { in: [OUTBOX_STATES.QUEUED, OUTBOX_STATES.PROCESSING, OUTBOX_STATES.RETRY] },
+  };
+  try {
+    await routeEvent(event);
+    const changed = await prisma.outboxEvent.updateMany({
+      where: ownerWhere,
+      data: { state: OUTBOX_STATES.PUBLISHED, publishedAt: new Date(), claimedAt: null, lastError: null },
+    });
+    if (changed.count === 1) console.info("[worker.outbox.published]", { eventId: event.id, eventType: event.eventType });
+  } catch (error) {
+    const emailExhausted = event.eventType === "TRANSACTIONAL_EMAIL" && job.attemptsMade + 1 >= (job.opts.attempts || 1);
+    await prisma.outboxEvent.updateMany({
+      where: ownerWhere,
+      data: { state: emailExhausted ? OUTBOX_STATES.FAILED : OUTBOX_STATES.RETRY, nextAttemptAt: emailExhausted ? null : new Date(Date.now() + 5000), lastError: "processing_failed" },
+    });
+    throw error;
+  }
+}
+async function processExpiry(job: Job<{ offerId: string; bookingId: string }>) {
+  const offer = await prisma.rideRequest.findUnique({ where: { id: job.data.offerId }, select: { status: true, expiresAt: true, bookingId: true } }); if (!offer || offer.status !== "PENDING") return;
+  if (offer.expiresAt.getTime() > Date.now()) { await getOfferExpiryQueue().add("expire", job.data, { jobId: `offer-expiry-${job.data.offerId}-rescheduled`, delay: offer.expiresAt.getTime() - Date.now() }); return; }
+  const booking = await prisma.booking.findUnique({ where: { id: offer.bookingId }, select: { scheduledRide: true } });
+  const result = booking?.scheduledRide ? await startScheduledRecoveryDispatch(offer.bookingId) : await advanceDispatch(offer.bookingId); console.info("[worker.offer-expiry]", { offerId: job.data.offerId, bookingId: offer.bookingId, outcome: result.ok ? (result as any).outcome : (result as any).code });
+}
+const outboxWorker = new Worker(REALTIME_QUEUES.OUTBOX, processOutbox, { connection: createRedisConnection("worker-outbox") as any, concurrency: 5 });
+const expiryWorker = new Worker(REALTIME_QUEUES.OFFER_EXPIRY, processExpiry, { connection: createRedisConnection("worker-expiry") as any, concurrency: 5 });
+const scheduledWorker = new Worker(REALTIME_QUEUES.SCHEDULED_RIDES, processScheduledRideJob, { connection: createRedisConnection("worker-scheduled") as any, concurrency: 5 });
+outboxWorker.on("failed", (job, error) => console.error("[worker.outbox.failed]", { jobId: job?.id, message: "job_failed" }));
+expiryWorker.on("failed", (job, error) => console.error("[worker.expiry.failed]", { jobId: job?.id, message: "job_failed" }));
+scheduledWorker.on("failed", (job, error) => console.error("[worker.scheduled.failed]", { jobId: job?.id, message: "job_failed" }));
+console.info("[worker.start]", { queues: Object.values(REALTIME_QUEUES) });
+const relayTimer = setInterval(() => void relayOutboxOnce().catch((error) => console.error("[worker.relay.failed]", { message: "relay_failed" })), 2000);
+const reconcileTimer = setInterval(() => void reconcileExpired().catch((error) => console.error("[worker.expiry-reconcile.failed]", { message: "expiry_reconcile_failed" })), 30000);
+async function reconcileExpired() { await reconcileScheduledRideJobs().catch(() => 0); await reconcilePaymentOperationsOnce().catch(() => console.error("[payment.operation.reconcile-failed]", { code: "RECONCILE_UNAVAILABLE" })); const rows = await prisma.rideRequest.findMany({ where: { status: "PENDING", expiresAt: { lte: new Date() } }, select: { bookingId: true }, take: 100 }); for (const row of rows) await advanceDispatch(row.bookingId); await relayOutboxOnce(100); }
+async function shutdown(signal: string) { console.info("[worker.stop]", { signal }); clearInterval(relayTimer); clearInterval(reconcileTimer); await outboxWorker.close(); await expiryWorker.close(); await scheduledWorker.close(); await closeQueues(); await closeRedis(redis); process.exit(0); }
+process.once("SIGTERM", () => void shutdown("SIGTERM")); process.once("SIGINT", () => void shutdown("SIGINT"));

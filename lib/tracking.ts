@@ -25,7 +25,6 @@ const driverStatuses = new Map<string, DriverStatusUpdate>();
  */
 export function updateDriverLocation(data: LocationUpdate): void {
   driverLocations.set(data.driverId, data);
-  console.log(`📍 Driver ${data.driverId} location updated`);
 }
 
 /**
@@ -47,7 +46,6 @@ export function getDriverLocation(driverId: string): LocationUpdate | undefined 
  */
 export function updateDriverStatus(data: DriverStatusUpdate): void {
   driverStatuses.set(data.driverId, data);
-  console.log(`🚗 Driver ${data.driverId} status: ${data.status}`);
 }
 
 /**

@@ -1,3 +1,4 @@
+import { getConfiguredOrigin } from "@/lib/env";
 import Stripe from 'stripe';
 
 // Initialize Stripe client
@@ -22,6 +23,11 @@ export interface PaymentSessionParams {
   customerEmail: string;
   customerName: string;
   description: string;
+  expiresAt?: number;
+  idempotencyKey?: string;
+  operationId?: string;
+  operationGeneration?: number;
+  paymentChannel?: "PUBLIC" | "PHONE_DISPATCH";
 }
 
 /**
@@ -34,12 +40,12 @@ export async function createPaymentSession(params: PaymentSessionParams) {
     throw new Error("Stripe not configured");
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+  const baseUrl = getConfiguredOrigin();
 
   try {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
-      customer_email: params.customerEmail,
+      ...(params.customerEmail ? { customer_email: params.customerEmail } : {}),
       line_items: [
         {
           price_data: {
@@ -60,11 +66,13 @@ export async function createPaymentSession(params: PaymentSessionParams) {
       mode: 'payment',
       success_url: `${baseUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/payment/cancel?booking_id=${params.bookingId}`,
+      ...(params.expiresAt ? { expires_at: params.expiresAt } : {}),
       metadata: {
         bookingId: params.bookingId,
         bookingRef: params.bookingRef,
+        ...(params.operationId ? { operationId: params.operationId, operationGeneration: String(params.operationGeneration), paymentChannel: params.paymentChannel || "" } : {}),
       },
-    });
+    }, params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : undefined);
 
     return {
       success: true,
@@ -72,9 +80,15 @@ export async function createPaymentSession(params: PaymentSessionParams) {
       sessionUrl: session.url,
     };
   } catch (error: any) {
-    console.error("❌ Stripe session creation error:", error.message);
+    console.error("[payment.provider.create.failed]", { code: "PROVIDER_CREATE_FAILED" });
     throw error;
   }
+}
+
+export async function expirePaymentSession(sessionId: string) {
+  const stripe = getStripeClient();
+  if (!stripe) throw new Error("Stripe not configured");
+  return stripe.checkout.sessions.expire(sessionId);
 }
 
 /**
@@ -99,7 +113,7 @@ export async function getPaymentSession(sessionId: string) {
       amount: session.amount_total,
     };
   } catch (error: any) {
-    console.error("❌ Stripe session retrieval error:", error.message);
+    console.error("[payment.provider.retrieve.failed]", { code: "PROVIDER_RETRIEVE_FAILED" });
     return {
       success: false,
       error: error.message,
