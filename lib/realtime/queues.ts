@@ -1,8 +1,64 @@
 import { Queue } from "bullmq";
+import type Redis from "ioredis";
 import { createRedisConnection } from "@/lib/realtime/redis";
 import { REALTIME_QUEUES } from "@/lib/realtime/constants";
-let outboxQueue: Queue | null = null; let expiryQueue: Queue | null = null; let scheduledQueue: Queue | null = null;
-export function getOutboxQueue() { return outboxQueue ||= new Queue(REALTIME_QUEUES.OUTBOX, { connection: createRedisConnection("bull-outbox") as any, defaultJobOptions: { attempts: 5, backoff: { type: "exponential", delay: 1000 }, removeOnComplete: { count: 1000 }, removeOnFail: false } }); }
-export function getOfferExpiryQueue() { return expiryQueue ||= new Queue(REALTIME_QUEUES.OFFER_EXPIRY, { connection: createRedisConnection("bull-expiry") as any, defaultJobOptions: { attempts: 8, backoff: { type: "exponential", delay: 1000 }, removeOnComplete: { count: 1000 }, removeOnFail: false } }); }
-export function getScheduledRideQueue() { return scheduledQueue ||= new Queue(REALTIME_QUEUES.SCHEDULED_RIDES, { connection: createRedisConnection("bull-scheduled") as any, defaultJobOptions: { attempts: 6, backoff: { type: "exponential", delay: 1000 }, removeOnComplete: { count: 1000 }, removeOnFail: false } }); }
-export async function closeQueues() { await Promise.all([outboxQueue?.close(), expiryQueue?.close(), scheduledQueue?.close()]); outboxQueue = null; expiryQueue = null; scheduledQueue = null; }
+
+// BullMQ does not own an ioredis instance supplied as an external connection.
+// Keep the instances alongside their queues so shutdown can close both.
+let outboxQueue: Queue | null = null;
+let expiryQueue: Queue | null = null;
+let scheduledQueue: Queue | null = null;
+let outboxRedis: Redis | null = null;
+let expiryRedis: Redis | null = null;
+let scheduledRedis: Redis | null = null;
+
+export function getOutboxQueue() {
+  if (!outboxQueue) {
+    outboxRedis = createRedisConnection("bull-outbox");
+    outboxQueue = new Queue(REALTIME_QUEUES.OUTBOX, {
+      connection: outboxRedis as any,
+      defaultJobOptions: { attempts: 5, backoff: { type: "exponential", delay: 1000 }, removeOnComplete: { count: 1000 }, removeOnFail: false },
+    });
+  }
+  return outboxQueue;
+}
+
+export function getOfferExpiryQueue() {
+  if (!expiryQueue) {
+    expiryRedis = createRedisConnection("bull-expiry");
+    expiryQueue = new Queue(REALTIME_QUEUES.OFFER_EXPIRY, {
+      connection: expiryRedis as any,
+      defaultJobOptions: { attempts: 8, backoff: { type: "exponential", delay: 1000 }, removeOnComplete: { count: 1000 }, removeOnFail: false },
+    });
+  }
+  return expiryQueue;
+}
+
+export function getScheduledRideQueue() {
+  if (!scheduledQueue) {
+    scheduledRedis = createRedisConnection("bull-scheduled");
+    scheduledQueue = new Queue(REALTIME_QUEUES.SCHEDULED_RIDES, {
+      connection: scheduledRedis as any,
+      defaultJobOptions: { attempts: 6, backoff: { type: "exponential", delay: 1000 }, removeOnComplete: { count: 1000 }, removeOnFail: false },
+    });
+  }
+  return scheduledQueue;
+}
+
+export async function closeQueues() {
+  const queues = [outboxQueue, expiryQueue, scheduledQueue];
+  const connections = [outboxRedis, expiryRedis, scheduledRedis];
+  try {
+    await Promise.all(queues.map(queue => queue?.close()));
+  } finally {
+    // A Queue.close() does not disconnect externally supplied ioredis clients.
+    // Disconnect after queue shutdown even if one close fails.
+    for (const connection of connections) connection?.disconnect();
+    outboxQueue = null;
+    expiryQueue = null;
+    scheduledQueue = null;
+    outboxRedis = null;
+    expiryRedis = null;
+    scheduledRedis = null;
+  }
+}
