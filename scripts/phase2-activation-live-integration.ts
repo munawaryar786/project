@@ -139,22 +139,28 @@ async function main() {
     console.log(`PASS actual BullMQ ${point}-dispatch worker crash and production-worker restart`);
   }
   async function runSuite() {
+    console.log("CI_SUITE_CHECKPOINT: started");
     assert.equal((await prisma.$runCommandRaw({ hello: 1 }) as { setName?: string }).setName, "rs0");
     const queue = getOutboxQueue();
     assert.ok(Number.isInteger((await queue.getJobCounts("wait")).wait));
+    console.log("CI_SUITE_CHECKPOINT: data-store connections verified");
     await driver();
+    console.log("CI_SUITE_CHECKPOINT: driver seed complete");
     const cash = await booking("CASH");
     const card = await booking("CARD");
     const scheduled = await booking("CASH", { scheduled: true });
     const terminal = await booking("CASH", { status: "CANCELLED" });
     const unpaid = await booking("CARD", { status: "PENDING" });
     const invoice = await booking("INVOICE");
+    console.log("CI_SUITE_CHECKPOINT: booking seeds complete");
     const rows = await Promise.all([cash, card, scheduled, terminal, unpaid, invoice].map(row => intent(row.id)));
+    console.log("CI_SUITE_CHECKPOINT: transaction intents complete");
     const [cashEvent, cardEvent, scheduledEvent, terminalEvent, unpaidEvent, invoiceEvent] = rows;
     const cashCollectionBefore = await prisma.cashCollection.count();
     const earningsBefore = await prisma.driverEarning.count();
     const ledgerBefore = await prisma.driverLedgerEntry.count();
     await relay.relayOutboxOnce(50);
+    console.log("CI_SUITE_CHECKPOINT: initial relay complete, starting production worker");
     await withProductionWorkers(1, async () => {
       await Promise.all([
         publishedWithOneOffer(cashEvent.id, cash.id),
@@ -165,6 +171,7 @@ async function main() {
         waitUntil("INVOICE rejected", async () => (await state(invoiceEvent.id)).state === OUTBOX_STATES.RETRY),
       ]);
     });
+    console.log("CI_SUITE_CHECKPOINT: first production-worker assertions complete");
     for (const row of [scheduled, terminal, unpaid, invoice]) assert.equal(await offers(row.id), 0);
     // These deliberately invalid events have proved the production worker's
     // rejection path. Retire only their synthetic retries before later scenarios
