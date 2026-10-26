@@ -10,6 +10,7 @@ on:
       - '.github/workflows/drivo-final-db-integration-ci.yml'
       - 'scripts/phase2-ci-run.sh'
       - 'scripts/phase2-activation-live-integration.ts'
+      - 'scripts/phase2-activation-worker.ts'
       - 'scripts/outbox-live-integration.ts'
       - 'scripts/phase2-payment-check.ts'
       - 'scripts/phase2-ci-isolation-check.ts'
