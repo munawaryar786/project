@@ -40,7 +40,7 @@ jobs:
       NEXT_PUBLIC_SITE_URL: ${{ vars.DRIVO_PRODUCTION_ORIGIN }}
       # Client-side Maps key is public in the finished JS. Restrict its
       # Google Cloud HTTP referrers and never use a server-side private key here.
-      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.DRIVO_PUBLIC_GOOGLE_MAPS_KEY }}
+      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}
 
     steps:
       - name: Checkout immutable source without stored credentials
@@ -59,7 +59,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-}" ]]; then
-            echo "::error::Configure Actions secret DRIVO_PUBLIC_GOOGLE_MAPS_KEY (browser-restricted public Maps key) before building."
+            echo "::error::Configure Actions secret NEXT_PUBLIC_GOOGLE_MAPS_API_KEY (browser-restricted public Maps key) before building."
             exit 1
           fi
           if [[ ! "${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}" =~ ^AIza[A-Za-z0-9_-]{30,}$ ]]; then
