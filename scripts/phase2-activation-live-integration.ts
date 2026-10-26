@@ -24,7 +24,6 @@ async function main() {
   const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   const outboxKey = (bookingId: string) => `booking-activation:${bookingId}`;
   const outageRef = `CI-OUTAGE-${runId}`;
-  let serial = 0;
   
   async function waitUntil(label: string, predicate: () => Promise<boolean>, timeoutMs = 70_000) {
     const until = Date.now() + timeoutMs;
@@ -36,7 +35,7 @@ async function main() {
   }
   async function driver() {
     return prisma.driver.create({ data: {
-      fullName: "Synthetic CI Driver", phone: `ci-driver-${runId}-${++serial}`,
+      fullName: "Synthetic CI Driver", phone: `ci-driver-${runId}-${randomUUID()}`,
       status: "ACTIVE", isOnline: true, isOnTrip: false,
       vehicleType: "STANDARD", vehicleCapacity: 4,
       currentLat: 48.1486, currentLng: 17.1077, lastLocationReceivedAt: new Date(),
