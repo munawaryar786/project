@@ -1,5 +1,8 @@
 name: Drivo Production Build Artifact (NO DEPLOY)
 
+# The workflow file currently lives only on the integration branch, so GitHub
+# may not show 'Run workflow' until it is also present on the default branch.
+# Updates to this file still trigger an automatic push build on this branch.
 # Builds only the release package. No SSH, database connectivity, live API calls,
 # payment credentials, production environment files, or PM2 changes.
 on:
