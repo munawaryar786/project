@@ -1,0 +1,5 @@
+# Exact historical documentation/JSX false-positive fingerprints; review before publishing.
+f4aedcfa964007c32d1d5f55182ade8cd556655a:PRODUCTION_READINESS_GATE_REPORT.md:generic-api-key:119
+f4aedcfa964007c32d1d5f55182ade8cd556655a:components/booking/BookingForm.tsx:generic-api-key:2306
+f4aedcfa964007c32d1d5f55182ade8cd556655a:components/booking/BookingForm.tsx:generic-api-key:2308
+f4aedcfa964007c32d1d5f55182ade8cd556655a:components/booking/BookingForm.tsx:generic-api-key:2309
