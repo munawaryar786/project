@@ -36,6 +36,7 @@ async function main() {
   async function driver() {
     return prisma.driver.create({ data: {
       fullName: "Synthetic CI Driver", phone: `ci-driver-${runId}-${randomUUID()}`,
+       email: `ci-driver-${randomUUID()}@ci.drivo.invalid`,
       status: "ACTIVE", isOnline: true, isOnTrip: false,
       vehicleType: "STANDARD", vehicleCapacity: 4,
       currentLat: 48.1486, currentLng: 17.1077, lastLocationReceivedAt: new Date(),
