@@ -91,11 +91,29 @@ try {
     : error instanceof Error ? error.message : String(error);
   dispatchSchemaDiffError = `${dispatchSchemaDiffSource} could not be resolved${detail ? `: ${detail}` : ""}`;
 }
-const dispatchSchemaDiffIsAdditive = !dispatchSchemaDiffError &&
-  dispatchSchemaDiff.includes("+model DispatchOperator") &&
-  dispatchSchemaDiff.includes("+model BookingPayment") &&
-  dispatchSchemaDiff.includes("+model DispatchAuditEvent") &&
-  !dispatchSchemaDiff.split("\n").some(line => line.startsWith("-") && !line.startsWith("---"));
+// The integration checkpoint introduced all three Dispatch models AND changed
+// four PricingSettings defaults. That checkpoint was not wholly additive.
+// Fail on any other removal; this is NOT approval of live pricing configuration.
+const normalizedHistoricalDiffLines = dispatchSchemaDiff.split("\n")
+  .filter(line => (line.startsWith("+") && !line.startsWith("+++")) ||
+                  (line.startsWith("-") && !line.startsWith("---")))
+  .map(line => ({ sign: line[0], value: line.slice(1).trim().replace(/\s+/g, " ") }));
+const historicalPricingReplacements = [
+  ["minimumFare Float @default(5)", "minimumFare Float @default(12.5)"],
+  ["baseFare Float @default(1.49)", "baseFare Float @default(0)"],
+  ["distanceRate Float @default(1.09)", "distanceRate Float @default(1)"],
+  ["waitingRatePerMinute Float @default(0.19)", "waitingRatePerMinute Float @default(0.25)"],
+];
+const historicalRemoved = normalizedHistoricalDiffLines.filter(line => line.sign === "-").map(line => line.value);
+const historicalAdded = new Set(normalizedHistoricalDiffLines.filter(line => line.sign === "+").map(line => line.value));
+const historicalDispatchIntroductionVerified = !dispatchSchemaDiffError &&
+  ["DispatchOperator", "BookingPayment", "DispatchAuditEvent"].every(name =>
+    historicalAdded.has("model " + name + " {")) &&
+  historicalRemoved.length === historicalPricingReplacements.length &&
+  historicalPricingReplacements.every(([before, after]) =>
+    historicalRemoved.filter(line => line === before).length === 1 &&
+    historicalAdded.has(after));
+
 const currentSchemaRemovals = currentSchemaDiff.split("\n")
   .filter(line => line.startsWith("-") && !line.startsWith("---"))
   .map(line => line.slice(1).trim());
@@ -106,8 +124,8 @@ const approvedHistoricalOfferIndexCorrection =
 const currentSchemaDiffIsAdditive = !dispatchSchemaDiffError &&
   (currentSchemaRemovals.length === 0 || approvedHistoricalOfferIndexCorrection);
 if (dispatchSchemaDiffError) console.error(`Prisma schema assertion detail: ${dispatchSchemaDiffError}`);
-else if (!dispatchSchemaDiffIsAdditive) console.error(`Prisma schema assertion detail: ${dispatchSchemaDiffSource} must add all three Dispatch models and contain no schema deletions.`);
-check("Prisma change is additive Dispatch schema only", dispatchSchemaDiffIsAdditive);
+else if (!historicalDispatchIntroductionVerified) console.error(`Prisma schema assertion detail: ${dispatchSchemaDiffSource} must add three Dispatch models and only four exact pricing default replacements.`);
+check("historical Dispatch models and exact pricing-default replacements", historicalDispatchIntroductionVerified);
 check("current Prisma schema changes are additive", currentSchemaDiffIsAdditive);
 check("Redis namespace isolated", files.limiter.includes("drivo:auth:rate:v1") && !files.limiter.includes("bull:") && !files.limiter.includes("socket.io"));
 check("secrets not client-side", !files.limiter.includes("NEXT_PUBLIC_") && !files.env.includes("NEXT_PUBLIC_AUTH_RATE"));
