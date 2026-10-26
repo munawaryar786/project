@@ -72,23 +72,39 @@ jobs:
           ./node_modules/.bin/tsc --noEmit --incremental false --pretty false
           npm run lint
 
+      # Continue through all offline suites so one stale assertion cannot conceal other failures.
+      # This is diagnostics only: the final step fails the job unless every gate passes.
       - name: Offline regression suites (no live MongoDB, Redis, payments, or SMS)
+        id: regressions
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
-          npm run security:phase3a
-          npm run test:saved-routes
-          npm run test:dispatch
-          npm run test:phase3b
-          npm run test:phase3c
-          npm run test:phase3d
-          npm run test:phase3e
-          npm run test:phase3f
-          npm run test:phase3g
-          npm run test:phase3h
-          npm run test:phase3i
-          npm run test:phase3j
-          npm run test:phase3l
+          failed=0
+          for suite in security:phase3a test:saved-routes test:dispatch test:phase3b test:phase3c test:phase3d test:phase3e test:phase3f test:phase3g test:phase3h test:phase3i test:phase3j test:phase3l; do
+            echo "::group::$suite"
+            if npm run "$suite"; then
+              echo "PASS $suite" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "FAIL $suite" >> "$GITHUB_STEP_SUMMARY"
+              failed=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$failed"
 
       - name: Next.js production build with nonfunctional CI configuration
+        id: build
+        continue-on-error: true
         run: npm run build
+
+      - name: Enforce regression and production-build gates
+        if: ${{ always() }}
+        shell: bash
+        env:
+          REGRESSION_OUTCOME: ${{ steps.regressions.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+        run: |
+          echo "Regression suites: $REGRESSION_OUTCOME"
+          echo "Next.js build: $BUILD_OUTCOME"
+          test "$REGRESSION_OUTCOME" = success
+          test "$BUILD_OUTCOME" = success
