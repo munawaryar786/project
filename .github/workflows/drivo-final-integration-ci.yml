@@ -1,0 +1,94 @@
+name: Drivo Final Integration - Isolated Build and Tests
+
+# Dedicated integration branch only. This workflow MUST NOT deploy or connect to live providers.
+on:
+  push:
+    branches:
+      - drivo-final-integration-20261025
+  pull_request:
+    branches:
+      - fix-admin-driver-vehicle-dashboard
+
+permissions:
+  contents: read
+
+concurrency:
+  group: drivo-final-isolated-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event.pull_request.head.repo.full_name == 'munawaryar786/project' &&
+       github.head_ref == 'drivo-final-integration-20261025')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      CI: 'true'
+      NEXT_TELEMETRY_DISABLED: '1'
+      DATABASE_URL: mongodb://127.0.0.1:1/drivo_final_ci_no_database
+      APP_ORIGIN: https://ci.drivo.invalid
+      NEXT_PUBLIC_SITE_URL: https://ci.drivo.invalid
+      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ci-placeholder-key-do-not-use
+      NODE_OPTIONS: --max-old-space-size=4096
+
+    steps:
+      - name: Checkout branch without stored git credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Configure Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Generate disposable CI-only signing material
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="$(openssl rand -hex 48)"
+          csrf="$(openssl rand -hex 48)"
+          echo "::add-mask::$auth"
+          echo "::add-mask::$csrf"
+          printf 'AUTH_SIGNING_SECRET=%s\nCSRF_HMAC_SECRET=%s\n' "$auth" "$csrf" >> "$GITHUB_ENV"
+
+      - name: Install pinned project dependencies
+        run: npm ci --ignore-scripts --include=optional --no-audit --no-fund
+
+      - name: Generate Prisma client and validate schema (no database connection)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/prisma generate --schema=prisma/schema.prisma
+          ./node_modules/.bin/prisma validate --schema=prisma/schema.prisma
+
+      - name: TypeScript and lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/tsc --noEmit --incremental false --pretty false
+          npm run lint
+
+      - name: Offline regression suites (no live MongoDB, Redis, payments, or SMS)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run security:phase3a
+          npm run test:saved-routes
+          npm run test:dispatch
+          npm run test:phase3b
+          npm run test:phase3c
+          npm run test:phase3d
+          npm run test:phase3e
+          npm run test:phase3f
+          npm run test:phase3g
+          npm run test:phase3h
+          npm run test:phase3i
+          npm run test:phase3j
+          npm run test:phase3l
+
+      - name: Next.js production build with nonfunctional CI configuration
+        run: npm run build
