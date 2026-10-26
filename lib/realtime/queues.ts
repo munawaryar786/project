@@ -46,10 +46,9 @@ export function getScheduledRideQueue() {
 }
 
 export async function closeQueues() {
-  const queues = [outboxQueue, expiryQueue, scheduledQueue];
   const connections = [outboxRedis, expiryRedis, scheduledRedis];
   try {
-    await Promise.all(queues.map(queue => queue?.close()));
+    await Promise.all([outboxQueue?.close(), expiryQueue?.close(), scheduledQueue?.close()]);
   } finally {
     // A Queue.close() does not disconnect externally supplied ioredis clients.
     // Disconnect after queue shutdown even if one close fails.
