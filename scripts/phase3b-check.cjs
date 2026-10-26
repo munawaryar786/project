@@ -27,7 +27,20 @@ check("driver stores client location time", schema.includes("lastLocationClientA
 check("driver stores server location receipt", schema.includes("lastLocationReceivedAt DateTime?"));
 check("driver stores location accuracy", schema.includes("lastLocationAccuracy Float?"));
 check("driver stores heartbeat", schema.includes("lastHeartbeatAt DateTime?"));
-check("offers have uniqueness guard", schema.includes("@@unique([bookingId, driverId])"));
+// Historical offer attempts remain available for audit; the schema therefore has a
+// nonunique pair index. Uniqueness of the active offer is protected by the
+// transaction/booking CAS in the service. Physical MongoDB indexes and real
+// concurrency still require separate disposable-DB integration verification.
+const offerService = read("lib/driver-operations.ts");
+check("historical offer pair has nonunique lookup index",
+  schema.includes("@@index([bookingId, driverId])") &&
+  !schema.includes("@@unique([bookingId, driverId])"));
+check("duplicate historical booking-driver offer is guarded",
+  offerService.includes("const existing = await tx.rideRequest.findFirst({ where: { bookingId: input.bookingId, driverId: input.driverId } })") &&
+  offerService.includes('code: "OFFER_ALREADY_EXISTS"'));
+check("concurrent offer claim uses transactional booking CAS",
+  offerService.includes("const claimedBooking = await tx.booking.updateMany") &&
+  offerService.includes("if (claimedBooking.count !== 1) throw new DriverConflict"));
 check("outbox model exists", schema.includes("model OutboxEvent"));
 check("outbox payload is structured", schema.includes("payload Json"));
 check("outbox is pending by default", schema.includes('state String @default("PENDING")'));
