@@ -139,9 +139,9 @@ async function main() {
       await withProductionWorkers(1, () => publishedWithOneOffer(event.id, row.id));
     } catch (error) {
       // Sealed CI uses disposable MongoDB/Redis and synthetic records only.
-      const job = await queue.getJob(`outbox-${event.id}`).catch(() => null);
+      const job = await getOutboxQueue().getJob(`outbox-${event.id}`).catch(() => null);
       const jobState = job ? await job.getState().catch(() => 'state-unavailable') : 'missing';
-      const counts = await queue.getJobCounts('active', 'waiting', 'delayed', 'failed', 'completed').catch(() => ({}));
+      const counts = await getOutboxQueue().getJobCounts('active', 'waiting', 'delayed', 'failed', 'completed').catch(() => ({}));
       const persisted = await state(event.id);
       console.error('CI_CRASH_RECOVERY_DIAGNOSTICS', {
         crashPoint: point, jobState, attemptsMade: job?.attemptsMade ?? null,
