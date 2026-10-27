@@ -268,6 +268,7 @@ const sk = {
   "payment.error": "Chyba platby. Skúste to znova.",
   "payment.redirecting": "Presmerovanie na Stripe...",
   "payment.payStripe": "Zaplatiť cez Stripe",
+  "payment.checkoutUnavailable": "Platba kartou zatiaľ nie je dostupná. Vaša rezervácia zostáva v stave čakania. Vodiča pridelíme až po overení platby.",
   "luggage.title": "Dôležité upozornenie k batožine",
   "luggage.message":
     "Naše 7-miestne vozidlá odvezú max. 6 cestujúcich s obmedzenou batožinou.",

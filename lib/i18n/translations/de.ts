@@ -250,6 +250,7 @@ const de = {
   "payment.error": "Zahlungsfehler. Bitte versuchen Sie es erneut.",
   "payment.redirecting": "Weiterleitung zu Stripe...",
   "payment.payStripe": "Mit Stripe bezahlen",
+  "payment.checkoutUnavailable": "Kartenzahlung ist derzeit nicht verfügbar. Ihre Buchung bleibt ausstehend. Ein Fahrer wird erst nach bestätigter Zahlung zugewiesen.",
   "luggage.title": "Wichtiger Gepaeckhinweis",
   "luggage.message":
     "Unsere 7-Sitzer befoerdern max. 6 Fahrgaeste mit begrenztem Gepaeck.",

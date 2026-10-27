@@ -1,6 +1,14 @@
 import { getConfiguredOrigin } from "@/lib/env";
 import Stripe from 'stripe';
 
+// Customer-facing card booking remains available. Checkout itself is opt-in,
+// and is fail-closed until LIVE Stripe credentials and signed webhooks are ready.
+export function isLiveStripeCheckoutEnabled(): boolean {
+  return process.env.DRIVO_CARD_CHECKOUT_ENABLED === "true" &&
+    Boolean(process.env.STRIPE_SECRET_KEY?.startsWith("sk_live_")) &&
+    Boolean(process.env.STRIPE_WEBHOOK_SECRET?.startsWith("whsec_"));
+}
+
 // Initialize Stripe client
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 
@@ -34,6 +42,7 @@ export interface PaymentSessionParams {
  * Create a Stripe Checkout Session for booking payment
  */
 export async function createPaymentSession(params: PaymentSessionParams) {
+  if (!isLiveStripeCheckoutEnabled()) throw new Error("CARD_CHECKOUT_UNAVAILABLE");
   const stripe = getStripeClient();
   
   if (!stripe) {
@@ -130,6 +139,7 @@ export async function createPaymentIntent(params: {
   bookingId: string;
   receiptEmail?: string;
 }) {
+  if (!isLiveStripeCheckoutEnabled()) throw new Error("CARD_CHECKOUT_UNAVAILABLE");
   const stripe = getStripeClient();
   
   if (!stripe) {

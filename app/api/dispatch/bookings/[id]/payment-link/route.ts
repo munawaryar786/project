@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { authorizeDispatchOperator } from "@/lib/security/authorization";
-import { getPaymentSession } from "@/lib/stripe";
+import { getPaymentSession, isLiveStripeCheckoutEnabled } from "@/lib/stripe";
 import { hasAuthoritativeBookingPrice } from "@/lib/security/booking-price";
 import { sendDispatchPaymentLinkEmail } from "@/lib/email";
 import { createOrReusePaymentCheckout, inspectLegacyPaymentLink } from "@/lib/payment-checkout";
@@ -20,6 +20,7 @@ async function bookingForOperator(id: string) {
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizeDispatchOperator(request);
   if (!auth.ok) return auth.response;
+  if (!isLiveStripeCheckoutEnabled()) return json({ payment: { status: "UNAVAILABLE" }, url: null });
   const { id } = await params;
   const booking = await bookingForOperator(id);
   if (!booking) return json({ error: "Booking not found" }, 404);
@@ -54,6 +55,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizeDispatchOperator(request);
   if (!auth.ok) return auth.response;
+  if (!isLiveStripeCheckoutEnabled()) return json({ error: "Card checkout is unavailable until secure live payments are enabled", paymentStatus: "UNAVAILABLE" }, 503);
   const { id } = await params;
   const booking = await bookingForOperator(id);
   if (!booking) return json({ error: "Booking not found" }, 404);

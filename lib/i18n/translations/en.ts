@@ -268,6 +268,7 @@ const en = {
   "payment.error": "Payment error. Please try again.",
   "payment.redirecting": "Redirecting to Stripe...",
   "payment.payStripe": "Pay with Stripe",
+  "payment.checkoutUnavailable": "Card payment is not available yet. Your booking remains pending; a driver will not be assigned until payment is verified.",
   "luggage.title": "Important luggage notice",
   "luggage.message":
     "Our 7-seater vehicles carry max 6 passengers with limited luggage.",

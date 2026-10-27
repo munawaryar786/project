@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { authorizePassenger } from "@/lib/passenger-auth";
 import { hasAuthoritativeBookingPrice } from "@/lib/security/booking-price";
 import { createOrReusePaymentCheckout } from "@/lib/payment-checkout";
+import { isLiveStripeCheckoutEnabled } from "@/lib/stripe";
 
 const CheckoutSchema = z.object({
   bookingId: z.string().regex(/^[a-f0-9]{24}$/i),
@@ -17,6 +18,9 @@ const NO_STORE = { headers: { "Cache-Control": "private, no-store" } };
 export async function POST(request: NextRequest) {
   const auth = await authorizePassenger(request);
   if (!auth.ok) return auth.response;
+  if (!isLiveStripeCheckoutEnabled()) return NextResponse.json({
+    success: false, paymentStatus: "UNAVAILABLE", code: "CARD_CHECKOUT_UNAVAILABLE",
+  }, { status: 503, ...NO_STORE });
   try {
     const parsed = CheckoutSchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json({ error: "Invalid request" }, { status: 400 });

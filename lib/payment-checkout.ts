@@ -1,6 +1,6 @@
 import type { Booking, PaymentOperation } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { createPaymentSession, getPaymentSession } from "@/lib/stripe";
+import { createPaymentSession, getPaymentSession, isLiveStripeCheckoutEnabled } from "@/lib/stripe";
 import { sendDispatchPaymentLinkEmail } from "@/lib/email";
 import {
   deferPaymentOperationRetry, markPaymentCreationUncertain, markPaymentOperationExpired,
@@ -11,7 +11,7 @@ import {
 
 export type CheckoutResult =
   | { state: "READY"; sessionId: string; sessionUrl: string; operationId?: string; reused: boolean }
-  | { state: "PROCESSING" | "PAID" | "EXPIRED" | "FAILED" | "RECONCILIATION_REQUIRED" | "LEGACY_ACTIVE" };
+  | { state: "PROCESSING" | "PAID" | "EXPIRED" | "FAILED" | "RECONCILIATION_REQUIRED" | "LEGACY_ACTIVE" | "UNAVAILABLE" };
 export type CheckoutProvider = {
   create: typeof createPaymentSession;
   get: typeof getPaymentSession;
@@ -54,6 +54,8 @@ async function readyOperation(operation: PaymentOperation, providerClient: Check
 export async function createOrReusePaymentCheckout(input: {
   bookingId: string; actorId: string; channel: PaymentChannel; requestKey?: string;
 }, providerClient: CheckoutProvider = stripeProvider, publisher: CheckoutPublisher = mongoPublisher, expiryRetry = false): Promise<CheckoutResult> {
+  // No database reservation or provider call while card payments are offline.
+  if (providerClient === stripeProvider && !isLiveStripeCheckoutEnabled()) return { state: "UNAVAILABLE" };
   const reserved = await reservePaymentOperation(input);
   if (reserved.kind === "READY") {
     const checked = await readyOperation(reserved.operation!, providerClient);

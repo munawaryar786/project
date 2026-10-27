@@ -94,6 +94,12 @@ export default function BookingConfirmation({
 
       const data = await res.json();
 
+      if (data.code === "CARD_CHECKOUT_UNAVAILABLE") {
+        alert(t("payment.checkoutUnavailable", "Card payment is not available yet. Your booking remains pending; a driver will not be assigned until payment is verified."));
+        setPaying(false);
+        return;
+      }
+
       if (data.success && data.sessionUrl) {
         window.location.href = data.sessionUrl;
         return;
