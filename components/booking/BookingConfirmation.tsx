@@ -259,7 +259,7 @@ export default function BookingConfirmation({
             />
             <Detail
               label={t("confirmation.payment")}
-              value={t(paymentMethod === 'cash' ? 'booking.paymentCash' : 'booking.paymentCard')}
+              value={t(paymentMethod === 'cash' ? 'booking.paymentCash' : paymentMethod === 'invoice' ? 'booking.paymentInvoice' : 'booking.paymentCard')}
             />
             <Detail
               label={t("confirmation.status")}
@@ -285,6 +285,12 @@ export default function BookingConfirmation({
             <p>{EMAIL} | {PHONE_NUMBER}</p>
           </div>
 
+          {paymentMethod === "invoice" && (
+            <div className="mb-6 rounded-xl border border-blue-200 bg-blue-50 p-4 text-left text-sm text-blue-950">
+              <strong>Invoice issued · Net 30.</strong> Your Drivo booking uses admin-approved invoice billing.
+              The invoice is payable by its due date.
+            </div>
+          )}
           {paymentMethod === "cash" && (
             <div className="p-4 bg-drivo-amber-light rounded-2xl mb-6 text-left print:block">
               <p className="text-[13px] text-amber-700 font-semibold">
