@@ -90,7 +90,7 @@ async function main() {
     await waitUntil("real BullMQ activation job", async () => Boolean(await getOutboxQueue().getJob(`outbox-${eventId}`)));
   }
   function startWorker(script: string, extraEnv: Record<string, string> = {}) {
-    const child = spawn(process.execPath, ["node_modules/tsx/dist/cli.mjs", script], {
+    const child = spawn(process.execPath, ["--import", "tsx", script], {
       cwd: process.cwd(), env: { ...process.env, ...extraEnv }, stdio: "ignore",
     });
     child.once("error", () => { child.kill(); });
