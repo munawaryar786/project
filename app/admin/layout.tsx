@@ -108,6 +108,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       active: pathname.startsWith("/admin/financial"),
     },
     ...(adminRole === "SUPER_ADMIN" ? [{
+      href: "/admin/invoicing",
+      label: "Invoice Billing",
+      icon: "IN",
+      active: pathname.startsWith("/admin/invoicing"),
+    }] : []),
+    ...(adminRole === "SUPER_ADMIN" ? [{
       href: "/admin/dispatch-team",
       label: t("dispatchAdmin.title", "Dispatch Team"),
       icon: "DT",
