@@ -207,7 +207,59 @@ model SavedRoute {
   @@index([passengerId, updatedAt])
 }
 
-model Passenger {
+
+ // Admin-controlled, passenger-specific invoice billing approval.
+ // A revoked account blocks NEW invoice bookings; existing invoices remain collectible.
+ model InvoiceBillingAccount {
+   id String @id @default(auto()) @map("_id") @db.ObjectId
+   passengerId String @unique @db.ObjectId
+   status String @default("REVOKED")
+   billingName String
+   billingAddress String
+   billingTaxId String?
+   approvedByAdminId String? @db.ObjectId
+   approvedAt DateTime?
+   revokedByAdminId String? @db.ObjectId
+   revokedAt DateTime?
+   lastUsedAt DateTime?
+   createdAt DateTime @default(now())
+   updatedAt DateTime @updatedAt
+
+   @@index([status, updatedAt])
+   @@map("invoice_billing_accounts")
+ }
+
+ // Immutable billing snapshot taken when the authorised booking is created.
+ model BookingInvoice {
+   id String @id @default(auto()) @map("_id") @db.ObjectId
+   bookingId String @unique @db.ObjectId
+   passengerId String @db.ObjectId
+   billingAccountId String @db.ObjectId
+   invoiceNumber String @unique
+   bookingRef String
+   billingName String
+   billingAddress String
+   billingTaxId String?
+   amountMinor Int
+   currency String @default("EUR")
+   status String @default("ISSUED")
+   issuedAt DateTime @default(now())
+   dueAt DateTime
+   paidAt DateTime?
+   paidByAdminId String? @db.ObjectId
+   paymentReference String?
+   voidedAt DateTime?
+   voidedByAdminId String? @db.ObjectId
+   voidReason String?
+   createdAt DateTime @default(now())
+   updatedAt DateTime @updatedAt
+
+   @@index([passengerId, createdAt])
+   @@index([status, dueAt])
+   @@map("booking_invoices")
+ }
+
+ model Passenger {
   id               String  @id @default(auto()) @map("_id") @db.ObjectId
   phone            String  @unique
   normalizedPhone  String?

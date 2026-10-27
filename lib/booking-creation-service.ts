@@ -28,7 +28,6 @@ export class BookingCreateError extends Error {
 }
 
 export async function createBookingWithDrivoRules(request: NextRequest, data: BookingInput, actor: BookingCreateActor, options: { requestRecordId?: string; requestLeaseToken?: string; publicOperation?: { id: string; leaseToken: string; fingerprint: string; passengerId: string | null } } = {}) {
-  if (data.paymentMethod === "INVOICE") throw new BookingCreateError("Invoice requires approved corporate billing. Choose card or cash.", 409, "INVOICE_REQUIRES_CORPORATE_APPROVAL");
   const marketTimezone = SCHEDULED_MARKET_CONFIG.timezone;
   const pickupAt = parseMarketDateTime(data.pickupDate || data.scheduledDate, data.pickupTime || data.scheduledTime, marketTimezone);
   if (!pickupAt) throw new BookingCreateError("Invalid scheduled pickup date/time", 400, "INVALID_SCHEDULE_TIME");
@@ -77,6 +76,11 @@ export async function createBookingWithDrivoRules(request: NextRequest, data: Bo
   });
   const fare = quote.breakdown;
   const samePassenger = actor.kind === "PUBLIC" && currentPassenger?.phoneVerified === true && normalizePassengerPhone(currentPassenger.normalizedPhone || currentPassenger.phone) === normalizedPhone;
+  // Public invoice billing is tied to the authenticated verified passenger,
+  // never to a phone number or arbitrary billing-account ID supplied by the browser.
+  if (data.paymentMethod === "INVOICE" && (!samePassenger || actor.kind !== "PUBLIC")) {
+    throw new BookingCreateError("Invoice billing requires a verified approved account. Choose Cash or Card.", 403, "INVOICE_NOT_APPROVED");
+  }
   const bookingRef = generateBookingRef();
   const bookingData = {
     bookingRef, status: "PENDING", serviceType: data.serviceType,
@@ -141,7 +145,33 @@ export async function createBookingWithDrivoRules(request: NextRequest, data: Bo
           }, data: { state: "CREATING" } });
           if (claimed.count !== 1) throw new Error("PUBLIC_BOOKING_OPERATION_FENCE_LOST");
         }
+        let invoiceAccount: Awaited<ReturnType<typeof tx.invoiceBillingAccount.findUnique>> = null;
+        if (data.paymentMethod === "INVOICE") {
+          invoiceAccount = await tx.invoiceBillingAccount.findUnique({ where: { passengerId: currentPassenger!.id } });
+          if (!invoiceAccount || invoiceAccount.status !== "APPROVED")
+            throw new BookingCreateError("Your account is not approved for invoice billing. Choose Cash or Card.", 403, "INVOICE_NOT_APPROVED");
+          // Competing revocation writes conflict with this transaction, so
+          // approval cannot be bypassed using a stale browser response.
+          const claim = await tx.invoiceBillingAccount.updateMany({
+            where: { id: invoiceAccount.id, status: "APPROVED" },
+            data: { lastUsedAt: new Date() },
+          });
+          if (claim.count !== 1) throw new BookingCreateError("Invoice approval is no longer active.", 403, "INVOICE_NOT_APPROVED");
+        }
         const created = await tx.booking.create({ data: bookingData });
+        if (invoiceAccount) {
+          const minor = Math.round(Number(created.fareTotalFare) * 100);
+          if (!Number.isSafeInteger(minor) || minor <= 0) throw new Error("INVALID_INVOICE_TOTAL");
+          await tx.bookingInvoice.create({ data: {
+            bookingId: created.id, passengerId: currentPassenger!.id,
+            billingAccountId: invoiceAccount.id, invoiceNumber: `INV-${created.bookingRef}`,
+            bookingRef: created.bookingRef, billingName: invoiceAccount.billingName,
+            billingAddress: invoiceAccount.billingAddress, billingTaxId: invoiceAccount.billingTaxId,
+            amountMinor: minor, currency: "EUR", status: "ISSUED",
+            dueAt: new Date(created.createdAt.getTime() + 30 * 24 * 60 * 60_000),
+          } });
+          await writeBookingActivationIntent(tx, created.id);
+        }
         if (actor.kind === "PUBLIC" && !samePassenger) guestAccess = await createPublicBookingAccess(tx, created);
         await writeBookingCreatedEmail(tx, created.id, created.languagePref);
         if (created.paymentMethod === "CASH" && samePassenger) await writeBookingActivationIntent(tx, created.id);

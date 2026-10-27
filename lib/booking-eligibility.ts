@@ -9,8 +9,7 @@ export function bookingAssignmentPrerequisites(booking: any) {
       !Number.isInteger(booking.passengerCount) || booking.passengerCount < 1 ||
       !Number.isInteger(booking.companionCount ?? 0) || (booking.companionCount ?? 0) < 0 ||
       booking.passengerCount + Number(booking.companionCount || 0) > 6) return { eligible: false as const, reason: "BOOKING_NOT_DISPATCHABLE" };
-  if (booking.paymentMethod === "INVOICE") return { eligible: false as const, reason: "INVOICE_REQUIRES_CORPORATE_APPROVAL" };
-  if (!["CASH", "CARD"].includes(booking.paymentMethod)) return { eligible: false as const, reason: "PAYMENT_NOT_CONFIRMED" };
+  if (!["CASH", "CARD", "INVOICE"].includes(booking.paymentMethod)) return { eligible: false as const, reason: "PAYMENT_NOT_CONFIRMED" };
   if (booking.bookingSource === "PHONE_DISPATCH") {
     if (!booking.createdByDispatchOperatorId) return { eligible: false as const, reason: "BOOKING_AUTHORIZATION_REQUIRED" };
   } else if (!booking.passengerId || booking.phoneVerified !== true || booking.passengerAuthStatus !== "AUTHENTICATED") {
@@ -22,10 +21,22 @@ export function bookingAssignmentPrerequisites(booking: any) {
       !Number.isFinite(booking.dropoffLat) || Math.abs(booking.dropoffLat) > 90 || !Number.isFinite(booking.dropoffLng) || Math.abs(booking.dropoffLng) > 180) return { eligible: false as const, reason: "NO_PICKUP_COORDINATES" };
   return { eligible: true as const };
 }
-type EligibilityDb = Pick<Prisma.TransactionClient, "bookingPayment" | "paymentWebhookEvent">;
+type EligibilityDb = Pick<Prisma.TransactionClient, "bookingPayment" | "paymentWebhookEvent" | "bookingInvoice">;
 export async function authoritativeAssignmentEligibility(booking: any, db: EligibilityDb) {
   const prerequisite = bookingAssignmentPrerequisites(booking);
-  if (!prerequisite.eligible || booking.paymentMethod !== "CARD") return prerequisite;
+  if (!prerequisite.eligible) return prerequisite;
+  if (booking.paymentMethod === "INVOICE") {
+    const amountMinor = Math.round(Number(booking.fareTotalFare ?? booking.estimatedPrice) * 100);
+    if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0 || !booking.passengerId)
+      return { eligible: false as const, reason: "INVOICE_NOT_ISSUED" };
+    const invoice = await db.bookingInvoice.findUnique({ where: { bookingId: booking.id },
+      select: { passengerId: true, amountMinor: true, currency: true, status: true } });
+    if (!invoice || invoice.passengerId !== booking.passengerId || invoice.amountMinor !== amountMinor ||
+        invoice.currency !== "EUR" || !["ISSUED", "PAID"].includes(invoice.status))
+      return { eligible: false as const, reason: "INVOICE_NOT_ISSUED" };
+    return { eligible: true as const };
+  }
+  if (booking.paymentMethod !== "CARD") return prerequisite;
   const amountMinor = Math.round(Number(booking.fareTotalFare ?? booking.estimatedPrice) * 100);
   if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) return { eligible: false as const, reason: "PAYMENT_NOT_CONFIRMED" };
   const payment = await db.bookingPayment.findFirst({ where: {
