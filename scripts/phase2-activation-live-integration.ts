@@ -135,7 +135,22 @@ async function main() {
       await stopWorker(child, "SIGKILL");
       await unlink(marker).catch(() => undefined);
     }
-    await withProductionWorkers(1, () => publishedWithOneOffer(event.id, row.id));
+    try {
+      await withProductionWorkers(1, () => publishedWithOneOffer(event.id, row.id));
+    } catch (error) {
+      // Sealed CI uses disposable MongoDB/Redis and synthetic records only.
+      const job = await queue.getJob(`outbox-${event.id}`).catch(() => null);
+      const jobState = job ? await job.getState().catch(() => 'state-unavailable') : 'missing';
+      const counts = await queue.getJobCounts('active', 'waiting', 'delayed', 'failed', 'completed').catch(() => ({}));
+      const persisted = await state(event.id);
+      console.error('CI_CRASH_RECOVERY_DIAGNOSTICS', {
+        crashPoint: point, jobState, attemptsMade: job?.attemptsMade ?? null,
+        failedReason: job?.failedReason ?? null, eventState: persisted.state,
+        eventAttempts: persisted.attempts, lastError: persisted.lastError,
+        offerCount: await offers(row.id), queueCounts: counts,
+      });
+      throw error;
+    }
     console.log(`PASS actual BullMQ ${point}-dispatch worker crash and production-worker restart`);
   }
   async function runSuite() {
