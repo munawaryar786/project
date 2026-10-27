@@ -1018,6 +1018,7 @@ export default function BookingForm({
  const paymentMap: Record<string, string> = {
     card: "CARD",
     cash: "CASH",
+    invoice: "INVOICE",
   };
 
   const safeJson = async (res: Response): Promise<unknown> => {
@@ -1376,6 +1377,17 @@ export default function BookingForm({
     if (submissionInFlight.current || submissionUncertain || bookingCreated.current || bookingId || pendingDraft) return;
     setError("");
 
+    if (paymentMethod === "invoice") {
+      const approval = await csrfFetch("passenger", "/api/passenger/invoice-eligibility", { cache: "no-store" })
+        .then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
+        .catch(() => ({ ok: false, data: {} as { eligible?: boolean } }));
+      if (!approval.ok || approval.data.eligible !== true) {
+        setError(approval.ok
+          ? "Invoice billing is not approved for this account. Please select Cash or Card, or contact Drivo to request Admin approval."
+          : "Please log in to your verified, admin-approved account before using Invoice billing.");
+        return;
+      }
+    }
     const validationError = validateForm();
     if (validationError) {
       setError(validationError);
@@ -3455,6 +3467,7 @@ onChange={(e) => {
                 {[
                   ["card", "💳", t("booking.paymentCard"), t("booking.paymentCardDesc"), t("booking.recommended", "Recommended")],
                   ["cash", "💰", t("booking.paymentCash"), t("booking.paymentCashDesc"), t("booking.rulesApply", "Rules apply")],
+                  ["invoice", "🏢", t("booking.paymentInvoice", "Invoice"), t("booking.paymentInvoiceDesc", "For admin-approved accounts · Net 30"), "Approval required"],
                 ].filter(([v]) => !(childrenTransport && v === "cash")).map(([v, icon, label, sub, tag]) => (
                   <button
                     key={v}
@@ -3490,6 +3503,12 @@ onChange={(e) => {
 
             {paymentMethod === "cash" && (
               <CashWarning agreed={cashAgreed} onAgreeChange={setCashAgreed} />
+            )}
+            {paymentMethod === "invoice" && (
+              <p role="status" className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950">
+                Invoice · Net 30. Only passengers explicitly approved by Drivo Admin can book using Invoice.
+                Otherwise a clear approval-required message will appear.
+              </p>
             )}
 
             <textarea
