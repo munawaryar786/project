@@ -73,8 +73,14 @@ function memory() {
     create: async ({data:input})=>{
       if (name==='outboxEvent' && outboxFailure) throw new Error('injected outbox failure');
       if (name==='cashCollection' && data[name].some(r=>r.bookingId===input.bookingId || r.operationKey===input.operationKey)) throw Object.assign(new Error('duplicate cash collection'),{code:'P2002'});
-      const r={id:crypto.randomBytes(12).toString('hex'),createdAt:new Date(),updatedAt:new Date(),consumedAt:null,revokedAt:null,...(name==='oTP'?{used:false,attempts:0,maxAttempts:5}:{}),...(name==='paymentWebhookEvent'?{provider:'STRIPE',processingStatus:'RECEIVED',bookingId:null,paymentId:null}:{}),...clone(input)};
+      const r={id:crypto.randomBytes(12).toString('hex'),createdAt:new Date(),updatedAt:new Date(),...(name==='bookingInvoice'?{issuedAt:new Date()}:{}),consumedAt:null,revokedAt:null,...(name==='oTP'?{used:false,attempts:0,maxAttempts:5}:{}),...(name==='paymentWebhookEvent'?{provider:'STRIPE',processingStatus:'RECEIVED',bookingId:null,paymentId:null}:{}),...clone(input)};
       data[name].push(r); return clone(r);
+    },
+    // Match Prisma's transactional upsert in the in-memory test adapter.
+    upsert: async ({where,create,update})=>{
+      const existing=data[name].find(r=>matches(r,where));
+      if(existing){await db[name].updateMany({where,data:update});return project(existing);}
+      return db[name].create({data:create});
     },
     updateMany: async ({where, data:input})=>{
       if (name==='booking' && bookingConflict && input.driverId) { bookingConflict=false; return {count:0}; }
