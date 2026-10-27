@@ -31,6 +31,7 @@ let writes = 0;
 let bookingReads = 0;
 let dispatchStarts = 0;
 let stripeParams;
+let stripeCheckoutEnabled=true;
 let paymentSession;
 let event;
 let emails = 0;
@@ -94,6 +95,7 @@ const mocks = {
   "@/lib/prisma": {prisma},
   "@/lib/rate-limit": { withRateLimit: h => h, withDistributedIpRateLimit: h => h, authRateLimitResponse: () => NextResponse.json({ error: "rate limited" }, { status: 429 }), enforceAuthRateLimit: async () => ({ allowed: true, unavailable: false, retryAfter: 1, remaining: 4 }), resolveClientIp: () => "127.0.0.1", rateLimits: new Proxy({}, { get: () => ({ max: 5, windowMs: 900000, message: "rate limited" }) }) },
   "@/lib/stripe": {
+    isLiveStripeCheckoutEnabled: () => stripeCheckoutEnabled,
     formatAmountForStripe: a => Math.round(a * 100),
     createPaymentSession: async p => {stripeParams=p; return {sessionId:"cs_test",sessionUrl:"https://checkout.example"};},
     getPaymentSession: async () => ({success:true,session:paymentSession,status:paymentSession.payment_status}),
@@ -229,6 +231,20 @@ await test("payment authority rejects historical, lowered, substituted quotes",a
 });
 const t=await passenger.createPassengerSession(actor);
 const paidBooking=()=>({id:other,passengerId:id,bookingRef:"DRIVO-TEST",status:"PENDING",paymentMethod:"CARD",estimatedPrice:25,fareBreakdown:{serverPriceMac:price.signBookingPrice("DRIVO-TEST",25)},customerEmail:"test@example.com",serviceType:"STANDARD"});
+await test("Card checkout stays pending and does not reserve payment when disabled",async()=>{
+  const checkout=load("app/api/payments/checkout/route.ts").POST;
+  booking=paidBooking();const beforeWrites=writes,beforeReads=bookingReads,previousStripeParams=stripeParams;
+  stripeCheckoutEnabled=false;
+  try {
+    const result=await checkout(request("POST",t,"PASSENGER",{bookingId:other}));
+    assert.equal(result.status,503);
+    assert.equal((await result.json()).code,"CARD_CHECKOUT_UNAVAILABLE");
+    assert.equal(booking.status,"PENDING");
+    assert.equal(writes,beforeWrites);
+    assert.equal(bookingReads,beforeReads);
+    assert.equal(stripeParams,previousStripeParams);
+  } finally { stripeCheckoutEnabled=true; }
+});
 await test("checkout ownership, state, EUR, ignored browser amount and historical guard",async()=>{
   const checkout=load("app/api/payments/checkout/route.ts").POST;booking=paidBooking();
   assert.equal((await checkout(request("POST",t,"PASSENGER",{bookingId:other,amount:1}))).status,200);
