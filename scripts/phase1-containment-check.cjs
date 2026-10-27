@@ -27,7 +27,7 @@ Object.assign(process.env, {
 global.fetch = async () => { throw new Error('unexpected provider/network call'); };
 const { NextRequest, NextResponse } = require('next/server');
 const ids = { p: '111111111111111111111111', q: '222222222222222222222222', b: '333333333333333333333333', d: '444444444444444444444444', a: '555555555555555555555555', op: '666666666666666666666666', v: '777777777777777777777777' };
-const names = ['booking','passenger','driver','vehicle','adminUser','dispatchOperator','passengerSession','passengerTrustedDevice','passengerVerificationProof','oTP','outboxEvent','adminAuditEvent','dispatchAuditEvent','rideRequest','bookingPayment','paymentWebhookEvent','dispatchBookingRequest','cashCollection'];
+const names = ['booking','passenger','driver','vehicle','adminUser','dispatchOperator','passengerSession','passengerTrustedDevice','passengerVerificationProof','oTP','outboxEvent','adminAuditEvent','dispatchAuditEvent','rideRequest','bookingPayment','paymentWebhookEvent','dispatchBookingRequest','cashCollection','invoiceBillingAccount','bookingInvoice'];
 const clone = v => v && structuredClone(v);
 function matches(row, where = {}) {
   return Object.entries(where).every(([k,v]) => {
@@ -187,7 +187,7 @@ async function main(){
   for(const actor of [null,'DISPATCH_OPERATOR']) await test('crafted Invoice rejected by '+(actor?'Dispatcher':'public')+' API',async()=>{
     const file=actor?'app/api/dispatch/bookings/route.ts':'app/api/bookings/route.ts';
     const r=await load(file).POST(await request('/api/bookings',input('INVOICE'),actor,actor?{'idempotency-key':crypto.randomUUID()}:{}));
-    assert.equal(r.status,409);assert.equal(await prisma.booking.count({}),0);
+    assert.equal(r.status,403);assert.equal(await prisma.booking.count({}),0);
   });
   for(const method of ['CASH','CARD']) await test('Dispatcher '+method+' booking still creates without a passenger account or guest capability',async()=>{
     const result=await load('app/api/dispatch/bookings/route.ts').POST(await request('/api/dispatch/bookings',{...input(method),scheduledRide:true},'DISPATCH_OPERATOR',{'idempotency-key':crypto.randomUUID()}));
@@ -209,10 +209,102 @@ async function main(){
     assert.equal(made.passengerId,ids.p);assert.equal(made.phoneVerified,true);
     assert.ok(!cookieOf(result).includes('booking-access-'));
   });
-  await test('ordinary public and Dispatcher payment selectors expose only CASH and CARD',async()=>{
-    for(const file of ['components/booking/BookingForm.tsx','app/dispatch/bookings/new/page.tsx']) {
-      const source=fs.readFileSync(file,'utf8');assert.ok(!source.includes('"INVOICE"'),file);
-    }
+  await test('Invoice is visible to public but Dispatcher is restricted to CASH and CARD',async()=>{
+    const publicSource=fs.readFileSync('components/booking/BookingForm.tsx','utf8');
+    assert.ok(publicSource.includes('["invoice"'), 'Invoice option missing on public booking form');
+    assert.ok(publicSource.includes('/api/passenger/invoice-eligibility'), 'Invoice approval check missing');
+    const staffSource=fs.readFileSync('app/dispatch/bookings/new/page.tsx','utf8');
+    assert.ok(!staffSource.includes('["INVOICE"'), 'Staff booking must not bypass passenger ownership');
+  });
+  await test('invoice eligibility defaults to denied, is private and requires passenger login',async()=>{
+    const route=load('app/api/passenger/invoice-eligibility/route.ts');
+    const unauth=await route.GET(await request('/api/passenger/invoice-eligibility',undefined,null,{method:'GET'}));
+    assert.equal(unauth.status,401);
+    const normal=await route.GET(await request('/api/passenger/invoice-eligibility',undefined,'PASSENGER',{method:'GET'}));
+    assert.equal(normal.status,200);
+    assert.equal((await normal.json()).eligible,false);
+    assert.equal(normal.headers.get('cache-control'),'private, no-store');
+  });
+  await test('only Super Admin may grant invoice eligibility',async()=>{
+    const route=load('app/api/admin/invoicing/route.ts');
+    const denied=await route.PATCH(await request('/api/admin/invoicing',{
+      action:'APPROVE',passengerId:ids.p,billingName:'Synthetic Organisation',billingAddress:'Test Street 123 Bratislava',
+    },'ADMIN',{method:'PATCH'}));
+    assert.equal(denied.status,403);
+    assert.equal(await prisma.invoiceBillingAccount.count({}),0);
+  });
+  await test('Super Admin approval enables invoice booking with atomic invoice and one outbox event',async()=>{
+    await prisma.adminUser.update({where:{id:ids.a},data:{role:'SUPER_ADMIN'}});
+    const admin=load('app/api/admin/invoicing/route.ts');
+    const grant=await admin.PATCH(await request('/api/admin/invoicing',{
+      action:'APPROVE',passengerId:ids.p,billingName:'Synthetic Organisation',
+      billingAddress:'Test Street 123 Bratislava',billingTaxId:'SK1234567890',
+    },'ADMIN',{method:'PATCH'}));
+    assert.equal(grant.status,200,JSON.stringify(await grant.json()));
+    const status=await load('app/api/passenger/invoice-eligibility/route.ts').GET(await request('/api/passenger/invoice-eligibility',undefined,'PASSENGER',{method:'GET'}));
+    assert.equal((await status.json()).eligible,true);
+    const result=await load('app/api/bookings/route.ts').POST(await request('/api/bookings',input('INVOICE'),'PASSENGER'));
+    assert.equal(result.status,201,JSON.stringify(await result.clone().json()));
+    const response=await result.json();
+    const invoice=await prisma.bookingInvoice.findUnique({where:{bookingId:response.bookingId}});
+    assert.ok(invoice);assert.equal(invoice.passengerId,ids.p);assert.equal(invoice.amountMinor,2000);
+    assert.equal(invoice.status,'ISSUED');assert.equal(invoice.currency,'EUR');
+    assert.equal(invoice.billingName,'Synthetic Organisation');assert.equal(invoice.billingTaxId,'SK1234567890');
+    assert.ok(invoice.dueAt.getTime()>invoice.issuedAt.getTime());
+    assert.equal(await prisma.outboxEvent.count({where:{idempotencyKey:'booking-activation:'+response.bookingId}}),1);
+    const eligibility=await load('lib/booking-eligibility.ts').authoritativeAssignmentEligibility(
+      await prisma.booking.findUnique({where:{id:response.bookingId}}),prisma);
+    assert.equal(eligibility.eligible,true);
+    const ownerView=await load('app/api/passenger/invoices/route.ts').GET(await request('/api/passenger/invoices',undefined,'PASSENGER',{method:'GET'}));
+    assert.equal(ownerView.status,200);assert.equal((await ownerView.json()).invoices.length,1);
+  });
+  await test('Invoice remains denied when phone identity does not match approved passenger',async()=>{
+    await prisma.invoiceBillingAccount.create({data:{passengerId:ids.p,status:'APPROVED',
+      billingName:'Synthetic Organisation',billingAddress:'Test Street 123 Bratislava'}});
+    const r=await load('app/api/bookings/route.ts').POST(await request('/api/bookings',{...input('INVOICE'),customerPhone:'900000009'},'PASSENGER'));
+    assert.equal(r.status,403);assert.equal(await prisma.bookingInvoice.count({}),0);
+    assert.equal(await prisma.booking.count({}),0);
+  });
+  await test('Super Admin revocation blocks new Invoice bookings and preserves historical invoices',async()=>{
+    await prisma.adminUser.update({where:{id:ids.a},data:{role:'SUPER_ADMIN'}});
+    const admin=load('app/api/admin/invoicing/route.ts');
+    const grant=await admin.PATCH(await request('/api/admin/invoicing',{
+      action:'APPROVE',passengerId:ids.p,billingName:'Synthetic Organisation',
+      billingAddress:'Test Street 123 Bratislava',
+    },'ADMIN',{method:'PATCH'}));
+    assert.equal(grant.status,200);
+    const first=await load('app/api/bookings/route.ts').POST(await request('/api/bookings',input('INVOICE'),'PASSENGER'));
+    assert.equal(first.status,201);
+    const b=(await first.json()).bookingId;
+    const rev=await admin.PATCH(await request('/api/admin/invoicing',{
+      action:'REVOKE',passengerId:ids.p,reason:'Synthetic revocation test',
+    },'ADMIN',{method:'PATCH'}));
+    assert.equal(rev.status,200);
+    const second=await load('app/api/bookings/route.ts').POST(await request('/api/bookings',input('INVOICE'),'PASSENGER'));
+    assert.equal(second.status,403);assert.equal(await prisma.bookingInvoice.count({}),1);
+    assert.ok(await prisma.bookingInvoice.findUnique({where:{bookingId:b}}));
+  });
+  await test('Super Admin marks issued invoice paid exactly once; non-admin may not',async()=>{
+    await prisma.bookingInvoice.create({data:{bookingId:ids.b,passengerId:ids.p,
+      billingAccountId:ids.p,invoiceNumber:'INV-TEST-01',bookingRef:'TEST-01',
+      billingName:'Synthetic Organisation',billingAddress:'Test Street 123 Bratislava',
+      amountMinor:2000,currency:'EUR',status:'ISSUED',dueAt:new Date(Date.now()+86400000)}});
+    const inv=await prisma.bookingInvoice.findFirst({});
+    const api=load('app/api/admin/invoicing/route.ts');
+    const denied=await api.PATCH(await request('/api/admin/invoicing',{
+      action:'MARK_PAID',invoiceId:inv.id,paymentReference:'TEST-TRANSFER-001',
+    },'ADMIN',{method:'PATCH'}));assert.equal(denied.status,403);
+    await prisma.adminUser.update({where:{id:ids.a},data:{role:'SUPER_ADMIN'}});
+    const paid=await api.PATCH(await request('/api/admin/invoicing',{
+      action:'MARK_PAID',invoiceId:inv.id,paymentReference:'TEST-TRANSFER-001',
+    },'ADMIN',{method:'PATCH'}));
+    assert.equal(paid.status,200);
+    assert.equal((await prisma.bookingInvoice.findUnique({where:{id:inv.id}})).status,'PAID');
+    const repeated=await api.PATCH(await request('/api/admin/invoicing',{
+      action:'MARK_PAID',invoiceId:inv.id,paymentReference:'TEST-TRANSFER-001',
+    },'ADMIN',{method:'PATCH'}));
+    assert.equal(repeated.status,409);
+    assert.equal(await prisma.adminAuditEvent.count({where:{action:'INVOICE_PAID'}}),1);
   });
   for(const compatibility of [true,false]) await test('unpaid CARD rejected by '+(compatibility?'compatibility':'domain')+' Admin assignment',async()=>{
     await booking({paymentMethod:'CARD'});
