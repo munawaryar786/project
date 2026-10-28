@@ -86,9 +86,12 @@ export default function PriceEstimate({
   useEffect(() => {
     if (!pickupAddress || !dropoffAddress || pickupAddress.length < 5 || dropoffAddress.length < 5) {
       setEstimate(null);
+      setError(null);
+      setLoading(false);
       return;
     }
 
+    const controller = new AbortController();
     const fetchEstimate = async () => {
       setLoading(true);
       setError(null);
@@ -96,6 +99,7 @@ export default function PriceEstimate({
       try {
         const response = await fetch("/api/bookings/distance", {
           method: "POST",
+          signal: controller.signal,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             pickupAddress,
@@ -116,7 +120,8 @@ export default function PriceEstimate({
 
         const data = await response.json();
 
-        if (data.success) {
+        if (controller.signal.aborted) return;
+        if (response.ok && data.success && Number.isFinite(Number(data?.pricing?.estimatedPrice)) && data?.pricing?.breakdown) {
           const price = Number(data.pricing.estimatedPrice);
           const breakdown = data.pricing.breakdown as FareBreakdown;
 
@@ -129,17 +134,24 @@ export default function PriceEstimate({
           onPriceChange?.(price);
           onFareChange?.(price, breakdown);
         } else {
+          setEstimate(null);
           setError(typeof data?.code === "string" ? data.code : "BOOKING_VALIDATION_FAILED");
         }
       } catch {
-        setError("SERVICE_UNAVAILABLE");
+        if (!controller.signal.aborted) {
+          setEstimate(null);
+          setError("SERVICE_UNAVAILABLE");
+        }
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     };
 
     const timer = setTimeout(fetchEstimate, 500);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [
     pickupAddress,
     dropoffAddress,
