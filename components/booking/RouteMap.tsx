@@ -13,6 +13,7 @@ import {
 interface RouteMapProps {
   pickupAddress: string;
   dropoffAddress: string;
+  hideEstimate?: boolean; // Kept for compatibility; map never displays fare.
   onRouteInfo?: (info: {
     distanceKm: number;
     durationMin: number;
