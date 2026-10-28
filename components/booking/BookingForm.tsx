@@ -1383,7 +1383,7 @@ export default function BookingForm({
         .catch(() => ({ ok: false, data: {} as { eligible?: boolean } }));
       if (!approval.ok || approval.data.eligible !== true) {
         setError(approval.ok
-          ? "Invoice billing is not approved for this account. Please select Cash or Card, or contact Drivo to request Admin approval."
+          ? "Aap is sahulat ke liye eligible ya approved nahi hain. Approval hasil karne ke liye admin se rabta karein."
           : "Please log in to your verified, admin-approved account before using Invoice billing.");
         return;
       }
@@ -2274,6 +2274,15 @@ scheduledTime:
             </button>
           </div>
         </div>
+      )}
+      {!bookingId && step === 1 && !savedRouteId && (
+        <section className="card border border-drivo-green/30" aria-labelledby="early-book-again">
+          <h2 id="early-book-again" className="text-lg font-bold text-drivo-text">{t("savedRoutes.bookAgain", "Book Again")}</h2>
+          <p className="mt-2 text-sm text-drivo-text-secondary">{t("savedRoutes.description", "Choose a previously saved route to fill your booking details.")}</p>
+          <Link href={passengerProfile ? "/passenger/dashboard" : "/passenger/login"} className="btn-primary mt-3 inline-flex min-h-11 items-center">
+            {t("savedRoutes.bookAgain", "Book Again")}
+          </Link>
+        </section>
       )}
       {savedRouteId && savedRouteNotice && (
         <div role="status" className="mb-4 rounded-2xl border border-drivo-border-light bg-drivo-bg-soft p-4 text-sm font-semibold text-drivo-text">
@@ -3504,12 +3513,7 @@ onChange={(e) => {
             {paymentMethod === "cash" && (
               <CashWarning agreed={cashAgreed} onAgreeChange={setCashAgreed} />
             )}
-            {paymentMethod === "invoice" && (
-              <p role="status" className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950">
-                Invoice · Net 30. Only passengers explicitly approved by Drivo Admin can book using Invoice.
-                Otherwise a clear approval-required message will appear.
-              </p>
-            )}
+
 
             <textarea
               value={specialNotes}
