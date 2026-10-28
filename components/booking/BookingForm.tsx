@@ -424,6 +424,10 @@ export default function BookingForm({
   const [fareBreakdown, setFareBreakdown] = useState<FareBreakdown | null>(null);
   const [showWavModal, setShowWavModal] = useState(false);
   const [passengerProfile, setPassengerProfile] = useState<Record<string, unknown> | null>(null);
+  const [earlySavedRoutes, setEarlySavedRoutes] = useState<SavedRouteView[]>([]);
+  const [earlySavedRoutesLoading, setEarlySavedRoutesLoading] = useState(false);
+  const [earlySavedRoutesError, setEarlySavedRoutesError] = useState(false);
+
   const accountCreateInFlight = useRef(false);
   const loginInFlight = useRef(false);
   const recoveryInFlight = useRef(false);
@@ -878,6 +882,32 @@ export default function BookingForm({
     resetUnsubmittedForm();
     setDraftNoticeKey("phase4.discarded");
   };
+
+  // List only routes owned by the current authenticated passenger.
+  // No route is restored or booked until the passenger explicitly selects it.
+  useEffect(() => {
+    if (!passengerProfile || bookingId || step !== 1 || !draftReady || pendingDraft || submissionUncertain) {
+      setEarlySavedRoutes([]);
+      setEarlySavedRoutesLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setEarlySavedRoutesLoading(true);
+    setEarlySavedRoutesError(false);
+    csrfFetch("passenger", "/api/passenger/saved-routes", {
+      cache: "no-store", signal: controller.signal,
+    }).then(async response => {
+      if (!response.ok) throw new Error("SAVED_ROUTES_UNAVAILABLE");
+      return response.json();
+    }).then(data => {
+      if (!controller.signal.aborted) setEarlySavedRoutes(Array.isArray(data.routes) ? data.routes : []);
+    }).catch(() => {
+      if (!controller.signal.aborted) setEarlySavedRoutesError(true);
+    }).finally(() => {
+      if (!controller.signal.aborted) setEarlySavedRoutesLoading(false);
+    });
+    return () => controller.abort();
+  }, [passengerProfile, bookingId, step, draftReady, pendingDraft, submissionUncertain]);
 
   // Route templates are fetched only after passenger authentication and draft
   // resolution; never trusted from localStorage, URL payloads, or a prior account.
@@ -2279,9 +2309,31 @@ scheduledTime:
         <section className="card border border-drivo-green/30" aria-labelledby="early-book-again">
           <h2 id="early-book-again" className="text-lg font-bold text-drivo-text">{t("savedRoutes.bookAgain", "Book Again")}</h2>
           <p className="mt-2 text-sm text-drivo-text-secondary">{t("savedRoutes.description", "Choose a previously saved route to fill your booking details.")}</p>
-          <Link href={passengerProfile ? "/passenger/dashboard" : "/passenger/login"} className="btn-primary mt-3 inline-flex min-h-11 items-center">
-            {t("savedRoutes.bookAgain", "Book Again")}
-          </Link>
+          {!passengerProfile ? (
+            <Link href="/passenger/login" className="btn-primary mt-3 inline-flex min-h-11 items-center">{t("savedRoutes.bookAgain", "Book Again")}</Link>
+          ) : pendingDraft || submissionUncertain ? (
+            <p className="mt-3 text-sm text-drivo-text-secondary">{t("savedRoutes.draftConflict")}</p>
+          ) : earlySavedRoutesLoading ? (
+            <p role="status" className="mt-3 text-sm">{t("passenger.loading")}</p>
+          ) : earlySavedRoutesError ? (
+            <p role="alert" className="mt-3 text-sm">{t("savedRoutes.error")}</p>
+          ) : earlySavedRoutes.length === 0 ? (
+            <p className="mt-3 text-sm">{t("savedRoutes.empty")}</p>
+          ) : (
+            <ul className="mt-3 space-y-3">
+              {earlySavedRoutes.map(route => (
+                <li key={route.id} className="rounded-xl border border-drivo-border-light p-3">
+                  <p className="font-semibold break-words">{route.label}</p>
+                  <p className="text-sm text-drivo-text-secondary break-words">{route.pickupAddress} → {route.dropoffAddress}</p>
+                  {isCustomerServiceEnabled(route.serviceType) ? (
+                    <Link data-draft-action href={`/book?savedRoute=${encodeURIComponent(route.id)}`} className="btn-primary mt-2 inline-flex min-h-11 items-center">
+                      {t("savedRoutes.bookAgain", "Book Again")}
+                    </Link>
+                  ) : <p className="text-sm">{t("savedRoutes.unavailable")}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       )}
       {savedRouteId && savedRouteNotice && (
