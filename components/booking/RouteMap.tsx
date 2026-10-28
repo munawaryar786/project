@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
-import { formatEuro, formatNumber } from "@/lib/i18n/format";
+import { formatNumber } from "@/lib/i18n/format";
 import {
   DirectionsRenderer,
   GoogleMap,
@@ -13,7 +13,6 @@ import {
 interface RouteMapProps {
   pickupAddress: string;
   dropoffAddress: string;
-  hideEstimate?: boolean;
   onRouteInfo?: (info: {
     distanceKm: number;
     durationMin: number;
@@ -44,7 +43,6 @@ const mapOptions: google.maps.MapOptions = {
 export default function RouteMap({
   pickupAddress,
   dropoffAddress,
-  hideEstimate = false,
   onRouteInfo,
 }: RouteMapProps) {
   const { t, locale } = useLanguage();
@@ -164,12 +162,7 @@ export default function RouteMap({
           <RouteStat label={t('booking.distance')} value={`${formatNumber(routeInfo.distanceKm, locale)} km`} />
           <Divider />
           <RouteStat label={t('booking.duration')} value={`~${formatNumber(routeInfo.durationMin, locale)} ${t('common.minuteShort')}`} />
-          {!hideEstimate && (
-            <>
-              <Divider />
-              <RouteStat label={t('booking.estimate')} value={formatEuro(routeInfo.priceEstimate, locale)} />
-            </>
-          )}
+
         </div>
       )}
 
