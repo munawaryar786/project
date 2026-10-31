@@ -1591,6 +1591,25 @@ scheduledTime:
           submittedOperationId = "";
           setSubmissionUncertain(false);
         }
+        if (bookingRes.status === 400 && isRecord(bookingData) && bookingData.error === "Validation failed") {
+          const details = isRecord(bookingData.details) ? bookingData.details : null;
+          const firstInvalidField = details
+            ? Object.entries(details).find((entry) => Array.isArray(entry[1]) && entry[1].length > 0)?.[0]
+            : undefined;
+          const fieldMessages: Record<string, string> = {
+            pickupAddress: t("booking.validation.pickup"),
+            dropoffAddress: t("booking.validation.destination"),
+            customerName: t("booking.validation.name"),
+            customerEmail: t("booking.validation.email"),
+            customerPhone: t("booking.validation.phone"),
+            scheduledDate: t("booking.validation.date"),
+            scheduledTime: t("booking.validation.time"),
+            passengerCount: t("booking.validation.capacity"),
+          };
+          throw new Error(firstInvalidField
+            ? (fieldMessages[firstInvalidField] || `${t("error.bookingValidation")} (${firstInvalidField})`)
+            : t("error.bookingValidation"));
+        }
         throw new Error(localizedError(bookingData, "bookingAuth.errors.unknown", t));
       }
 
