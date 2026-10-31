@@ -34,7 +34,7 @@ export default function DispatchTeamPage() {
     const payload = editing ? { fullName: form.fullName, email: form.email, phone: form.phone, ...(form.temporaryPassword ? { temporaryPassword: form.temporaryPassword } : {}) } : form;
     try {
       const response = await csrfFetch("admin", url, { method: editing ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      if (!response.ok) { setError("dispatchAdmin.saveError"); return; }
+      if (!response.ok) { const problem = await response.json().catch(() => ({})); setError(typeof problem.error === "string" ? problem.error : "dispatchAdmin.saveError"); return; }
       setNotice("dispatchAdmin.saved"); setEditing(null); setForm({ fullName: "", email: "", phone: "", temporaryPassword: "" }); await load();
     } catch { setError("dispatchAdmin.saveError"); }
     finally { setBusy(false); }
@@ -45,14 +45,14 @@ export default function DispatchTeamPage() {
     setBusy(true); setError("");
     try {
       const response = await csrfFetch("admin", `/api/admin/dispatch-operators/${operator.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(changes) });
-      if (!response.ok) setError("dispatchAdmin.saveError"); else { setNotice("dispatchAdmin.saved"); await load(); }
+      if (!response.ok) { const problem = await response.json().catch(() => ({})); setError(typeof problem.error === "string" ? problem.error : "dispatchAdmin.saveError"); } else { setNotice("dispatchAdmin.saved"); await load(); }
     } catch { setError("dispatchAdmin.saveError"); }
     finally { setBusy(false); }
   }
 
   return <main className="mx-auto max-w-6xl space-y-6" aria-labelledby="dispatch-team-heading">
     <header><h1 id="dispatch-team-heading" className="text-2xl font-black text-drivo-navy">{t("dispatchAdmin.title", "Dispatch Team")}</h1><p className="mt-1 text-sm text-gray-600">{t("dispatchAdmin.subtitle", "Create and manage Dispatch Operator accounts.")}</p></header>
-    {error && <p role="alert" className="rounded-xl border border-red-300 bg-red-50 p-3 text-red-900">{t(error)}</p>}
+    {error && <p role="alert" className="rounded-xl border border-red-300 bg-red-50 p-3 text-red-900">{error.startsWith("dispatchAdmin.") ? t(error) : error}</p>}
     {notice && <p role="status" aria-live="polite" className="rounded-xl border border-green-300 bg-green-50 p-3 text-green-900">{t(notice)}</p>}
     <section className="rounded-2xl border bg-white p-5" aria-labelledby="operator-form-heading">
       <h2 id="operator-form-heading" className="text-lg font-bold">{editing ? t("dispatchAdmin.edit", "Edit operator") : t("dispatchAdmin.create", "Create Dispatch Operator")}</h2>

@@ -105,6 +105,7 @@ const BOOKING_AUTH_ERROR_FALLBACKS: Record<string, string> = {
   "bookingAuth.errors.phoneVerificationRequired": "Phone verification required.",
   "bookingAuth.errors.verificationExpired": "Verification expired. Please request a new code.",
   "bookingAuth.errors.rateLimited": "Too many attempts. Please try again later.",
+  "bookingAuth.errors.serviceUnavailable": "Authentication service is temporarily unavailable. Please try again later.",
   "bookingAuth.errors.passwordRequired": "Password is required.",
   "bookingAuth.errors.accountExists": "This phone already has an account.",
   "bookingAuth.errors.unknown": "Something went wrong. Please try again.",
@@ -121,6 +122,7 @@ function bookingAuthErrorKeyFromCode(code: string) {
     OTP_EXPIRED: "bookingAuth.errors.verificationExpired",
     PROOF_EXPIRED: "bookingAuth.errors.verificationExpired",
     RATE_LIMITED: "bookingAuth.errors.rateLimited",
+    AUTH_RATE_LIMIT_UNAVAILABLE: "bookingAuth.errors.serviceUnavailable",
     TOO_MANY_ATTEMPTS: "bookingAuth.errors.rateLimited",
     ACCOUNT_EXISTS: "bookingAuth.errors.accountExists",
     ACCOUNT_EXISTS_LOGIN_REQUIRED: "bookingAuth.errors.accountExists",
@@ -424,6 +426,10 @@ export default function BookingForm({
   const [fareBreakdown, setFareBreakdown] = useState<FareBreakdown | null>(null);
   const [showWavModal, setShowWavModal] = useState(false);
   const [passengerProfile, setPassengerProfile] = useState<Record<string, unknown> | null>(null);
+  const [earlySavedRoutes, setEarlySavedRoutes] = useState<SavedRouteView[]>([]);
+  const [earlySavedRoutesLoading, setEarlySavedRoutesLoading] = useState(false);
+  const [earlySavedRoutesError, setEarlySavedRoutesError] = useState(false);
+
   const accountCreateInFlight = useRef(false);
   const loginInFlight = useRef(false);
   const recoveryInFlight = useRef(false);
@@ -878,6 +884,32 @@ export default function BookingForm({
     resetUnsubmittedForm();
     setDraftNoticeKey("phase4.discarded");
   };
+
+  // List only routes owned by the current authenticated passenger.
+  // No route is restored or booked until the passenger explicitly selects it.
+  useEffect(() => {
+    if (!passengerProfile || bookingId || step !== 1 || !draftReady || pendingDraft || submissionUncertain) {
+      setEarlySavedRoutes([]);
+      setEarlySavedRoutesLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setEarlySavedRoutesLoading(true);
+    setEarlySavedRoutesError(false);
+    csrfFetch("passenger", "/api/passenger/saved-routes", {
+      cache: "no-store", signal: controller.signal,
+    }).then(async response => {
+      if (!response.ok) throw new Error("SAVED_ROUTES_UNAVAILABLE");
+      return response.json();
+    }).then(data => {
+      if (!controller.signal.aborted) setEarlySavedRoutes(Array.isArray(data.routes) ? data.routes : []);
+    }).catch(() => {
+      if (!controller.signal.aborted) setEarlySavedRoutesError(true);
+    }).finally(() => {
+      if (!controller.signal.aborted) setEarlySavedRoutesLoading(false);
+    });
+    return () => controller.abort();
+  }, [passengerProfile, bookingId, step, draftReady, pendingDraft, submissionUncertain]);
 
   // Route templates are fetched only after passenger authentication and draft
   // resolution; never trusted from localStorage, URL payloads, or a prior account.
@@ -1383,7 +1415,7 @@ export default function BookingForm({
         .catch(() => ({ ok: false, data: {} as { eligible?: boolean } }));
       if (!approval.ok || approval.data.eligible !== true) {
         setError(approval.ok
-          ? "Invoice billing is not approved for this account. Please select Cash or Card, or contact Drivo to request Admin approval."
+          ? "Aap is sahulat ke liye eligible ya approved nahi hain. Approval hasil karne ke liye admin se rabta karein."
           : "Please log in to your verified, admin-approved account before using Invoice billing.");
         return;
       }
@@ -1560,6 +1592,25 @@ scheduledTime:
           setBookingOperationId("");
           submittedOperationId = "";
           setSubmissionUncertain(false);
+        }
+        if (bookingRes.status === 400 && isRecord(bookingData) && bookingData.error === "Validation failed") {
+          const details = isRecord(bookingData.details) ? bookingData.details : null;
+          const firstInvalidField = details
+            ? Object.entries(details).find((entry) => Array.isArray(entry[1]) && entry[1].length > 0)?.[0]
+            : undefined;
+          const fieldMessages: Record<string, string> = {
+            pickupAddress: t("booking.validation.pickup"),
+            dropoffAddress: t("booking.validation.destination"),
+            customerName: t("booking.validation.name"),
+            customerEmail: t("booking.validation.email"),
+            customerPhone: t("booking.validation.phone"),
+            scheduledDate: t("booking.validation.date"),
+            scheduledTime: t("booking.validation.time"),
+            passengerCount: t("booking.validation.capacity"),
+          };
+          throw new Error(firstInvalidField
+            ? (fieldMessages[firstInvalidField] || `${t("error.bookingValidation")} (${firstInvalidField})`)
+            : t("error.bookingValidation"));
         }
         throw new Error(localizedError(bookingData, "bookingAuth.errors.unknown", t));
       }
@@ -2274,6 +2325,37 @@ scheduledTime:
             </button>
           </div>
         </div>
+      )}
+      {!bookingId && step === 1 && !savedRouteId && (
+        <section className="card border border-drivo-green/30" aria-labelledby="early-book-again">
+          <h2 id="early-book-again" className="text-lg font-bold text-drivo-text">{t("savedRoutes.bookAgain", "Book Again")}</h2>
+          <p className="mt-2 text-sm text-drivo-text-secondary">{t("savedRoutes.description", "Choose a previously saved route to fill your booking details.")}</p>
+          {!passengerProfile ? (
+            <Link href="/passenger/login" className="btn-primary mt-3 inline-flex min-h-11 items-center">{t("savedRoutes.bookAgain", "Book Again")}</Link>
+          ) : pendingDraft || submissionUncertain ? (
+            <p className="mt-3 text-sm text-drivo-text-secondary">{t("savedRoutes.draftConflict")}</p>
+          ) : earlySavedRoutesLoading ? (
+            <p role="status" className="mt-3 text-sm">{t("passenger.loading")}</p>
+          ) : earlySavedRoutesError ? (
+            <p role="alert" className="mt-3 text-sm">{t("savedRoutes.error")}</p>
+          ) : earlySavedRoutes.length === 0 ? (
+            <p className="mt-3 text-sm">{t("savedRoutes.empty")}</p>
+          ) : (
+            <ul className="mt-3 space-y-3">
+              {earlySavedRoutes.map(route => (
+                <li key={route.id} className="rounded-xl border border-drivo-border-light p-3">
+                  <p className="font-semibold break-words">{route.label}</p>
+                  <p className="text-sm text-drivo-text-secondary break-words">{route.pickupAddress} → {route.dropoffAddress}</p>
+                  {isCustomerServiceEnabled(route.serviceType) ? (
+                    <Link data-draft-action href={`/book?savedRoute=${encodeURIComponent(route.id)}`} className="btn-primary mt-2 inline-flex min-h-11 items-center">
+                      {t("savedRoutes.bookAgain", "Book Again")}
+                    </Link>
+                  ) : <p className="text-sm">{t("savedRoutes.unavailable")}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
       {savedRouteId && savedRouteNotice && (
         <div role="status" className="mb-4 rounded-2xl border border-drivo-border-light bg-drivo-bg-soft p-4 text-sm font-semibold text-drivo-text">
@@ -3504,12 +3586,7 @@ onChange={(e) => {
             {paymentMethod === "cash" && (
               <CashWarning agreed={cashAgreed} onAgreeChange={setCashAgreed} />
             )}
-            {paymentMethod === "invoice" && (
-              <p role="status" className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950">
-                Invoice · Net 30. Only passengers explicitly approved by Drivo Admin can book using Invoice.
-                Otherwise a clear approval-required message will appear.
-              </p>
-            )}
+
 
             <textarea
               value={specialNotes}
