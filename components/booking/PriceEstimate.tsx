@@ -114,7 +114,8 @@ export default function PriceEstimate({
             scheduledTime,
             waitAndGreet,
             waitingMinutes,
-            assistanceLevel,
+            // Empty string is not a valid value for DistanceSchema's enum.
+            assistanceLevel: assistanceLevel || null,
           }),
         });
 
