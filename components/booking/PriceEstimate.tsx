@@ -40,6 +40,7 @@ interface PriceEstimateProps {
   assistanceLevel?: string;
   onPriceChange?: (price: number) => void;
   onFareChange?: (price: number, breakdown: FareBreakdown) => void;
+  onQuoteInvalidated?: () => void;
 }
 
 interface PriceEstimate {
@@ -71,12 +72,14 @@ export default function PriceEstimate({
   assistanceLevel = "",
   onPriceChange,
   onFareChange,
+  onQuoteInvalidated,
 }: PriceEstimateProps) {
   const { t, locale } = useLanguage();
   const money = (value: number | undefined) => formatEuro(Number(value || 0), locale);
   const [estimate, setEstimate] = useState<PriceEstimate | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const optionalServices = useMemo(
     () => Object.entries(estimate?.breakdown.optionalServiceCharges || {}),
@@ -84,17 +87,23 @@ export default function PriceEstimate({
   );
 
   useEffect(() => {
+    // A displayed quote is never authoritative after route/options change.
+    // Clear the value used by the booking form immediately, while retaining
+    // the old visual breakdown only as an explicitly outdated reference.
+    onQuoteInvalidated?.();
     if (!pickupAddress || !dropoffAddress || pickupAddress.length < 5 || dropoffAddress.length < 5) {
       setEstimate(null);
       setError(null);
       setLoading(false);
+      setRefreshing(false);
       return;
     }
 
     const controller = new AbortController();
+    setLoading(true);
+    setRefreshing(true);
+    setError(null);
     const fetchEstimate = async () => {
-      setLoading(true);
-      setError(null);
 
       try {
         const response = await fetch("/api/bookings/distance", {
@@ -122,9 +131,16 @@ export default function PriceEstimate({
         const data = await response.json();
 
         if (controller.signal.aborted) return;
-        if (response.ok && data.success && Number.isFinite(Number(data?.pricing?.estimatedPrice)) && data?.pricing?.breakdown) {
-          const price = Number(data.pricing.estimatedPrice);
-          const breakdown = data.pricing.breakdown as FareBreakdown;
+        const price = data?.pricing?.estimatedPrice;
+        const breakdown = data?.pricing?.breakdown as FareBreakdown | undefined;
+        const validQuote = response.ok && data?.success === true &&
+          typeof price === "number" && Number.isFinite(price) && price >= 0 &&
+          breakdown && typeof breakdown.totalFare === "number" &&
+          Number.isFinite(breakdown.totalFare) && Math.abs(breakdown.totalFare - price) < 0.005 &&
+          data?.distance && typeof data.distance.km === "number" && Number.isFinite(data.distance.km) &&
+          typeof data.distance.duration === "number" && Number.isFinite(data.distance.duration) &&
+          breakdown.optionalServiceCharges && typeof breakdown.optionalServiceCharges === "object";
+        if (validQuote) {
 
           setEstimate({
             distanceKm: Number(data.distance.km),
@@ -144,7 +160,10 @@ export default function PriceEstimate({
           setError("SERVICE_UNAVAILABLE");
         }
       } finally {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     };
 
@@ -169,11 +188,12 @@ export default function PriceEstimate({
     assistanceLevel,
     onPriceChange,
     onFareChange,
+    onQuoteInvalidated,
   ]);
 
-  if (loading) {
+  if (loading && !estimate) {
     return (
-      <div className="bg-drivo-bg-soft rounded-2xl p-4 border border-drivo-border-light">
+      <div className="bg-drivo-bg-soft rounded-2xl p-4 border border-drivo-border-light" role="status" aria-live="polite">
         <div className="flex items-center gap-3">
           <div className="w-5 h-5 border-2 border-drivo-green border-t-transparent rounded-full animate-spin" />
           <span className="text-[13px] text-drivo-text-secondary">{t('booking.estimateCalculating')}</span>
@@ -195,11 +215,12 @@ export default function PriceEstimate({
   const breakdown = estimate.breakdown;
 
   return (
-    <div className="bg-drivo-green-light/30 rounded-2xl p-4 border border-drivo-green/20">
+    <div className="bg-drivo-green-light/30 rounded-2xl p-4 border border-drivo-green/20" aria-busy={refreshing}>
       <div className="flex items-center justify-between mb-3">
         <h4 className="text-[14px] font-bold text-drivo-text">{t('booking.fareBreakdown')}</h4>
-        <span className="pill-green text-[11px]">{t('booking.live')}</span>
+        <span className="pill-green text-[11px]">{refreshing ? t('booking.estimateCalculating') : t('booking.live')}</span>
       </div>
+      {refreshing && <p role="status" aria-live="polite" className="mb-2 text-sm font-semibold text-amber-900">{t('booking.estimateCalculating')} — previous fare is outdated and cannot be booked.</p>}
 
       <div className="text-[28px] font-extrabold text-drivo-green mb-2">
         {money(estimate.estimatedPrice)}
