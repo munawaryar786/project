@@ -34,11 +34,15 @@ export async function POST(request: NextRequest) {
       if (!booking) return { ok: false as const, code: "BOOKING_NOT_FOUND" };
       const saved = await saveRouteFromBooking(auth.actor.id, booking, tx);
       if (!saved.ok) return saved;
-      if (parsed.data.saveAlways) await tx.passenger.update({ where: { id: auth.actor.id }, data: { autoSaveRoutes: true } });
-      return { ok: true as const };
+      // Saving one route must never clear or misreport a previous "Save Always"
+      // preference. Return the persisted value rather than echoing this request.
+      const preference = parsed.data.saveAlways
+        ? await tx.passenger.update({ where: { id: auth.actor.id }, data: { autoSaveRoutes: true }, select: { autoSaveRoutes: true } })
+        : await tx.passenger.findUnique({ where: { id: auth.actor.id }, select: { autoSaveRoutes: true } });
+      return { ok: true as const, autoSaveRoutes: Boolean(preference?.autoSaveRoutes) };
     });
     if (!result.ok) return NextResponse.json({ success: false, code: result.code }, { status: result.code === "BOOKING_NOT_FOUND" ? 404 : 409, headers: privateHeaders });
-    return NextResponse.json({ success: true, autoSaveRoutes: parsed.data.saveAlways }, { headers: privateHeaders });
+    return NextResponse.json({ success: true, autoSaveRoutes: result.autoSaveRoutes }, { headers: privateHeaders });
   } catch {
     return NextResponse.json({ success: false, code: "SAVE_FAILED" }, { status: 503, headers: privateHeaders });
   }
