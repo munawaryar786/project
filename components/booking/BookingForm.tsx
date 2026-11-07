@@ -335,6 +335,7 @@ export default function BookingForm({
   const [largeBags, setLargeBags] = useState(0);
   const [wheelchair, setWheelchair] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
+  const [invoiceEligibility, setInvoiceEligibility] = useState<"idle" | "checking" | "approved" | "not-approved" | "login-required" | "unavailable">("idle");
   const [cashAgreed, setCashAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -542,6 +543,35 @@ export default function BookingForm({
   const assistedTransport = serviceType === "accessible";
   const quoteOnlyTransport = false;
   const passengerAuthenticated = Boolean(passengerProfile) || authMode === "authenticated";
+  // Invoice eligibility is account-specific. A generic "Approval required"
+  // badge must not incorrectly imply an approved account is ineligible.
+  useEffect(() => {
+    if (paymentMethod !== "invoice") { setInvoiceEligibility("idle"); return; }
+    if (!passengerAuthenticated) { setInvoiceEligibility("login-required"); return; }
+    let active = true;
+    setInvoiceEligibility("checking");
+    void csrfFetch("passenger", "/api/passenger/invoice-eligibility", { cache: "no-store", credentials: "include" })
+      .then(async (response) => {
+        const result = await response.json().catch(() => ({}));
+        if (!active) return;
+        if (response.status === 401) setInvoiceEligibility("login-required");
+        else if (!response.ok) setInvoiceEligibility("unavailable");
+        else setInvoiceEligibility(result.eligible === true ? "approved" : "not-approved");
+      })
+      .catch(() => { if (active) setInvoiceEligibility("unavailable"); });
+    return () => { active = false; };
+  }, [paymentMethod, passengerAuthenticated, passengerProfile?.id]);
+  const invoiceChoiceTag = invoiceEligibility === "idle"
+    ? t("booking.invoiceStatus.accountRequired")
+    : invoiceEligibility === "approved"
+      ? t("booking.invoiceStatus.approved")
+      : invoiceEligibility === "not-approved"
+        ? t("booking.invoiceStatus.notApproved")
+        : invoiceEligibility === "login-required"
+          ? t("booking.invoiceStatus.loginRequired")
+          : invoiceEligibility === "unavailable"
+            ? t("booking.invoiceStatus.unavailable")
+            : t("booking.invoiceStatus.checking");
   const submitButtonLabel = passengerAuthenticated
     ? quoteOnlyTransport
       ? t("booking.submitBookingRequest", "Submit Booking Request")
@@ -1430,8 +1460,8 @@ export default function BookingForm({
         .catch(() => ({ ok: false, data: {} as { eligible?: boolean } }));
       if (!approval.ok || approval.data.eligible !== true) {
         setError(approval.ok
-          ? "Aap is sahulat ke liye eligible ya approved nahi hain. Approval hasil karne ke liye admin se rabta karein."
-          : "Please log in to your verified, admin-approved account before using Invoice billing.");
+          ? t("booking.invoiceStatus.notApproved")
+          : t("booking.invoiceStatus.unavailable"));
         return;
       }
     }
@@ -3565,7 +3595,7 @@ onChange={(e) => {
                 {[
                   ["card", "💳", t("booking.paymentCard"), t("booking.paymentCardDesc"), t("booking.recommended", "Recommended")],
                   ["cash", "💰", t("booking.paymentCash"), t("booking.paymentCashDesc"), t("booking.rulesApply", "Rules apply")],
-                  ["invoice", "🏢", t("booking.paymentInvoice", "Invoice"), t("booking.paymentInvoiceDesc", "For admin-approved accounts · Net 30"), "Approval required"],
+                  ["invoice", "🏢", t("booking.paymentInvoice", "Invoice"), t("booking.paymentInvoiceDesc", "For admin-approved accounts · Net 30"), invoiceChoiceTag],
                 ].filter(([v]) => !(childrenTransport && v === "cash")).map(([v, icon, label, sub, tag]) => (
                   <button
                     key={v}
