@@ -1,6 +1,7 @@
 "use client";
 
 import { csrfFetch } from "@/lib/client/csrf-fetch";
+import { currentBookingMarketWallTime } from "@/lib/booking-market-clock";
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -527,7 +528,17 @@ export default function BookingForm({
     onServiceTypeChange?.(serviceType);
   }, [onServiceTypeChange, serviceType]);
 
-  const today = useMemo(() => new Date().toISOString().split("T")[0], []);
+  // Ride Now and the date picker use Bratislava wall time, not browser time or UTC.
+  const [marketNow, setMarketNow] = useState(() => currentBookingMarketWallTime());
+  useEffect(() => {
+    const updateMarketClock = () => {
+      const next = currentBookingMarketWallTime();
+      setMarketNow(current => current.date === next.date && current.time === next.time ? current : next);
+    };
+    const timer = window.setInterval(updateMarketClock, 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const today = marketNow.date;
   const assistedTransport = serviceType === "accessible";
   const quoteOnlyTransport = false;
   const passengerAuthenticated = Boolean(passengerProfile) || authMode === "authenticated";
@@ -552,7 +563,7 @@ export default function BookingForm({
   const contactStepNumber = showMedicalReturnDetails ? 6 : assistedTransport ? 5 : 4;
   const childrenTransport = serviceType === "children";
   const institutionAddress = dropoffAddress.trim();
-  const currentBookingTime = useMemo(() => new Date().toTimeString().slice(0, 5), []);
+  const currentBookingTime = marketNow.time;
   const estimateScheduledDate = childrenTransport || rideMode === "schedule" ? scheduledDate : today;
   const estimateScheduledTime = childrenTransport || rideMode === "schedule" ? scheduledTime : currentBookingTime;
   const estimateWaitingMinutes = showWaitingDuration
@@ -1452,6 +1463,8 @@ export default function BookingForm({
         specialRequirements: child.specialRequirements.trim() || null,
       }));
       const firstChild = childrenPayload[0];
+      // Use the current market wall time at submission, even after a long-open tab.
+      const rideNowAtSubmit = currentBookingMarketWallTime();
 
       const preflight = await csrfFetch("passenger", "/api/bookings/operations", {
         method: "POST", cache: "no-store", credentials: "include",
@@ -1495,11 +1508,8 @@ export default function BookingForm({
           pickupLng: resolvedPickupCoords?.lng ?? null,
           dropoffLat: resolvedDropoffCoords?.lat ?? null,
           dropoffLng: resolvedDropoffCoords?.lng ?? null,
-          scheduledDate: childrenTransport || rideMode === "schedule" ? scheduledDate : today,
-scheduledTime:
-  childrenTransport || rideMode === "schedule"
-    ? scheduledTime
-    : new Date().toTimeString().slice(0, 5),
+          scheduledDate: childrenTransport || rideMode === "schedule" ? scheduledDate : rideNowAtSubmit.date,
+          scheduledTime: childrenTransport || rideMode === "schedule" ? scheduledTime : rideNowAtSubmit.time,
           passengerCount: passengers,
           luggageType: luggageMap[luggage],
           smallBags,
