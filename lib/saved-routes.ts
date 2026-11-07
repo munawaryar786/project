@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { Booking, Prisma, SavedRoute } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isCustomerServiceEnabled } from "@/lib/feature-flags";
+import { standardVehicleCapacityIssue } from "@/lib/booking-capacity";
 
 // No medical/child/guardian details, phone numbers, notes, payments or prices are
 // persisted in saved-route templates. Coordinates/addresses are stored only by consent.
@@ -33,8 +34,7 @@ export function routeFromBooking(booking: RouteSource): RouteFields | null {
   if (!service || booking.pickupAddress.trim().length < 3 || booking.pickupAddress.trim().length > 240 ||
       booking.dropoffAddress.trim().length < 3 || booking.dropoffAddress.trim().length > 240 ||
       /[\u0000-\u001f\u007f]/.test(booking.pickupAddress + booking.dropoffAddress) ||
-      booking.passengerCount < 1 || booking.passengerCount > 6 ||
-      (booking.passengerCount === 6 && booking.largeBags > 0)) return null;
+      standardVehicleCapacityIssue(booking) !== null) return null;
   const pickupAddress = booking.pickupAddress.trim().slice(0, 240);
   const dropoffAddress = booking.dropoffAddress.trim().slice(0, 240);
   const smallBags = Math.max(0, Math.min(12, booking.smallBags || 0));
@@ -112,7 +112,7 @@ export function editedRouteFields(existing: RouteFields, update: {
       !Number.isInteger(passengerCount) || passengerCount < 1 || passengerCount > 6 ||
       !Number.isInteger(smallBags) || smallBags < 0 || smallBags > 12 ||
       !Number.isInteger(largeBags) || largeBags < 0 || largeBags > 12 ||
-      (passengerCount >= 6 && largeBags > 0)) return null;
+      standardVehicleCapacityIssue({ passengerCount, smallBags, largeBags, luggageType: "NONE" }) !== null) return null;
   const pickupChanged = pickupAddress !== existing.pickupAddress;
   const dropoffChanged = dropoffAddress !== existing.dropoffAddress;
   return {
