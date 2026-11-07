@@ -95,6 +95,8 @@ const entries: Record<string, readonly [string, string, string, string]> = {
   "adminFinancial.feedback": ["Feedback", "Spätná väzba", "Rückmeldungen", "Відгуки"],
   "dispatch.detail.status": ["Status", "Stav", "Status", "Статус"],
   "dispatchAdmin.status": ["Status", "Stav", "Status", "Статус"],
+  "dispatchAdmin.restore": ["Restore operator", "Obnoviť operátora", "Disponenten reaktivieren", "Відновити оператора"],
+  "dispatchAdmin.restoreHint": ["Reactivation requires a new temporary password. All earlier sessions will be invalidated.", "Na opätovnú aktiváciu je potrebné nové dočasné heslo. Všetky predchádzajúce relácie budú zneplatnené.", "Zur Reaktivierung ist ein neues vorläufiges Passwort erforderlich. Alle bisherigen Sitzungen werden ungültig.", "Для повторної активації потрібен новий тимчасовий пароль. Усі попередні сеанси буде скасовано."],
   "adminDashboard.table.status": ["Status", "Stav", "Status", "Статус"],
   "adminDashboard.table.dispatch": ["Dispatch", "Dispečing", "Disposition", "Пошук водія"],
   "adminDashboard.table.service": ["Service", "Služba", "Dienst", "Послуга"],
