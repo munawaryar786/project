@@ -605,6 +605,10 @@ export default function BookingForm({
     setEstimatedPrice(price);
     setFareBreakdown(breakdown);
   }, []);
+  const invalidateFare = useCallback(() => {
+    setEstimatedPrice(undefined);
+    setFareBreakdown(null);
+  }, []);
 
   useEffect(() => {
     if (!quoteOnlyTransport) return;
@@ -2641,6 +2645,7 @@ scheduledTime:
                 assistanceLevel={assistanceLevel}
                 onPriceChange={setEstimatedPrice}
                 onFareChange={handleFareChange}
+                onQuoteInvalidated={invalidateFare}
               />
             )}
 
@@ -3158,6 +3163,7 @@ onChange={(e) => {
                 assistanceLevel={assistanceLevel}
                   onPriceChange={setEstimatedPrice}
                   onFareChange={handleFareChange}
+                onQuoteInvalidated={invalidateFare}
                 />
               )}
               <div className="space-y-3">
