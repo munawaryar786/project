@@ -450,6 +450,7 @@ export const m3 = {
 export const m3Validation = {
   en: {
     "booking.validation.pickup": "Pickup address is required.",
+    "booking.quoteOutdated": "The previous fare is outdated. Please wait for the updated price.",
     "booking.validation.destination": "Destination address is required.",
     "booking.validation.date": "Select a pickup date.",
     "booking.validation.time": "Select a pickup time.",
@@ -483,6 +484,7 @@ export const m3Validation = {
   },
   sk: {
     "booking.validation.pickup": "Zadajte adresu vyzdvihnutia.",
+    "booking.quoteOutdated": "Predchádzajúca cena už nie je aktuálna. Počkajte na aktualizovanú cenu.",
     "booking.validation.destination": "Zadajte cieľovú adresu.",
     "booking.validation.date": "Vyberte dátum vyzdvihnutia.",
     "booking.validation.time": "Vyberte čas vyzdvihnutia.",
@@ -516,6 +518,7 @@ export const m3Validation = {
   },
   de: {
     "booking.validation.pickup": "Geben Sie die Abholadresse ein.",
+    "booking.quoteOutdated": "Der vorherige Fahrpreis ist nicht mehr aktuell. Bitte warten Sie auf den neuen Preis.",
     "booking.validation.destination": "Geben Sie die Zieladresse ein.",
     "booking.validation.date": "Wählen Sie ein Abholdatum.",
     "booking.validation.time": "Wählen Sie eine Abholzeit.",
@@ -549,6 +552,7 @@ export const m3Validation = {
   },
   uk: {
     "booking.validation.pickup": "Вкажіть адресу посадки.",
+    "booking.quoteOutdated": "Попередня вартість поїздки застаріла. Дочекайтеся оновленої ціни.",
     "booking.validation.destination": "Вкажіть адресу призначення.",
     "booking.validation.date": "Виберіть дату посадки.",
     "booking.validation.time": "Виберіть час посадки.",
