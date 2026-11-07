@@ -17,7 +17,6 @@ interface RouteMapProps {
   onRouteInfo?: (info: {
     distanceKm: number;
     durationMin: number;
-    priceEstimate: number;
   }) => void;
 }
 
@@ -56,7 +55,6 @@ export default function RouteMap({
   const [routeInfo, setRouteInfo] = useState<{
     distanceKm: number;
     durationMin: number;
-    priceEstimate: number;
   } | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
 
@@ -115,8 +113,8 @@ export default function RouteMap({
 
         const distanceKm = Math.round(((leg.distance?.value || 0) / 1000) * 10) / 10;
         const durationMin = Math.round((leg.duration?.value || 0) / 60);
-        const priceEstimate = Math.round((3 + distanceKm * 1.5) * 100) / 100;
-        const info = { distanceKm, durationMin, priceEstimate };
+        // RouteMap reports geometry only. Pricing comes exclusively from the server quote.
+        const info = { distanceKm, durationMin };
 
         setRouteInfo(info);
         onRouteInfo?.(info);
