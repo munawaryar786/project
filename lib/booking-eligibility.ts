@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { standardVehicleCapacityIssue } from "@/lib/booking-capacity";
 
 // One source-aware prerequisite policy for automatic dispatch, marketplace
 // claims, offer acceptance and manual assignment. No staff override bypasses it.
@@ -8,7 +9,7 @@ export function bookingAssignmentPrerequisites(booking: any) {
   if (!["STANDARD", "SENIOR", "ACCESSIBLE", "CHILDREN", "AIRPORT", "RENTAL"].includes(booking.serviceType) ||
       !Number.isInteger(booking.passengerCount) || booking.passengerCount < 1 ||
       !Number.isInteger(booking.companionCount ?? 0) || (booking.companionCount ?? 0) < 0 ||
-      booking.passengerCount + Number(booking.companionCount || 0) > 6) return { eligible: false as const, reason: "BOOKING_NOT_DISPATCHABLE" };
+      standardVehicleCapacityIssue(booking) !== null) return { eligible: false as const, reason: "BOOKING_NOT_DISPATCHABLE" };
   if (!["CASH", "CARD", "INVOICE"].includes(booking.paymentMethod)) return { eligible: false as const, reason: "PAYMENT_NOT_CONFIRMED" };
   if (booking.bookingSource === "PHONE_DISPATCH") {
     if (!booking.createdByDispatchOperatorId) return { eligible: false as const, reason: "BOOKING_AUTHORIZATION_REQUIRED" };
