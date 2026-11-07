@@ -220,7 +220,7 @@ export default function PriceEstimate({
         <h4 className="text-[14px] font-bold text-drivo-text">{t('booking.fareBreakdown')}</h4>
         <span className="pill-green text-[11px]">{refreshing ? t('booking.estimateCalculating') : t('booking.live')}</span>
       </div>
-      {refreshing && <p role="status" aria-live="polite" className="mb-2 text-sm font-semibold text-amber-900">{t('booking.estimateCalculating')} — previous fare is outdated and cannot be booked.</p>}
+      {refreshing && <p role="status" aria-live="polite" className="mb-2 text-sm font-semibold text-amber-900">{t('booking.quoteOutdated')}</p>}
 
       <div className="text-[28px] font-extrabold text-drivo-green mb-2">
         {money(estimate.estimatedPrice)}
