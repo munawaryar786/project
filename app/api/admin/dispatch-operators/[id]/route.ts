@@ -29,6 +29,11 @@ async function updateDispatchOperator(request: NextRequest, { params }: { params
   try {
     const current = await prisma.dispatchOperator.findUnique({ where: { id } });
     if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    // Restoring an existing staff identity must not silently re-enable its old
+    // credentials. Require a fresh temporary password and revoke prior sessions.
+    if (current.status === "DISABLED" && data.status === "ACTIVE" && !data.temporaryPassword) {
+      return NextResponse.json({ error: "A new temporary password is required to restore a disabled operator.", code: "DISPATCH_OPERATOR_RESET_REQUIRED" }, { status: 400 });
+    }
     const updateData: any = {};
     const changedFields: string[] = [];
     if (data.fullName !== undefined && data.fullName !== current.fullName) { updateData.fullName = data.fullName; changedFields.push("fullName"); }

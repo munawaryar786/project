@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
-import { formatEuro, formatNumber } from "@/lib/i18n/format";
+import { formatNumber } from "@/lib/i18n/format";
 import {
   DirectionsRenderer,
   GoogleMap,
@@ -13,11 +13,10 @@ import {
 interface RouteMapProps {
   pickupAddress: string;
   dropoffAddress: string;
-  hideEstimate?: boolean;
+  hideEstimate?: boolean; // Kept for compatibility; map never displays fare.
   onRouteInfo?: (info: {
     distanceKm: number;
     durationMin: number;
-    priceEstimate: number;
   }) => void;
 }
 
@@ -44,7 +43,6 @@ const mapOptions: google.maps.MapOptions = {
 export default function RouteMap({
   pickupAddress,
   dropoffAddress,
-  hideEstimate = false,
   onRouteInfo,
 }: RouteMapProps) {
   const { t, locale } = useLanguage();
@@ -57,7 +55,6 @@ export default function RouteMap({
   const [routeInfo, setRouteInfo] = useState<{
     distanceKm: number;
     durationMin: number;
-    priceEstimate: number;
   } | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
 
@@ -116,8 +113,8 @@ export default function RouteMap({
 
         const distanceKm = Math.round(((leg.distance?.value || 0) / 1000) * 10) / 10;
         const durationMin = Math.round((leg.duration?.value || 0) / 60);
-        const priceEstimate = Math.round((3 + distanceKm * 1.5) * 100) / 100;
-        const info = { distanceKm, durationMin, priceEstimate };
+        // RouteMap reports geometry only. Pricing comes exclusively from the server quote.
+        const info = { distanceKm, durationMin };
 
         setRouteInfo(info);
         onRouteInfo?.(info);
@@ -164,12 +161,7 @@ export default function RouteMap({
           <RouteStat label={t('booking.distance')} value={`${formatNumber(routeInfo.distanceKm, locale)} km`} />
           <Divider />
           <RouteStat label={t('booking.duration')} value={`~${formatNumber(routeInfo.durationMin, locale)} ${t('common.minuteShort')}`} />
-          {!hideEstimate && (
-            <>
-              <Divider />
-              <RouteStat label={t('booking.estimate')} value={formatEuro(routeInfo.priceEstimate, locale)} />
-            </>
-          )}
+
         </div>
       )}
 

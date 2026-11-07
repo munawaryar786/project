@@ -32,7 +32,16 @@ async function handler(request: NextRequest) {
     const resetAttemptId = createOpaqueToken(16);
     await prisma.passengerVerificationProof.updateMany({ where: { passengerId: passenger.id, purpose: "PASSENGER_PASSWORD_RESET_EMAIL", consumedAt: null }, data: { consumedAt: new Date() } });
     const proof = await createVerificationProof({ passengerId: passenger.id, normalizedPhone: passenger.normalizedPhone || passenger.phone, purpose: "PASSENGER_PASSWORD_RESET_EMAIL", resetAttemptId });
-    await sendPassengerPasswordResetEmail({ to: email, resetToken: proof.proofToken, resetAttemptId, expiresAt: proof.expiresAt, sourceDomain: getSourceDomain(request), language: locale });
+    const delivery = await sendPassengerPasswordResetEmail({ to: email, resetToken: proof.proofToken, resetAttemptId, expiresAt: proof.expiresAt, sourceDomain: getSourceDomain(request), language: locale });
+    // Keep the same public response regardless of account existence or provider
+    // outcome. Log only a safe failure code for operational diagnosis; never
+    // log the one-time reset token, recipient, or transport credentials.
+    if (!delivery.success) {
+      console.error("[email.password-reset.delivery-failed]", {
+        code: delivery.error || "EMAIL_RESET_DELIVERY_FAILED",
+        provider: delivery.provider,
+      });
+    }
     return NextResponse.json(generic);
   } catch (error) {
     console.error("[email.password-reset.failed]", { code: "EMAIL_REQUEST_FAILED" });

@@ -91,6 +91,14 @@ assert.ok(dispatchDetailSource.includes("catch { copied = false; }"), "clipboard
 assert.ok(dispatchDetailSource.includes('"linkCreatedCopyBlocked"') && dispatchDetailSource.includes('"linkCreatedEmailCopyBlocked"'), "clipboard failures report copy-specific messages, retaining email result");
 assert.ok(dispatchOperatorAdminSource.includes('actions.push("DISPATCH_OPERATOR_UPDATED")') && dispatchOperatorAdminSource.includes("safeMetadata: action === \"DISPATCH_OPERATOR_UPDATED\" ? { changedFields }"), "profile edits create a safe changed-fields Admin audit event");
 assert.ok(!dispatchOperatorAdminSource.includes("safeMetadata: { temporaryPassword"), "temporary passwords are never included in Admin audit metadata");
+assert.ok(dispatchOperatorAdminSource.includes('current.status === "DISABLED" && data.status === "ACTIVE" && !data.temporaryPassword'), "disabled operator restoration requires password replacement");
+assert.ok(dispatchOperatorAdminSource.includes('if (data.status === "DISABLED" || data.temporaryPassword) updateData.authVersion = { increment: 1 }'), "restoration revokes existing sessions");
+const dispatchTeamSource = fs.readFileSync("app/admin/dispatch-team/page.tsx", "utf8");
+assert.ok(dispatchTeamSource.includes('setRestoring(true)') && dispatchTeamSource.includes('required={!editing || restoring}'), "restoration UI prompts for a new temporary password");
+assert.ok(dispatchTeamSource.includes('...(restoring ? { status: "ACTIVE" } : {})'), "restoration UI sends ACTIVE and a new temporary password together");
+const m4Source = fs.readFileSync("lib/i18n/translations/m4.ts", "utf8");
+assert.ok(m4Source.includes('"dispatchAdmin.restoreHint"') && m4Source.includes('"dispatchAdmin.restore"'), "restoration copy has locale parity");
+
 const dispatchPageSource = fs.readFileSync("app/dispatch/bookings/new/page.tsx", "utf8");
 assert.ok(dispatchPageSource.includes('...(isCustomerServiceEnabled("CHILDREN") ? [["CHILDREN"') , "Dispatch only adds Children to the selector when its feature flag is enabled");
 const dispatchKeys = Object.keys(locales.en).filter((key) => key.startsWith("dispatch.") || key.startsWith("dispatchAdmin."));

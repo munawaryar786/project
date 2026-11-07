@@ -51,6 +51,7 @@ export default function AddressAutocomplete({
       return;
     }
 
+    const controller = new AbortController();
     setLoading(true);
     const timer = setTimeout(async () => {
       try {
@@ -58,10 +59,11 @@ export default function AddressAutocomplete({
         if (educationalOnly) params.set("educationalOnly", "true");
         if (suggestionBias) params.set("bias", suggestionBias);
 
-        const response = await fetch(`/api/addresses/suggest?${params.toString()}`);
+        const response = await fetch(`/api/addresses/suggest?${params.toString()}`, { signal: controller.signal });
         const data = await response.json();
         
-        if (data.success) {
+        if (controller.signal.aborted) return;
+        if (response.ok && data.success) {
           const items = Array.isArray(data.suggestionItems)
             ? data.suggestionItems
             : Array.isArray(data.suggestions)
@@ -72,13 +74,13 @@ export default function AddressAutocomplete({
           setShowSuggestions(true);
         }
       } catch (error) {
-        console.error('Address autocomplete error:', error);
+        if (!controller.signal.aborted) console.error('Address autocomplete error:', error);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     }, 300); // Debounce 300ms
 
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [value, suggestionBias, educationalOnly]);
 
   const handleSelect = (suggestion: AddressSuggestion) => {

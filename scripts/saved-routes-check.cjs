@@ -14,6 +14,7 @@ mod.paths = Module._nodeModulePaths(root);
 mod.require = (name) => {
   if(name==='@/lib/prisma') return { prisma: { __fake: true } };
   if(name==='@/lib/feature-flags') return { isCustomerServiceEnabled: (s)=>s.toLowerCase()!=='children' || enabledChildren };
+  if(name==='@/lib/booking-capacity') return { standardVehicleCapacityIssue: ({passengerCount,companionCount=0,smallBags=0,largeBags=0,luggageType}) => (passengerCount + companionCount > 6 ? 'CAPACITY_EXCEEDED' : passengerCount + companionCount > 5 && (smallBags > 0 || largeBags > 0 || ['SMALL','LARGE'].includes(luggageType)) ? 'LUGGAGE_CAPACITY_EXCEEDED' : null) };
   return require(name);
 };
 mod._compile(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,mod.filename);
@@ -39,6 +40,7 @@ function fakeDb(){let routes=[];const db={
  ok('bag totals derived from source',()=>{const b=booking();b.largeBags=2;const r=m.routeFromBooking(b);assert.equal(r.luggageType,'LARGE');assert.equal(r.largeBags,2);});
  ok('invalid passenger count rejected',()=>{const b=booking();b.passengerCount=7;assert.equal(m.routeFromBooking(b),null);});
  ok('six passengers with large baggage not saved',()=>{const b=booking();b.passengerCount=6;b.largeBags=1;assert.equal(m.routeFromBooking(b),null);});
+ ok('six passengers with small baggage not saved',()=>{const b=booking();b.passengerCount=6;b.smallBags=1;assert.equal(m.routeFromBooking(b),null);});
  ok('unsupported rental route rejected',()=>{const b=booking();b.serviceType='RENTAL';assert.equal(m.routeFromBooking(b),null);});
  ok('airport safe options preserved',()=>{const b=booking();b.serviceType='AIRPORT';b.airline='Ryanair';b.waitAndGreet=true;const r=m.routeFromBooking(b);assert.equal(r.airline,'Ryanair');assert.equal(r.waitAndGreet,true);});
  ok('nonairport airline stripped',()=>{const b=booking();b.airline='PRIVATE FLIGHT';b.waitAndGreet=true;const r=m.routeFromBooking(b);assert.equal(r.airline,null);assert.equal(r.waitAndGreet,false);});
@@ -53,6 +55,7 @@ function fakeDb(){let routes=[];const db={
  ok('editing service clears stale airport settings',()=>{const original={...routes[0],serviceType:'AIRPORT',airline:'Other',waitAndGreet:true};const changed=m.editedRouteFields(original,{serviceType:'STANDARD'});assert.equal(changed.airline,null);assert.equal(changed.waitAndGreet,false);});
  ok('editing rejects passenger count > 6',()=>assert.equal(m.editedRouteFields(routes[0],{passengerCount:7}),null));
  ok('editing rejects six passengers with large luggage',()=>assert.equal(m.editedRouteFields(routes[0],{passengerCount:6,largeBags:1}),null));
+ ok('editing rejects six passengers with small luggage',()=>assert.equal(m.editedRouteFields(routes[0],{passengerCount:6,smallBags:1,largeBags:0}),null));
  ok('editing rejects malformed address',()=>assert.equal(m.editedRouteFields(routes[0],{pickupAddress:'x'}),null));
  ok('editing rejects invalid service',()=>assert.equal(m.editedRouteFields(routes[0],{serviceType:'FLIGHT_PILOT'}),null));
  ok('updating route fields excludes identity/timestamps',()=>{const fields=m.editedRouteFields(routes[0],{label:'Edited'});for(const denied of ['id','passengerId','createdAt','updatedAt'])assert.equal(Object.hasOwn(fields,denied),false);});
@@ -63,6 +66,7 @@ function fakeDb(){let routes=[];const db={
  ok('auth on all saved routes entrypoints',()=>{for(const p of ['app/api/passenger/saved-routes/route.ts','app/api/passenger/saved-routes/[id]/route.ts','app/api/passenger/saved-routes/preferences/route.ts'])assert.match(shared(p),/authorizePassenger\(request\)/);});
  ok('ownership scoped on detail read/write/delete',()=>{const r=shared('app/api/passenger/saved-routes/[id]/route.ts');assert.match(r,/passengerId: auth.actor.id/g);assert.match(r,/deleteMany/);assert.match(r,/updateMany/);});
  ok('POST uses authoritative owned booking, not client fields',()=>{const r=shared('app/api/passenger/saved-routes/route.ts');assert.match(r,/bookingSource: "WEB"/);assert.match(r,/passengerAuthStatus: "AUTHENTICATED"/);assert.match(r,/saveRouteFromBooking/);});
+ ok('one-off save returns persisted Save Always preference instead of request echo',()=>{const r=shared('app/api/passenger/saved-routes/route.ts');assert.match(r,/autoSaveRoutes: result\.autoSaveRoutes/);assert.ok(!r.includes('autoSaveRoutes: parsed.data.saveAlways }, { headers: privateHeaders }'));assert.match(r,/tx\.passenger\.findUnique\(\{ where: \{ id: auth\.actor\.id \}, select: \{ autoSaveRoutes: true \} \}\)/);});
  ok('auto-save only for verified passenger-owned PUBLIC bookings',()=>{const r=shared('lib/booking-creation-service.ts');assert.match(r,/actor.kind === "PUBLIC" && samePassenger/);assert.match(r,/autoSaveVerifiedBooking/);});
  ok('child autosave blocked',()=>assert.match(shared('lib/saved-routes.ts'),/booking.serviceType === "CHILDREN"\) return/));
  ok('client rebooking never submits a booking automatically',()=>{const r=shared('components/booking/BookingForm.tsx');assert.match(r,/\/api\/passenger\/saved-routes\//);assert.match(r,/setScheduledDate\(""\); setScheduledTime\(""\)/);});

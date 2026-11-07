@@ -221,6 +221,9 @@ async function main() {
   check(() => assert.ok(transport.includes("EMAIL_TLS_REQUIRED") && !transport.includes("rejectUnauthorized: false") && transport.includes("AbortSignal.timeout(60_000)") && transport.includes("EMAIL_CONNECTION_TIMEOUT")));
   check(() => assert.ok(readFileSync("lib/realtime/queues.ts", "utf8").includes('type: "exponential"')));
   check(() => assert.ok(!readFileSync("app/api/passenger/password-reset/email/route.ts", "utf8").includes("error.message")));
+  const resetEmailRoute = readFileSync("app/api/passenger/password-reset/email/route.ts", "utf8");
+  check(() => assert.ok(resetEmailRoute.includes("if (!delivery.success)") && resetEmailRoute.includes('delivery.error || "EMAIL_RESET_DELIVERY_FAILED"'), "reset delivery failure is safely logged"));
+  check(() => assert.ok(resetEmailRoute.includes("return NextResponse.json(generic);") && !resetEmailRoute.includes("resetToken: proof.proofToken });"), "reset response stays non-enumerating and reset token is not returned"));
   console.info = originalLog; Date.now = realNow;
   console.log(`Transactional email checks passed (${assertions} grouped assertions): all templates/locales, privacy, URLs, configuration, concurrency, bounded retries, assignment/reassignment, payment intents and mocked delivery.`);
 }

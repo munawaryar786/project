@@ -7,7 +7,7 @@ const DistanceSchema = z.object({
   pickupAddress: z.string().min(3),
   dropoffAddress: z.string().min(3),
   serviceType: z.string().optional().default("standard"),
-  assistanceLevel: z.enum(["LIGHT", "DOOR_TO_DOOR", "BOARDING_HELP"]).optional().nullable(),
+  assistanceLevel: z.union([z.enum(["LIGHT", "DOOR_TO_DOOR", "BOARDING_HELP"]), z.literal("").transform(() => null), z.null()]).optional(),
   passengerCount: z.coerce.number().min(1).optional().default(1),
   waitingMinutes: z.coerce.number().min(0).optional().default(0),
   scheduledDate: z.string().optional().nullable(),

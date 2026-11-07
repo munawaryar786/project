@@ -49,10 +49,11 @@ async function handler(request: NextRequest) {
     const bookingPhone = booking.normalizedPhone || normalizePassengerPhone(`${booking.customerPhoneCode}${booking.customerPhone}`, booking.customerPhoneCode);
     if (bookingPhone !== normalizedPhone) return otpError("PHONE_MISMATCH", "Phone number does not match booking.");
 
-    const passenger = await prisma.passenger.findFirst({ where: { OR: [{ phone: normalizedPhone }, { normalizedPhone }] }, select: { id: true, passwordHash: true } });
+    const passenger = await prisma.passenger.findFirst({ where: { OR: [{ phone: normalizedPhone }, { normalizedPhone }] }, select: { id: true, passwordHash: true, status: true } });
     if (purpose === "PASSENGER_REGISTRATION" && passenger?.passwordHash) return otpError("ACCOUNT_EXISTS_LOGIN_REQUIRED", "This phone already has a Drivo account. Please log in or reset your password.", 409);
     if (purpose === "PASSENGER_REGISTRATION" && passenger) return otpError("LEGACY_SETUP_REQUIRED", "Please verify your phone and create a password to continue.", 409);
     if (purpose === "PASSENGER_LEGACY_PASSWORD_SETUP" && !passenger) return otpError("REGISTRATION_REQUIRED", "Please verify your phone and create an account.", 404);
+    if (purpose === "PASSENGER_LEGACY_PASSWORD_SETUP" && passenger?.status !== "ACTIVE") return otpError("ACCOUNT_UNAVAILABLE", "Account setup is unavailable.", 403);
     if (purpose === "PASSENGER_LEGACY_PASSWORD_SETUP" && passenger?.passwordHash) return otpError("ACCOUNT_EXISTS_LOGIN_REQUIRED", "This phone already has a Drivo account. Please log in or reset your password.", 409);
 
     const latest = await prisma.oTP.findFirst({ where: { bookingId, phone: normalizedPhone, purpose, used: false }, orderBy: { createdAt: "desc" } });

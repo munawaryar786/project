@@ -18,6 +18,7 @@ import { recordDispatchAudit } from "@/lib/dispatch-audit";
 import { createPublicBookingAccess } from "@/lib/booking-access";
 import { writeBookingActivationIntent } from "@/lib/booking-activation";
 import { autoSaveVerifiedBooking } from "@/lib/saved-routes";
+import { standardVehicleCapacityIssue } from "@/lib/booking-capacity";
 
 export type BookingCreateActor =
   | { kind: "PUBLIC" }
@@ -47,10 +48,17 @@ export async function createBookingWithDrivoRules(request: NextRequest, data: Bo
   }
 
   const normalizedPhone = normalizePassengerPhone(`${data.customerPhoneCode}${data.customerPhone}`);
-  const capacityPassengerCount = data.passengerCount + data.companionCount;
+  // Enforce the exact vehicle capacity rule on both public and phone-dispatch
+  // bookings, before quoting or creating any database records.
+  const capacityIssue = standardVehicleCapacityIssue(data);
+  if (capacityIssue === "CAPACITY_EXCEEDED") {
+    throw new BookingCreateError("Passenger capacity exceeded limit of 6.", 400, capacityIssue);
+  }
+  if (capacityIssue === "LUGGAGE_CAPACITY_EXCEEDED") {
+    throw new BookingCreateError("With luggage, a standard vehicle can carry a maximum of five passengers including companions. Choose a suitable larger vehicle/transfer option.", 400, capacityIssue);
+  }
   const wavRequired = requiresWav({ ...data, passengerRemainsInWheelchair: data.passengerRemainsInWheelchair });
   if (wavRequired) throw new BookingCreateError("WAV vehicles are currently fully booked. Passengers who can transfer to a regular seat may still be transported.", 409, "WAV_FULLY_BOOKED");
-  if (capacityPassengerCount > 6) throw new BookingCreateError("Passenger capacity exceeded limit of 6.", 400);
 
   if (data.serviceType === "CHILDREN") {
     if (!data.educationalDestinationValidated) throw new BookingCreateError("Please select a verified school, college, university, or approved educational institution.", 400);
