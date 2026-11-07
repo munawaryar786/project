@@ -62,7 +62,7 @@ const twilio = load("lib/twilio.ts", {
   "./utils": { maskPhone: () => "***0001" },
   "./i18n/locale-resolution": { isUiLocale: () => false },
 });
-let records = [], sentCode = "", twilioSends = 0, limitAllowed = true, available = true;
+let records = [], sentCode = "", twilioSends = 0, limitAllowed = true, available = true, legacyPassenger = null;
 const booking = { id: bookingId, normalizedPhone: phone, passengerId: null,
   customerPhoneCode: "+421", customerPhone: "900000001", customerEmail: "test@example.invalid" };
 const prisma = {
@@ -70,7 +70,7 @@ const prisma = {
     findUnique: async () => booking,
     update: async ({ data }) => { Object.assign(booking, data); return booking; },
   },
-  passenger: { findFirst: async () => null },
+  passenger: { findFirst: async () => legacyPassenger },
   oTP: {
     findFirst: async ({ where }) => records.slice().reverse().find(r =>
       r.bookingId === where.bookingId && r.phone === where.phone &&
@@ -152,6 +152,12 @@ async function main() {
   assert.equal((await sendRoute.POST(request({ bookingId, phone }))).status, 503);
   assert.equal(records.length, 1, "failed Twilio requests must not create a usable OTP");
   available = true;
+  legacyPassenger = { id: "legacy-disabled", passwordHash: null, status: "DISABLED" };
+  const previousSendCount = twilioSends;
+  const disabledLegacy = await sendRoute.POST(request({ bookingId, phone, purpose: "PASSENGER_LEGACY_PASSWORD_SETUP" }));
+  assert.equal(disabledLegacy.status, 403, "disabled legacy accounts must not receive setup OTPs");
+  assert.equal(twilioSends, previousSendCount, "disabled accounts never contact OTP provider");
+  legacyPassenger = null;
   limitAllowed = false;
   assert.equal((await sendRoute.POST(request({ bookingId, phone }))).status, 429);
   assert.equal(twilioSends, 2, "Redis rate limit must stop provider calls");
