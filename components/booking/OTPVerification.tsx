@@ -123,11 +123,11 @@ export default function OTPVerification({
   onResendStart,
   onResendSuccess,
 }: Props) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const [otp, setOtp] = useState(emptyOtp);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(initialError);
-  const [successMessage, setSuccessMessage] = useState("");
+  const [resendSucceeded, setResendSucceeded] = useState(false);
   const [resending, setResending] = useState(false);
   const [currentDevOtp, setCurrentDevOtp] = useState<string | undefined>(devOtp);
   const refs = useRef<(HTMLInputElement | null)[]>([]);
@@ -146,7 +146,7 @@ export default function OTPVerification({
     const next = [...otp];
     next[i] = v;
     setOtp(next);
-    setSuccessMessage("");
+    setResendSucceeded(false);
     if (v && i < 5) refs.current[i + 1]?.focus();
   };
 
@@ -164,7 +164,7 @@ export default function OTPVerification({
     }
 
     setError("");
-    setSuccessMessage("");
+    setResendSucceeded(false);
     setLoading(true);
 
     try {
@@ -179,7 +179,7 @@ export default function OTPVerification({
   const handleResend = async () => {
     setResending(true);
     setError("");
-    setSuccessMessage("");
+    setResendSucceeded(false);
     setOtp(emptyOtp);
     setCurrentDevOtp(undefined);
     onResendStart?.();
@@ -188,7 +188,7 @@ export default function OTPVerification({
       const res = await fetch("/api/otp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookingId, phone, purpose }),
+        body: JSON.stringify({ bookingId, phone, purpose, locale }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -198,7 +198,7 @@ export default function OTPVerification({
 
       if (typeof data.devOtp === "string") setCurrentDevOtp(data.devOtp);
       onResendSuccess?.(data);
-      setSuccessMessage("A new verification code has been sent.");
+      setResendSucceeded(true);
       refs.current[0]?.focus();
     } catch (err: unknown) {
       setError(localizeThrownOtpError(err, "bookingAuth.errors.unknown", t));
@@ -229,14 +229,14 @@ export default function OTPVerification({
         </p>
 
         {error && (
-          <div className="mb-4 p-3 bg-drivo-red-light rounded-xl">
+          <div role="alert" className="mb-4 p-3 bg-drivo-red-light rounded-xl">
             <p className="text-[13px] text-red-700">{error}</p>
           </div>
         )}
 
-        {successMessage && (
+        {resendSucceeded && (
           <div className="mb-4 p-3 rounded-xl border border-drivo-green/20 bg-drivo-green-light/40">
-            <p className="text-[13px] font-semibold text-drivo-green-dark">{successMessage}</p>
+            <p className="text-[13px] font-semibold text-drivo-green-dark" role="status">{t('otp.resendSuccess')}</p>
           </div>
         )}
 
@@ -248,6 +248,7 @@ export default function OTPVerification({
                 refs.current[i] = el;
               }}
               type="text"
+              aria-label={t('otp.digitLabel').replace('{index}', String(i + 1))}
               inputMode="numeric"
               maxLength={1}
               value={digit}

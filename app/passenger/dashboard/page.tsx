@@ -7,6 +7,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Header from "@/components/layout/Header";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { presentStatus } from "@/lib/i18n/status-catalog";
+import { formatMarketWallDateTime } from "@/lib/i18n/format";
+import { presentMessage } from "@/lib/i18n/message-catalog";
 
 type Booking = {
   id: string;
@@ -20,28 +23,34 @@ type Booking = {
 };
 
 export default function PassengerDashboardPage() {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const router = useRouter();
   const [passenger, setPassenger] = useState<any>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadErrorCode, setLoadErrorCode] = useState("");
 
   useEffect(() => {
     async function load() {
-      const meRes = await csrfFetch("passenger", "/api/passenger/me", { cache: "no-store" });
-      if (!meRes.ok) {
-        router.push("/passenger/login");
-        return;
-      }
-      const me = await meRes.json();
-      setPassenger(me.passenger);
+      let redirecting = false;
+      try {
+        const meRes = await csrfFetch("passenger", "/api/passenger/me", { cache: "no-store" });
+        if (!meRes.ok) { redirecting = true; router.push("/passenger/login"); return; }
+        const me = await meRes.json();
+        setPassenger(me.passenger);
 
-      const bookingRes = await csrfFetch("passenger", "/api/passenger/bookings", { cache: "no-store" });
-      if (bookingRes.ok) {
-        const data = await bookingRes.json();
-        setBookings(Array.isArray(data.bookings) ? data.bookings : []);
+        const bookingRes = await csrfFetch("passenger", "/api/passenger/bookings", { cache: "no-store" });
+        if (bookingRes.ok) {
+          const data = await bookingRes.json();
+          setBookings(Array.isArray(data.bookings) ? data.bookings : []);
+        } else {
+          setLoadErrorCode("SERVICE_UNAVAILABLE");
+        }
+      } catch {
+        setLoadErrorCode("SERVICE_UNAVAILABLE");
+      } finally {
+        if (!redirecting) setLoading(false);
       }
-      setLoading(false);
     }
     load();
   }, [router]);
@@ -64,16 +73,17 @@ export default function PassengerDashboardPage() {
             </Link>
           </div>
 
+          {loadErrorCode && <div role="alert" className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{presentMessage(loadErrorCode, locale)}</div>}
           {loading ? (
             <div className="card">{t("passenger.loading")}</div>
           ) : (
             <div className="grid gap-6 lg:grid-cols-[320px,1fr]">
               <section className="card">
                 <h2 className="mb-4 text-lg font-black text-drivo-text">{t("passenger.profileSummary")}</h2>
-                <Info label={t("passenger.fullName")} value={passenger?.fullName || "N/A"} />
-                <Info label={t("passenger.phone")} value={passenger?.phone || "N/A"} />
+                <Info label={t("passenger.fullName")} value={passenger?.fullName || t("passenger.dataUnavailable")} />
+                <Info label={t("passenger.phone")} value={passenger?.phone || t("passenger.dataUnavailable")} />
                 <Info label={t("passenger.phoneVerified")} value={passenger?.phoneVerified ? t("common.yes") : t("common.no")} />
-                <Info label={t("passenger.email")} value={passenger?.email || "N/A"} />
+                <Info label={t("passenger.email")} value={passenger?.email || t("passenger.dataUnavailable")} />
                 {!passenger?.profileCompleted && (
                   <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
                     {t("passenger.profileReminder")}
@@ -105,6 +115,7 @@ function Info({ label, value }: { label: string; value: string }) {
 }
 
 function BookingList({ bookings, empty }: { bookings: Booking[]; empty: string }) {
+  const { t, locale } = useLanguage();
   if (bookings.length === 0) {
     return <p className="text-sm text-drivo-text-secondary">{empty}</p>;
   }
@@ -115,11 +126,11 @@ function BookingList({ bookings, empty }: { bookings: Booking[]; empty: string }
         <div key={booking.id} className="rounded-2xl border border-drivo-border-light bg-white p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-black text-drivo-text">{booking.bookingRef}</span>
-            <span className="rounded-full bg-drivo-bg-soft px-3 py-1 text-xs font-bold text-drivo-text-secondary">{booking.status}</span>
+            <span className="rounded-full bg-drivo-bg-soft px-3 py-1 text-xs font-bold text-drivo-text-secondary">{presentStatus("booking", booking.status, locale)}</span>
           </div>
           <div className="mt-2 text-sm text-drivo-text-secondary">
-            <div>{booking.serviceType}</div>
-            <div>{booking.scheduledDate} {booking.scheduledTime}</div>
+            <div>{t(`service.${String(booking.serviceType || '').toUpperCase()}`)}</div>
+            <div>{formatMarketWallDateTime(booking.scheduledDate, booking.scheduledTime, locale) || t('common.notAvailable')}</div>
             <div>{booking.pickupAddress}</div>
             <div>{booking.dropoffAddress}</div>
           </div>

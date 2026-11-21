@@ -3,14 +3,19 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { startAutomaticDispatch, startScheduledRecoveryDispatch } from "@/lib/automatic-dispatch";
 import { bookingDispatchEligibility, driverCompatibility } from "@/lib/dispatch-matching";
-import { assertScheduledRouteFeasible, releaseScheduledAssignment, scheduledDriverCompatibility } from "@/lib/scheduled-marketplace";
+import { assertScheduledRouteFeasible, bookingPickupAt, releaseScheduledAssignment, scheduledDriverCompatibility } from "@/lib/scheduled-marketplace";
 import { evaluateDriverPresence, isLocationFresh } from "@/lib/driver-state";
 import { SCHEDULED_MARKET_CONFIG } from "@/lib/scheduled-marketplace";
 import { writeOutboxEvent } from "@/lib/outbox";
+import { authoritativeAssignmentEligibility } from "@/lib/booking-eligibility";
+import { hasBookingOperationsPermission } from "@/lib/security/authorization";
 
 const ACTIVE_BOOKING_STATUSES = ["PENDING", "ASSIGNED", "CONFIRMED", "DRIVER_ENROUTE", "ARRIVED", "IN_PROGRESS", "SEARCHING_DRIVER"];
 const ASSIGNABLE_BOOKING_STATUSES = ["PENDING", "CONFIRMED", "SEARCHING_DRIVER"];
 const TERMINAL_BOOKING_STATUSES = ["COMPLETED", "CANCELLED", "NO_SHOW"];
+class AdminAssignmentConflict extends Error {
+  constructor(readonly code: string) { super(code); }
+}
 
 export const ADMIN_OPERATION_CODES = {
   BOOKING_NOT_FOUND: "BOOKING_NOT_FOUND",
@@ -67,10 +72,12 @@ export function deriveOperationalAlerts(input: {
   scheduledAttention: number;
   failedOutbox: number;
   staleOffers: number;
+  paymentReview?: number;
 }) {
   const alerts: Array<{ type: string; severity: "INFO" | "WARNING" | "CRITICAL"; count: number; targetType: string }> = [];
   if (input.exhausted) alerts.push({ type: "DISPATCH_EXHAUSTED", severity: "CRITICAL", count: input.exhausted, targetType: "Booking" });
   if (input.failedOutbox) alerts.push({ type: "FAILED_OUTBOX_EVENT", severity: "CRITICAL", count: input.failedOutbox, targetType: "OutboxEvent" });
+  if (input.paymentReview) alerts.push({ type: "PAYMENT_RECONCILIATION_REQUIRED", severity: "CRITICAL", count: input.paymentReview, targetType: "PaymentOperation" });
   if (input.unassignedImmediate) alerts.push({ type: "UNASSIGNED_IMMEDIATE_RIDE", severity: "WARNING", count: input.unassignedImmediate, targetType: "Booking" });
   if (input.staleAssigned) alerts.push({ type: "STALE_ASSIGNED_DRIVER", severity: "WARNING", count: input.staleAssigned, targetType: "Booking" });
   if (input.scheduledAttention) alerts.push({ type: "SCHEDULED_READINESS_FAILED", severity: "WARNING", count: input.scheduledAttention, targetType: "Booking" });
@@ -80,7 +87,7 @@ export function deriveOperationalAlerts(input: {
 }
 
 export async function getOperationsOverview(now = new Date()) {
-  const [activeRides, unassignedImmediate, searching, exhausted, upcomingScheduled, scheduledAttention, onlineDrivers, activeDriverRows, failedOutbox, staleOffers] = await Promise.all([
+  const [activeRides, unassignedImmediate, searching, exhausted, upcomingScheduled, scheduledAttention, onlineDrivers, activeDriverRows, failedOutbox, staleOffers, paymentReview, paymentReviewItems] = await Promise.all([
     prisma.booking.count({ where: { status: { in: ["ASSIGNED", "CONFIRMED", "DRIVER_ENROUTE", "ARRIVED", "IN_PROGRESS"] } } }),
     prisma.booking.count({ where: { status: { in: ["PENDING", "CONFIRMED"] }, scheduledRide: false, driverId: null } }),
     prisma.booking.count({ where: { dispatchStatus: "SEARCHING_DRIVER", status: { notIn: TERMINAL_BOOKING_STATUSES } } }),
@@ -91,6 +98,11 @@ export async function getOperationsOverview(now = new Date()) {
     prisma.driver.findMany({ where: { status: "ACTIVE" }, select: { id: true, isOnline: true, isOnTrip: true, lastLocationReceivedAt: true }, take: 500 }),
     prisma.outboxEvent.count({ where: { state: "FAILED" } }),
     prisma.rideRequest.count({ where: { status: "PENDING", expiresAt: { lte: now } } }),
+    prisma.paymentOperation.count({ where: { status: "RECONCILIATION_REQUIRED" } }),
+    prisma.paymentOperation.findMany({
+      where: { status: "RECONCILIATION_REQUIRED" }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: 25,
+      select: { id: true, bookingId: true, bookingRef: true, channel: true, reconciliationCode: true, createdAt: true },
+    }),
   ]);
   const presence = activeDriverRows.reduce((acc: Record<string, number>, row: any) => {
     const state = operationalPresence(row, now);
@@ -98,12 +110,13 @@ export async function getOperationsOverview(now = new Date()) {
     return acc;
   }, {});
   const staleAssigned = await prisma.booking.count({ where: { status: { in: ["ASSIGNED", "DRIVER_ENROUTE", "ARRIVED", "IN_PROGRESS"] }, driverId: { not: null } } });
-  const alerts = deriveOperationalAlerts({ unassignedImmediate, searching, exhausted, staleAssigned: staleAssigned && presence.LOCATION_NOT_READY ? Math.min(staleAssigned, presence.LOCATION_NOT_READY) : 0, scheduledAttention, failedOutbox, staleOffers });
+  const alerts = deriveOperationalAlerts({ unassignedImmediate, searching, exhausted, staleAssigned: staleAssigned && presence.LOCATION_NOT_READY ? Math.min(staleAssigned, presence.LOCATION_NOT_READY) : 0, scheduledAttention, failedOutbox, staleOffers, paymentReview });
   return {
     timestamp: now.toISOString(),
-    counts: { activeRides, unassignedImmediate, searching, exhausted, upcomingScheduled, scheduledAttention, onlineDrivers, availableDrivers: presence.AVAILABLE || 0, busyDrivers: presence.BUSY || 0, staleLocationDrivers: presence.LOCATION_NOT_READY || 0, failedOutbox, staleOffers },
+    counts: { activeRides, unassignedImmediate, searching, exhausted, upcomingScheduled, scheduledAttention, onlineDrivers, availableDrivers: presence.AVAILABLE || 0, busyDrivers: presence.BUSY || 0, staleLocationDrivers: presence.LOCATION_NOT_READY || 0, failedOutbox, staleOffers, paymentReview },
     presence,
     alerts,
+    paymentReviewItems,
   };
 }
 
@@ -228,9 +241,11 @@ function operationError(code: string, details?: Record<string, unknown>) {
 }
 
 export async function retryAdminDispatch(input: { bookingId: string; reason: string; requestId: string }, adminId: string) {
+  const admin = await prisma.adminUser.findUnique({ where: { id: adminId }, select: { role: true } });
+  if (!admin || !hasBookingOperationsPermission(admin.role)) return operationError("INSUFFICIENT_PERMISSIONS");
   const replay = await existingAudit(input.requestId);
   if (replay) return { ok: true as const, replayed: true, outcome: replay.outcome, auditId: replay.id };
-  const booking = await prisma.booking.findUnique({ where: { id: input.bookingId }, select: { id: true, status: true, driverId: true, scheduledRide: true, dispatchStatus: true, paymentMethod: true, pickupLat: true, pickupLng: true } });
+  const booking = await prisma.booking.findUnique({ where: { id: input.bookingId } });
   if (!booking) return operationError(ADMIN_OPERATION_CODES.BOOKING_NOT_FOUND);
   const eligible = bookingDispatchEligibility(booking, { allowScheduled: Boolean(booking.scheduledRide) });
   if (!eligible.eligible) return operationError(ADMIN_OPERATION_CODES.DISPATCH_NOT_ALLOWED, { reasonCode: eligible.reason });
@@ -245,6 +260,8 @@ function validateDriverAgainstBooking(booking: any, driver: any, now = new Date(
   const compatibility = driverCompatibility({ booking, driver, hasConflictingTrip: Boolean(driver.isOnTrip), attempted: false, now, locationMaxAgeSeconds: SCHEDULED_MARKET_CONFIG.locationMaxAgeSeconds, requireOnline: false, requireFreshLocation: false, rejectBusy: true });
   if (!compatibility.eligible) return compatibility.reason;
   if (booking.scheduledRide) {
+    const pickup = bookingPickupAt(booking);
+    if (!pickup || pickup <= now) return ADMIN_OPERATION_CODES.BOOKING_NOT_ASSIGNABLE;
     const scheduled = scheduledDriverCompatibility(booking, driver, now);
     if (!scheduled.eligible) return scheduled.code;
   }
@@ -252,15 +269,23 @@ function validateDriverAgainstBooking(booking: any, driver: any, now = new Date(
 }
 
 export async function assignAdminDriver(input: { bookingId: string; driverId: string; reason: string; requestId: string }, adminId: string) {
+  const admin = await prisma.adminUser.findUnique({ where: { id: adminId }, select: { role: true } });
+  if (!admin || !hasBookingOperationsPermission(admin.role)) return operationError("INSUFFICIENT_PERMISSIONS");
   const replay = await existingAudit(input.requestId);
-  if (replay) return { ok: true as const, replayed: true, outcome: replay.outcome, auditId: replay.id };
+  if (replay) {
+    if (replay.adminId !== adminId || replay.action !== "MANUAL_ASSIGNMENT" || replay.targetId !== input.bookingId || (replay.safeMetadata as any)?.driverId !== input.driverId) return operationError(ADMIN_OPERATION_CODES.INVALID_REQUEST);
+    return { ok: replay.outcome === "SUCCESS", replayed: true, outcome: replay.outcome, auditId: replay.id, code: ADMIN_OPERATION_CODES.STATE_CONFLICT };
+  }
   const [booking, driver] = await Promise.all([
     prisma.booking.findUnique({ where: { id: input.bookingId }, include: { driver: true } }),
     prisma.driver.findUnique({ where: { id: input.driverId }, include: { vehicle: true } }),
   ]);
   if (!booking) return operationError(ADMIN_OPERATION_CODES.BOOKING_NOT_FOUND);
+  if (booking.driverId === input.driverId && booking.status === "ASSIGNED") return { ok: true as const, replayed: true, outcome: "ALREADY_ASSIGNED" };
   if (booking.driverId) return operationError(ADMIN_OPERATION_CODES.BOOKING_ALREADY_ASSIGNED);
   if (!ASSIGNABLE_BOOKING_STATUSES.includes(booking.status)) return operationError(ADMIN_OPERATION_CODES.BOOKING_NOT_ASSIGNABLE);
+  const prerequisite = await authoritativeAssignmentEligibility(booking, prisma);
+  if (!prerequisite.eligible) return operationError(prerequisite.reason);
   const driverError = validateDriverAgainstBooking(booking, driver);
   if (driverError) return operationError(driverError);
   if (booking.scheduledRide) {
@@ -272,32 +297,45 @@ export async function assignAdminDriver(input: { bookingId: string; driverId: st
       if (!current) return operationError(ADMIN_OPERATION_CODES.BOOKING_NOT_FOUND);
       if (current.driverId) return operationError(ADMIN_OPERATION_CODES.BOOKING_ALREADY_ASSIGNED);
       if (!ASSIGNABLE_BOOKING_STATUSES.includes(current.status)) return operationError(ADMIN_OPERATION_CODES.BOOKING_NOT_ASSIGNABLE);
+      const eligible = await authoritativeAssignmentEligibility(current, tx);
+      if (!eligible.eligible) return operationError(eligible.reason);
       const currentDriver = await tx.driver.findUnique({ where: { id: input.driverId }, include: { vehicle: true } });
       const currentError = validateDriverAgainstBooking(current, currentDriver);
       if (currentError) return operationError(currentError);
-      const claimedDriver = await tx.driver.updateMany({ where: { id: input.driverId, status: "ACTIVE", isOnTrip: false }, data: { isOnTrip: true } });
-      if (claimedDriver.count !== 1) return operationError(ADMIN_OPERATION_CODES.STATE_CONFLICT);
+      if (!current.scheduledRide) {
+        const activeTrip = await tx.booking.findFirst({ where: { driverId: input.driverId, id: { not: input.bookingId }, status: { in: ACTIVE_BOOKING_STATUSES } }, select: { id: true } });
+        if (activeTrip) return operationError(ADMIN_OPERATION_CODES.DRIVER_INELIGIBLE);
+      }
+      const claimedDriver = await tx.driver.updateMany({ where: { id: input.driverId, status: "ACTIVE", isOnTrip: false, ...(currentDriver.updatedAt ? { updatedAt: currentDriver.updatedAt } : {}) }, data: { isOnTrip: !current.scheduledRide, updatedAt: new Date(Math.max(Date.now(), Number(currentDriver.updatedAt || 0) + 1)) } });
+      if (claimedDriver.count !== 1) throw new AdminAssignmentConflict(ADMIN_OPERATION_CODES.STATE_CONFLICT);
+      if (current.scheduledRide) {
+        try { await assertScheduledRouteFeasible({ db: tx, driver: currentDriver, booking: current }); }
+        catch { throw new AdminAssignmentConflict(ADMIN_OPERATION_CODES.DRIVER_SCHEDULE_CONFLICT); }
+      }
       const acceptedAt = new Date();
-      const changed = await tx.booking.updateMany({ where: { id: input.bookingId, driverId: null, status: { in: ASSIGNABLE_BOOKING_STATUSES } }, data: { driverId: input.driverId, dispatchStatus: "ACCEPTED", status: "ASSIGNED", acceptedAt } });
-      if (changed.count !== 1) return operationError(ADMIN_OPERATION_CODES.STATE_CONFLICT);
+      const changed = await tx.booking.updateMany({ where: { id: input.bookingId, OR: [{ driverId: null }, { driverId: { isSet: false } }], status: { in: ASSIGNABLE_BOOKING_STATUSES } }, data: { driverId: input.driverId, dispatchStatus: "ACCEPTED", status: "ASSIGNED", acceptedAt } });
+      if (changed.count !== 1) throw new AdminAssignmentConflict(ADMIN_OPERATION_CODES.STATE_CONFLICT);
       const pending = await tx.rideRequest.findMany({ where: { bookingId: input.bookingId, status: "PENDING" }, select: { id: true, driverId: true } });
       for (const offer of pending) {
         await tx.rideRequest.updateMany({ where: { id: offer.id, status: "PENDING" }, data: { status: "CANCELLED", respondedAt: new Date() } });
         await writeOutboxEvent(tx, { eventType: "ADMIN_OFFER_CANCELLED", aggregateType: "Booking", aggregateId: input.bookingId, idempotencyKey: "admin-offer-cancelled:" + input.requestId + ":" + offer.id, payload: { bookingId: input.bookingId, offerId: offer.id, driverId: offer.driverId } });
       }
       await writeOutboxEvent(tx, { eventType: "ADMIN_MANUAL_ASSIGNMENT", aggregateType: "Booking", aggregateId: input.bookingId, idempotencyKey: "admin-assignment:" + input.requestId, payload: { bookingId: input.bookingId, driverId: input.driverId, adminId } });
-      await writeBookingAssignedEmail(tx, input.bookingId, input.driverId, acceptedAt);
-      const audit = await recordAudit(tx, { adminId, action: "MANUAL_ASSIGNMENT", targetType: "Booking", targetId: input.bookingId, reason: input.reason, requestId: input.requestId, outcome: "SUCCESS", safeMetadata: { driverId: input.driverId } });
+      await writeBookingAssignedEmail(tx, input.bookingId, input.driverId, acceptedAt, current.languagePref);
+      const audit = await tx.adminAuditEvent.create({ data: { adminId, action: "MANUAL_ASSIGNMENT", targetType: "Booking", targetId: input.bookingId, reason: input.reason, requestId: input.requestId, outcome: "SUCCESS", safeMetadata: { driverId: input.driverId } } });
       return { ok: true as const, replayed: false, auditId: audit.id, status: "ASSIGNED" };
     });
     return result;
   } catch (error: any) {
+    if (error instanceof AdminAssignmentConflict) return operationError(error.code);
     if (error?.code === "P2034") return operationError(ADMIN_OPERATION_CODES.STATE_CONFLICT);
     return operationError(ADMIN_OPERATION_CODES.STATE_CONFLICT);
   }
 }
 
 export async function releaseAdminScheduledAssignment(input: { bookingId: string; reason: string; requestId: string }, adminId: string) {
+  const admin = await prisma.adminUser.findUnique({ where: { id: adminId }, select: { role: true } });
+  if (!admin || !hasBookingOperationsPermission(admin.role)) return operationError("INSUFFICIENT_PERMISSIONS");
   const replay = await existingAudit(input.requestId);
   if (replay) return { ok: true as const, replayed: true, outcome: replay.outcome, auditId: replay.id };
   try {

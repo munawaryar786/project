@@ -2,15 +2,16 @@
 
 import { useState } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { presentMessage } from "@/lib/i18n/message-catalog";
 
 export default function ContactForm() {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [subject, setSubject] = useState("general");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [status, setStatus] = useState<{ ok: boolean; code?: string } | null>(null);
 
   const subjects = [
     ["general", t("contact.general")],
@@ -31,15 +32,14 @@ export default function ContactForm() {
         body: JSON.stringify({ name, email, subject, message }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to send message");
-      setStatus({ ok: true, text: t("contact.sent") });
+      if (!res.ok) { setStatus({ ok: false, code: res.status === 429 ? "RATE_LIMITED_GENERIC" : typeof data?.code === "string" ? data.code : "CONTACT_SEND_FAILED" }); return; }
+      setStatus({ ok: true });
       setName("");
       setEmail("");
       setSubject("general");
       setMessage("");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Something went wrong";
-      setStatus({ ok: false, text: msg });
+    } catch {
+      setStatus({ ok: false, code: "CONTACT_SEND_FAILED" });
     } finally {
       setLoading(false);
     }
@@ -48,10 +48,11 @@ export default function ContactForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">
+        <label htmlFor="contact-name" className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">
           {t("common.name")} *
         </label>
         <input
+          id="contact-name"
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -61,23 +62,24 @@ export default function ContactForm() {
         />
       </div>
       <div>
-        <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">
+        <label htmlFor="contact-email" className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">
           {t("common.email")} *
         </label>
         <input
+          id="contact-email"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="your@email.com"
+          placeholder={t("contact.placeholderEmail", "your@email.com")}
           className="input"
           required
         />
       </div>
       <div>
-        <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">
+        <label htmlFor="contact-subject" className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">
           {t("common.subject")}
         </label>
-        <select value={subject} onChange={(e) => setSubject(e.target.value)} className="input">
+        <select id="contact-subject" value={subject} onChange={(e) => setSubject(e.target.value)} className="input">
           {subjects.map(([value, label]) => (
             <option key={value} value={value}>
               {label}
@@ -86,10 +88,11 @@ export default function ContactForm() {
         </select>
       </div>
       <div>
-        <label className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">
+        <label htmlFor="contact-message" className="text-[12px] font-semibold text-drivo-text-secondary mb-1.5 block">
           {t("common.message")} *
         </label>
         <textarea
+          id="contact-message"
           rows={4}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
@@ -101,13 +104,14 @@ export default function ContactForm() {
       </div>
       {status && (
         <div
+          role={status.ok ? "status" : "alert"}
           className={`p-3 rounded-xl text-[13px] font-medium ${
             status.ok
               ? "bg-green-50 text-green-800 border border-green-200"
               : "bg-red-50 text-red-700 border border-red-200"
           }`}
         >
-          {status.text}
+          {status.ok ? t("contact.sent") : presentMessage(status.code, locale)}
         </div>
       )}
       <button type="submit" disabled={loading} className="btn-primary w-full disabled:opacity-60">

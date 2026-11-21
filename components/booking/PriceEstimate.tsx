@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { presentMessage } from "@/lib/i18n/message-catalog";
+import { formatEuro, formatNumber } from "@/lib/i18n/format";
 
 type FareBreakdown = {
   baseFare: number;
@@ -46,25 +49,11 @@ interface PriceEstimate {
   breakdown: FareBreakdown;
 }
 
-const chargeLabels: Record<string, string> = {
-  airportPickup: "Airport Pickup",
-  airportMeetGreet: "Airport Meet & Greet",
-  assistedTransport: "Driver Assistance",
-  childTransport: "Child Transport",
-  priorityBooking: "Priority Booking",
+const recurrenceKeys: Record<string, string> = {
+  ONE_TIME: "booking.recurrenceOneTime", DAILY: "booking.recurrenceDaily",
+  WEEKLY: "booking.recurrenceWeekly", MONTHLY: "booking.recurrenceMonthly",
+  CUSTOM: "booking.recurrenceCustom",
 };
-
-const recurrenceLabels: Record<string, string> = {
-  ONE_TIME: "One Time",
-  DAILY: "Daily",
-  WEEKLY: "Weekly",
-  MONTHLY: "Monthly",
-  CUSTOM: "Custom",
-};
-
-function money(value: number | undefined) {
-  return `EUR ${Number(value || 0).toFixed(2)}`;
-}
 
 export default function PriceEstimate({
   pickupAddress,
@@ -83,6 +72,8 @@ export default function PriceEstimate({
   onPriceChange,
   onFareChange,
 }: PriceEstimateProps) {
+  const { t, locale } = useLanguage();
+  const money = (value: number | undefined) => formatEuro(Number(value || 0), locale);
   const [estimate, setEstimate] = useState<PriceEstimate | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -138,11 +129,10 @@ export default function PriceEstimate({
           onPriceChange?.(price);
           onFareChange?.(price, breakdown);
         } else {
-          setError(data.error);
+          setError(typeof data?.code === "string" ? data.code : "BOOKING_VALIDATION_FAILED");
         }
-      } catch (err) {
-        console.error("Price estimate error:", err);
-        setError("Failed to calculate price. Please try again.");
+      } catch {
+        setError("SERVICE_UNAVAILABLE");
       } finally {
         setLoading(false);
       }
@@ -173,7 +163,7 @@ export default function PriceEstimate({
       <div className="bg-drivo-bg-soft rounded-2xl p-4 border border-drivo-border-light">
         <div className="flex items-center gap-3">
           <div className="w-5 h-5 border-2 border-drivo-green border-t-transparent rounded-full animate-spin" />
-          <span className="text-[13px] text-drivo-text-secondary">Calculating distance & price...</span>
+          <span className="text-[13px] text-drivo-text-secondary">{t('booking.estimateCalculating')}</span>
         </div>
       </div>
     );
@@ -182,7 +172,7 @@ export default function PriceEstimate({
   if (error) {
     return (
       <div className="bg-orange-50 rounded-2xl p-4 border border-orange-200">
-        <p className="text-[13px] text-orange-700">Warning: {error}</p>
+        <p className="text-[13px] text-orange-700">{t('common.warning')}: {presentMessage(error, locale)}</p>
       </div>
     );
   }
@@ -194,8 +184,8 @@ export default function PriceEstimate({
   return (
     <div className="bg-drivo-green-light/30 rounded-2xl p-4 border border-drivo-green/20">
       <div className="flex items-center justify-between mb-3">
-        <h4 className="text-[14px] font-bold text-drivo-text">Fare Breakdown</h4>
-        <span className="pill-green text-[11px]">Live</span>
+        <h4 className="text-[14px] font-bold text-drivo-text">{t('booking.fareBreakdown')}</h4>
+        <span className="pill-green text-[11px]">{t('booking.live')}</span>
       </div>
 
       <div className="text-[28px] font-extrabold text-drivo-green mb-2">
@@ -203,38 +193,38 @@ export default function PriceEstimate({
       </div>
 
       <div className="mb-3 rounded-xl bg-white/70 p-3 text-[12px] font-semibold text-drivo-green">
-        {breakdown.transparentPricingMessage}
+        {t('booking.transparentPricing')}
       </div>
 
       <div className="space-y-1.5 text-[12px] text-drivo-text-secondary">
-        <Row label="Base Fare" value={money(breakdown.baseFare)} />
-        <Row label="Distance Charge" value={money(breakdown.distanceCharge)} />
-        <Row label="Waiting Time Charge" value={money(breakdown.waitingCharge)} />
+        <Row label={t('booking.baseFare')} value={money(breakdown.baseFare)} />
+        <Row label={t('booking.distanceCharge')} value={money(breakdown.distanceCharge)} />
+        <Row label={t('booking.waitingCharge')} value={money(breakdown.waitingCharge)} />
         <Row
-          label="Additional Services"
+          label={t('booking.additionalServices')}
           value={optionalServices.length ? money(optionalServices.reduce((sum, [, value]) => sum + value, 0)) : money(0)}
         />
         {optionalServices.map(([key, value]) => (
-          <Row key={key} label={`- ${chargeLabels[key] || key}`} value={money(value)} muted />
+          <Row key={key} label={t(`booking.charge.${key}`)} value={money(value)} muted />
         ))}
         {breakdown.childTransport && (
           <>
-            <Row label="Pricing source" value={breakdown.childTransport.pricingSource || "Pricing Engine V1"} muted />
-            <Row label="Return included" value={breakdown.childTransport.returnIncluded ? "Yes" : "No"} muted />
-            <Row label="Recurrence" value={recurrenceLabels[breakdown.childTransport.recurrence] || breakdown.childTransport.recurrence} muted />
-            <Row label="Estimated service days" value={String(breakdown.childTransport.estimatedServiceDays)} muted />
+            <Row label={t('booking.pricingSource')} value={t('booking.estimate')} muted />
+            <Row label={t('booking.returnIncluded')} value={breakdown.childTransport.returnIncluded ? t('common.yes') : t('common.no')} muted />
+            <Row label={t('booking.recurrence')} value={t(recurrenceKeys[breakdown.childTransport.recurrence] || 'common.unavailable')} muted />
+            <Row label={t('booking.estimatedServiceDays')} value={formatNumber(breakdown.childTransport.estimatedServiceDays, locale)} muted />
           </>
         )}
         {breakdown.nightServiceCharge > 0 && (
-          <Row label="Night Service Charge" value={money(breakdown.nightServiceCharge)} />
+          <Row label={t('booking.nightCharge')} value={money(breakdown.nightServiceCharge)} />
         )}
         {breakdown.minimumFareAdjustment > 0 && (
-          <Row label="Minimum Fare Adjustment" value={money(breakdown.minimumFareAdjustment)} />
+          <Row label={t('booking.minimumAdjustment')} value={money(breakdown.minimumFareAdjustment)} />
         )}
         <div className="my-2 border-t border-drivo-green/20" />
-        <Row label="Total Fare" value={money(breakdown.totalFare)} strong />
-        <Row label="Distance" value={`${estimate.distanceKm} km`} muted />
-        <Row label="Duration" value={`~${estimate.durationMinutes} min`} muted />
+        <Row label={t('booking.totalFare')} value={money(breakdown.totalFare)} strong />
+        <Row label={t('booking.distance')} value={`${formatNumber(estimate.distanceKm, locale)} km`} muted />
+        <Row label={t('booking.duration')} value={`~${formatNumber(estimate.durationMinutes, locale)} ${t('common.minuteShort')}`} muted />
       </div>
     </div>
   );

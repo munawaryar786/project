@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { formatEuro, formatNumber } from "@/lib/i18n/format";
 import {
   DirectionsRenderer,
   GoogleMap,
@@ -45,6 +47,7 @@ export default function RouteMap({
   hideEstimate = false,
   onRouteInfo,
 }: RouteMapProps) {
+  const { t, locale } = useLanguage();
   const [directions, setDirections] =
     useState<google.maps.DirectionsResult | null>(null);
   const [pickupCoords, setPickupCoords] =
@@ -140,7 +143,7 @@ export default function RouteMap({
   if (loadError) {
     return (
       <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700">
-        Google Maps failed to load. Check API key or domain restriction.
+        {t('booking.routeUnavailable')}
       </div>
     );
   }
@@ -149,7 +152,7 @@ export default function RouteMap({
     return (
       <div className="rounded-2xl border border-drivo-border-light bg-drivo-bg-soft p-8 text-center">
         <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-drivo-green border-t-transparent" />
-        <p className="text-[13px] text-drivo-text-secondary">Loading map...</p>
+        <p className="text-[13px] text-drivo-text-secondary">{t('booking.mapLoading')}</p>
       </div>
     );
   }
@@ -158,13 +161,13 @@ export default function RouteMap({
     <div className="space-y-4">
       {routeInfo && (
         <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-drivo-green/20 bg-drivo-green-light/50 p-4">
-          <RouteStat label="Distance" value={`${routeInfo.distanceKm} km`} />
+          <RouteStat label={t('booking.distance')} value={`${formatNumber(routeInfo.distanceKm, locale)} km`} />
           <Divider />
-          <RouteStat label="Duration" value={`~${routeInfo.durationMin} min`} />
+          <RouteStat label={t('booking.duration')} value={`~${formatNumber(routeInfo.durationMin, locale)} ${t('common.minuteShort')}`} />
           {!hideEstimate && (
             <>
               <Divider />
-              <RouteStat label="Estimate" value={`EUR ${routeInfo.priceEstimate.toFixed(2)}`} />
+              <RouteStat label={t('booking.estimate')} value={formatEuro(routeInfo.priceEstimate, locale)} />
             </>
           )}
         </div>
@@ -217,7 +220,7 @@ export default function RouteMap({
               <div className="flex items-center gap-3">
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-drivo-green border-t-transparent" />
                 <p className="text-[13px] font-medium text-drivo-text-secondary">
-                  Calculating route...
+                  {t('booking.routeCalculating')}
                 </p>
               </div>
             </div>

@@ -1,82 +1,41 @@
-import { NextRequest, NextResponse } from "next/server";
-import { bookingToEmailData, sendBookingCompletionEmails } from "@/lib/email";
-import {
-  authorizePassenger,
-  normalizePassengerPhone,
-} from "@/lib/passenger-auth";
+﻿import { NextRequest, NextResponse } from "next/server";
+import { authorizePassenger, normalizePassengerPhone } from "@/lib/passenger-auth";
 import { prisma } from "@/lib/prisma";
-import { csrfCookieName } from "@/lib/security/session";
-import { getConfiguredOrigin } from "@/lib/env";
+import { bindPublicBookingOwner, publicBookingAccess, validBookingId } from "@/lib/booking-access";
+import { startAutomaticDispatch } from "@/lib/automatic-dispatch";
+import { isScheduledBooking } from "@/lib/scheduled-marketplace";
+import { writeBookingActivationIntent } from "@/lib/booking-activation";
 
 export async function POST(request: NextRequest) {
+  const auth = await authorizePassenger(request);
+  if (!auth.ok) return auth.response;
+  const body = await request.json().catch(() => null);
+  const bookingId = typeof body?.bookingId === "string" ? body.bookingId : "";
+  if (!validBookingId(bookingId)) return NextResponse.json({ error: "Invalid booking ID" }, { status: 400 });
   try {
-    const auth = await authorizePassenger(request);
-    if (!auth.ok) return auth.response;
-    const passenger = auth.actor;
-
-    const body = await request.json();
-    const bookingId = String(body.bookingId || "");
-    if (!bookingId) {
-      return NextResponse.json({ error: "bookingId is required" }, { status: 400 });
-    }
-
-    const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
-    if (!booking) {
-      return NextResponse.json({ error: "Booking not found" }, { status: 404 });
-    }
-
-    const bookingPhone =
-      booking.normalizedPhone ||
-      normalizePassengerPhone(`${booking.customerPhoneCode}${booking.customerPhone}`);
-    const passengerPhone = normalizePassengerPhone(passenger.normalizedPhone || passenger.phone);
-
-    if (bookingPhone !== passengerPhone) {
-      return NextResponse.json({ error: "Booking does not belong to this passenger" }, { status: 403 });
-    }
-
-    const alreadyContinued =
-      booking.passengerAuthStatus === "AUTHENTICATED" && booking.passengerAuthCompletedAt;
-
-    const updated = await prisma.booking.update({
-      where: { id: bookingId },
-      data: {
-        passengerId: passenger.id,
-        phoneVerified: true,
-        normalizedPhone: bookingPhone,
-        passengerAuthStatus: "AUTHENTICATED",
-        passengerAuthCompletedAt: booking.passengerAuthCompletedAt || new Date(),
-      },
-    });
-
-    if (!alreadyContinued && updated.paymentMethod !== "CARD") {
-      await sendBookingCompletionEmails(bookingToEmailData(updated));
-
-      try {
-        await fetch(`${getConfiguredOrigin()}/api/dispatch/start`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Origin": getConfiguredOrigin(),
-            "Cookie": request.headers.get("cookie") || "",
-            "X-Drivo-CSRF": request.cookies.get(csrfCookieName("PASSENGER"))?.value || "",
-          },
-          body: JSON.stringify({ bookingId }),
-        });
-      } catch (error) {
-        console.error("Post-auth dispatch start failed:", error);
+    const result = await prisma.$transaction(async tx => {
+      const booking = await tx.booking.findUnique({ where: { id: bookingId } });
+      if (!booking || !(await publicBookingAccess(request, booking, auth.actor.id, tx)).allowed) throw new Error("BOOKING_ACCESS_DENIED");
+      const alreadyContinued = booking.passengerId === auth.actor.id && booking.passengerAuthStatus === "AUTHENTICATED";
+      if (!alreadyContinued) {
+        const passengerPhone = normalizePassengerPhone(auth.actor.normalizedPhone || auth.actor.phone);
+        const bookingPhone = booking.normalizedPhone || normalizePassengerPhone(`${booking.customerPhoneCode}${booking.customerPhone}`);
+        if (!auth.actor.phoneVerified || passengerPhone !== bookingPhone) throw new Error("BOOKING_ACCESS_DENIED");
+        await bindPublicBookingOwner(tx, request, booking, auth.actor.id);
       }
-    }
-
-    return NextResponse.json({
-      success: true,
-      booking: updated,
-      alreadyContinued: Boolean(alreadyContinued),
+      if (booking.paymentMethod === "CASH") await writeBookingActivationIntent(tx, bookingId);
+      return { booking: await tx.booking.findUniqueOrThrow({ where: { id: bookingId } }), alreadyContinued };
     });
+    // Authentication flags are not evidence that dispatch started. The existing
+    // dispatch CAS guards repeats; scheduled bookings stay in their marketplace.
+    if (result.booking.paymentMethod === "CASH" && !isScheduledBooking(result.booking) && result.booking.dispatchStatus === "NOT_STARTED") {
+      try { await startAutomaticDispatch(bookingId); }
+      catch { console.error("[passenger.booking.continue.dispatch-deferred]", { code: "DISPATCH_START_DEFERRED" }); }
+    }
+    return NextResponse.json({ success: true, ...result }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
-    console.error("Passenger booking continue error:", error);
-    return NextResponse.json(
-      { error: "Could not continue booking. Please try again." },
-      { status: 500 }
-    );
+    const denied = error instanceof Error && ["BOOKING_ACCESS_DENIED", "BOOKING_ACCESS_CONFLICT"].includes(error.message);
+    console.error("[passenger.booking.continue.failed]", { code: denied ? "BOOKING_ACCESS_DENIED" : "BOOKING_CONTINUE_FAILED" });
+    return NextResponse.json({ error: denied ? "Booking unavailable. Sign in to the owning account or contact Drivo support." : "Could not continue booking. Please try again.", code: denied ? "BOOKING_ACCESS_DENIED" : "BOOKING_CONTINUE_FAILED" }, { status: denied ? 404 : 503 });
   }
 }

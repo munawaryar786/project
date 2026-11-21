@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
+import { finishGuestOperationTransition } from "@/lib/public-booking-operation";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import {
@@ -64,18 +65,8 @@ export async function POST(request: NextRequest) {
     data: { revokedAt: new Date() },
   });
 
-  if (parsed.data.bookingId) {
-    await prisma.booking.updateMany({
-      where: {
-        id: parsed.data.bookingId,
-        OR: [
-          { passengerId: passenger.id },
-          { passengerId: null, normalizedPhone: passenger.normalizedPhone || passenger.phone },
-        ],
-      },
-      data: { passengerId: passenger.id },
-    });
-  }
+  // Profile changes never acquire an unowned booking. The existing continuation
+  // endpoint verifies ownership/capability independently.
 
   const token = await createPassengerSession(updated);
   const response = NextResponse.json({
@@ -84,5 +75,5 @@ export async function POST(request: NextRequest) {
   });
   setPassengerCookie(response, token);
 
-  return response;
+  return finishGuestOperationTransition(request, response);
 }

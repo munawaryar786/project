@@ -4,6 +4,7 @@ import { csrfFetch } from "@/lib/client/csrf-fetch";
 
 import { useEffect, useState } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { formatEuro, formatMarketTime, formatNumber } from "@/lib/i18n/format";
 
 interface FinancialRow {
   driver: {
@@ -32,12 +33,9 @@ interface FinancialRow {
   };
 }
 
-function eur(value: number) {
-  return `EUR ${Number(value || 0).toFixed(2)}`;
-}
-
 export default function AdminFinancialPage() {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
+  const eur = (value: number) => formatEuro(Number(value || 0), locale);
   const [rows, setRows] = useState<FinancialRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -52,11 +50,11 @@ export default function AdminFinancialPage() {
     try {
       const res = await csrfFetch("admin", "/api/admin/financial", { cache: "no-store" });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t("adminFinancial.errors.fetch"));
+      if (!res.ok) throw new Error("FETCH_FAILED");
       setRows(data.drivers || []);
-      setLastUpdated(new Date().toLocaleTimeString());
-    } catch (err: any) {
-      setError(err?.message || t("adminFinancial.errors.fetch"));
+      setLastUpdated(new Date().toISOString());
+    } catch {
+      setError("FETCH_FAILED");
     } finally {
       setLoading(false);
     }
@@ -67,14 +65,14 @@ export default function AdminFinancialPage() {
       <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{t("adminFinancial.title")}</h1>
-          <p className="mt-1 text-sm text-gray-500">{t("adminFinancial.subtitle")} {lastUpdated || "-"}</p>
+          <p className="mt-1 text-sm text-gray-500">{t("adminFinancial.subtitle")} {lastUpdated ? formatMarketTime(lastUpdated, locale) : "-"}</p>
         </div>
         <button onClick={fetchFinancial} className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
           {t("common.refresh", "Refresh")}
         </button>
       </div>
 
-      {error && <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
+      {error && <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{t("adminFinancial.errors.fetch")}</div>}
 
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
         {loading ? (
@@ -115,12 +113,12 @@ export default function AdminFinancialPage() {
                       <td className="p-3">{eur(row.financial.weeklyEarnings)}</td>
                       <td className="p-3">{eur(row.financial.monthlyEarnings)}</td>
                       <td className="p-3 font-semibold">{eur(row.financial.totalEarnings)}</td>
-                      <td className="p-3">{row.financial.performanceScore}%</td>
-                      <td className="p-3">{row.financial.rideCount}</td>
+                      <td className="p-3">{formatNumber(row.financial.performanceScore, locale)}%</td>
+                      <td className="p-3">{formatNumber(row.financial.rideCount, locale)}</td>
                       <td className="max-w-[220px] p-3 text-xs text-gray-600">
                         {row.financial.averageRating
-                          ? `${row.financial.averageRating}/5 (${row.financial.feedbackCount})`
-                          : row.financial.feedbackSummary}
+                          ? `${formatNumber(row.financial.averageRating, locale)}/5 (${formatNumber(row.financial.feedbackCount, locale)})`
+                          : t("adminFinancial.feedbackUnavailable", t("m4.common.notProvided"))}
                       </td>
                     </tr>
                   );

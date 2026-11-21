@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
+import { loadActivePassengerSession } from "@/lib/security/passenger-session";
 import {
   csrfCookieName,
   createCanonicalToken,
@@ -70,14 +71,15 @@ export async function createPassengerSession(passenger: {
   id: string;
   status?: string;
   authVersion?: number;
-}) {
+}, db: Pick<typeof prisma, "passengerSession"> = prisma) {
   const jti = crypto.randomUUID();
-  const session = await prisma.passengerSession.create({
+  const session = await db.passengerSession.create({
     data: {
       passengerId: passenger.id,
       tokenHash: hashSecret(jti),
       expiresAt: new Date(Date.now() + SESSION_TTL_MS),
       lastUsedAt: new Date(),
+      revokedAt: null,
     },
   });
   return createCanonicalToken({
@@ -103,19 +105,10 @@ export function clearPassengerCookies(response: NextResponse) {
 
 async function loadCanonicalPassenger(token: string) {
   const payload = await verifyCanonicalToken(token, "PASSENGER");
-  if (!payload?.sid || !payload.jti) return null;
-  const session = await prisma.passengerSession.findFirst({
-    where: {
-      id: payload.sid,
-      passengerId: payload.sub,
-      tokenHash: hashSecret(payload.jti),
-      expiresAt: { gt: new Date() },
-      revokedAt: null,
-    },
-  });
-  if (!session) return null;
-  const passenger = await prisma.passenger.findUnique({ where: { id: payload.sub } });
-  if (!passenger || passenger.status !== "ACTIVE" || (passenger.authVersion ?? 0) !== payload.ver) return null;
+  if (!payload) return null;
+  const active = await loadActivePassengerSession(payload);
+  if (!active) return null;
+  const { passenger, session } = active;
   await prisma.passengerSession.update({ where: { id: session.id }, data: { lastUsedAt: new Date() } });
   return { passenger, session: payload, legacy: false as const };
 }
@@ -191,7 +184,7 @@ export async function authorizePassenger(request: NextRequest) {
 
 export async function revokePassengerSessions(passengerId: string) {
   await prisma.passengerSession.updateMany({
-    where: { passengerId, revokedAt: null },
+    where: { passengerId, OR: [{ revokedAt: null }, { revokedAt: { isSet: false } }] },
     data: { revokedAt: new Date() },
   });
 }
@@ -263,10 +256,10 @@ export async function createVerificationProof(input: {
   bookingId?: string | null;
   loginAttemptId?: string | null;
   resetAttemptId?: string | null;
-}) {
+}, db: Pick<typeof prisma, "passengerVerificationProof"> = prisma) {
   const proofToken = createOpaqueToken();
   const expiresAt = new Date(Date.now() + OTP_PROOF_TTL_MS);
-  await prisma.passengerVerificationProof.create({
+  await db.passengerVerificationProof.create({
     data: {
       proofTokenHash: hashSecret(proofToken),
       passengerId: input.passengerId || null,
@@ -276,6 +269,7 @@ export async function createVerificationProof(input: {
       loginAttemptId: input.loginAttemptId || null,
       resetAttemptId: input.resetAttemptId || null,
       expiresAt,
+      consumedAt: null,
     },
   });
   return { proofToken, expiresAt };

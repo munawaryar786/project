@@ -4,6 +4,8 @@ import { z } from "zod";
 import { authRateLimitResponse, enforceAuthRateLimit, rateLimits, resolveClientIp } from "@/lib/rate-limit";
 import { createPassengerSession, isValidE164Phone, normalizePassengerEmail, normalizePassengerPhone, publicPassenger, setPassengerCookie } from "@/lib/passenger-auth";
 import { prisma } from "@/lib/prisma";
+import { isAllowedOrigin } from "@/lib/env";
+import { finishGuestOperationTransition } from "@/lib/public-booking-operation";
 
 const PasswordLoginSchema = z.object({
   identifier: z.string().trim().min(3).max(160).optional(),
@@ -12,7 +14,7 @@ const PasswordLoginSchema = z.object({
   bookingId: z.string().optional().nullable(),
 }).refine((data) => Boolean(data.identifier || data.phone), { path: ["identifier"], message: "Phone number or email is required." });
 
-const genericError = { error: "Phone number, email, or password is incorrect." };
+const genericError = { error: "Phone number, email, or password is incorrect.", code: "AUTH_INVALID_CREDENTIALS" };
 
 async function findPassenger(identifier: string) {
   if (identifier.includes("@")) {
@@ -32,6 +34,7 @@ async function findPassenger(identifier: string) {
 }
 
 async function handler(request: NextRequest) {
+  if (!isAllowedOrigin(request.headers.get("origin"))) return NextResponse.json({ error: "Request origin is not allowed" }, { status: 403 });
   try {
     const parsed = PasswordLoginSchema.safeParse(await request.json());
     if (!parsed.success) return NextResponse.json(genericError, { status: 401 });
@@ -47,15 +50,16 @@ async function handler(request: NextRequest) {
     if (!(await bcrypt.compare(parsed.data.password, passenger.passwordHash))) return NextResponse.json(genericError, { status: 401 });
 
     const updated = await prisma.passenger.update({ where: { id: passenger.id }, data: { lastLoginAt: new Date(), ...(normalizedPhone ? { normalizedPhone, phone: normalizedPhone } : {}) } });
-    if (parsed.data.bookingId) await prisma.booking.updateMany({ where: { id: parsed.data.bookingId, ...(normalizedPhone ? { normalizedPhone } : {}) }, data: { passengerId: passenger.id, passengerAuthStatus: "AUTHENTICATED", passengerAuthCompletedAt: new Date(), phoneVerified: true } });
+    // Login authenticates only. Booking continuation separately requires the
+    // existing owner or the HttpOnly capability issued when that booking began.
     const token = await createPassengerSession(updated);
     const response = NextResponse.json({ success: true, stepUpRequired: false, passenger: publicPassenger(updated) });
     setPassengerCookie(response, token);
     console.info("Passenger password login succeeded", { passengerIdPresent: Boolean(passenger.id) });
-    return response;
+    return finishGuestOperationTransition(request, response);
   } catch (error) {
     console.error("Passenger password login error", { type: error instanceof Error ? error.name : "unknown" });
-    return NextResponse.json({ error: "Login failed." }, { status: 500 });
+    return NextResponse.json({ error: "Login failed.", code: "SERVICE_UNAVAILABLE" }, { status: 500 });
   }
 }
 

@@ -1,4 +1,5 @@
 import { ACTIVE_TRIP_STATUSES, isLocationFresh } from "@/lib/driver-state";
+import { bookingAssignmentPrerequisites } from "@/lib/booking-eligibility";
 
 export const DISPATCH_REASON = {
   BOOKING_NOT_DISPATCHABLE: "BOOKING_NOT_DISPATCHABLE",
@@ -30,6 +31,8 @@ const finiteCoordinate = (value: unknown, min: number, max: number) => {
 };
 
 export function bookingDispatchEligibility(booking: any, options: { allowScheduled?: boolean } = {}) {
+  const prerequisite = bookingAssignmentPrerequisites(booking);
+  if (!prerequisite.eligible) return prerequisite;
   if (!booking) return { eligible: false as const, reason: DISPATCH_REASON.BOOKING_NOT_DISPATCHABLE };
   if (booking.driverId) return { eligible: false as const, reason: DISPATCH_REASON.BOOKING_ALREADY_ASSIGNED };
   if (["CANCELLED", "COMPLETED", "NO_SHOW"].includes(booking.status)) {

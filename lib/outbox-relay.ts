@@ -13,7 +13,7 @@ const QUEUED_RECOVERY_RECHECK_MS = 5 * 60_000;
 const QUEUED_MANUAL_REVIEW_MS = 60 * 60_000;
 // Only auto-replay events whose route has no irreversible external side effect.
 // Expand this set only after each event type has its own idempotency tests.
-const QUEUED_AUTO_REPLAY_TYPES = new Set(["SCHEDULED_RIDE_REMINDER", "SCHEDULED_READINESS_CHECKED"]);
+const QUEUED_AUTO_REPLAY_TYPES = new Set(["SCHEDULED_RIDE_REMINDER", "SCHEDULED_READINESS_CHECKED", "BOOKING_ACTIVATION_REQUESTED"]);
 let nextQueuedRecoveryScanAt = 0;
 let queuedRecoveryCursor: { claimedAt: Date; id: string } | null = null;
 
@@ -52,7 +52,7 @@ export async function enqueueOutboxEvent(event: { id: string; eventType?: string
   const registered = await queue.add("deliver", { outboxEventId: event.id }, { jobId: `outbox-${event.id}`, ...outboxRetryOptions(event.eventType) });
   // Adding the same ID does not restart a retained failed BullMQ job. Repair
   // only this feature's delivery events; email/dispatch retry policy is unchanged.
-  if (["SCHEDULED_RIDE_REMINDER", "SCHEDULED_READINESS_CHECKED", "SCHEDULED_READINESS_FAILED"].includes(event.eventType || "") && await registered.getState() === "failed") {
+  if (["SCHEDULED_RIDE_REMINDER", "SCHEDULED_READINESS_CHECKED", "SCHEDULED_READINESS_FAILED", "BOOKING_ACTIVATION_REQUESTED"].includes(event.eventType || "") && await registered.getState() === "failed") {
     try { await registered.retry("failed", { resetAttemptsMade: true }); }
     catch (error) {
       const state = await registered.getState();

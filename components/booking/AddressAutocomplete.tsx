@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from 'react';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 type AddressSuggestion = {
   description: string;
@@ -27,14 +28,15 @@ interface AddressAutocompleteProps {
 export default function AddressAutocomplete({
   value,
   onChange,
-  placeholder = "Enter address",
+  placeholder,
   label,
   id,
   suggestionBias,
   educationalOnly = false,
-  noResultsText = "No matching address found.",
+  noResultsText,
   onSelect,
 }: AddressAutocompleteProps) {
+  const { t } = useLanguage();
   const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -99,7 +101,7 @@ export default function AddressAutocomplete({
         onChange={(e) => onChange(e.target.value)}
         onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
         onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-        placeholder={placeholder}
+        placeholder={placeholder || t('booking.addressPlaceholder')}
         className="input w-full pr-10"
       />
       {loading && (
@@ -113,22 +115,23 @@ export default function AddressAutocomplete({
           {suggestions.map((suggestion, index) => (
             <li
               key={suggestion.placeId || `${suggestion.description}-${index}`}
-              onClick={() => handleSelect(suggestion)}
-              className="px-4 py-3 cursor-pointer hover:bg-drivo-bg-soft border-b border-drivo-border-light last:border-0 text-[14px] text-drivo-text"
+              className="border-b border-drivo-border-light last:border-0"
             >
-              <span className="block font-semibold">{suggestion.mainText || suggestion.description}</span>
-              {(suggestion.typeLabel || suggestion.secondaryText) && (
-                <span className="mt-0.5 block text-[12px] text-drivo-text-muted">
-                  {[suggestion.typeLabel, suggestion.secondaryText].filter(Boolean).join(" - ")}
-                </span>
-              )}
+              <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => handleSelect(suggestion)} className="w-full px-4 py-3 text-left hover:bg-drivo-bg-soft focus-visible:outline-2 focus-visible:outline-drivo-green text-[14px] text-drivo-text">
+                <span className="block font-semibold">{suggestion.mainText || suggestion.description}</span>
+                {(suggestion.typeLabel || suggestion.secondaryText) && (
+                  <span className="mt-0.5 block text-[12px] text-drivo-text-muted">
+                    {[suggestion.typeLabel, suggestion.secondaryText].filter(Boolean).join(" - ")}
+                  </span>
+                )}
+              </button>
             </li>
           ))}
         </ul>
       )}
       {showSuggestions && searched && !loading && suggestions.length === 0 && (
         <div className="absolute z-50 w-full mt-1 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] font-semibold text-amber-800 shadow-lg">
-          {noResultsText}
+          {noResultsText || t('booking.noMatchingAddress')}
         </div>
       )}
     </div>

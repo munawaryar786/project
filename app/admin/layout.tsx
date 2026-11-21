@@ -127,7 +127,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
               className="lg:hidden p-2 hover:bg-white/10 rounded-lg"
-              aria-label="Toggle menu"
+              aria-label={t("m4.admin.toggleMenu")}
             >
               <span className="text-xl">{sidebarOpen ? "x" : "="}</span>
             </button>
@@ -135,7 +135,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <Link href="/admin/dashboard" className="flex items-center gap-2 font-bold text-lg">
               <BrandLogo className="h-9 w-28" />
               <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full font-normal">
-                Admin
+                {t("m4.admin.role")}
               </span>
             </Link>
           </div>

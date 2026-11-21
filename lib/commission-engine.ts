@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { DEFAULT_COMMISSION_RATE } from "@/lib/pricing-engine";
+import { cashCollectionReportingStatus, hasVerifiedCashCollection } from "@/lib/cash-collection";
 
 type CommissionResolutionInput = {
   driverId?: string | null;
@@ -170,6 +171,11 @@ export async function createOrUpdateDriverEarningForBooking(bookingId: string, d
     fareTotalFare: booking.fareTotalFare,
     estimatedPrice: booking.estimatedPrice,
   }, db);
+  const cashCollectionVerified = await hasVerifiedCashCollection(booking, db);
+  const cashCollectionStatus = cashCollectionReportingStatus(booking.paymentMethod, cashCollectionVerified);
+  const notes = `Commission source: ${financial.commissionSource}${
+    financial.commissionSourceId ? ` (${financial.commissionSourceId})` : ""
+  }; Cash collection: ${cashCollectionStatus}`;
 
   return db.driverEarning.upsert({
     where: { bookingId: booking.id },
@@ -179,11 +185,9 @@ export async function createOrUpdateDriverEarningForBooking(bookingId: string, d
       platformAmount: financial.platformCommission,
       commissionRate: financial.commissionPercentageUsed,
       paymentMethod: booking.paymentMethod,
-      cashCollected: booking.paymentMethod === "CASH" && booking.cashAgreed,
+      cashCollected: cashCollectionVerified,
       completedAt: new Date(),
-      notes: `Commission source: ${financial.commissionSource}${
-        financial.commissionSourceId ? ` (${financial.commissionSourceId})` : ""
-      }`,
+      notes,
     },
     create: {
       bookingId: booking.id,
@@ -194,11 +198,9 @@ export async function createOrUpdateDriverEarningForBooking(bookingId: string, d
       platformAmount: financial.platformCommission,
       commissionRate: financial.commissionPercentageUsed,
       paymentMethod: booking.paymentMethod,
-      cashCollected: booking.paymentMethod === "CASH" && booking.cashAgreed,
+      cashCollected: cashCollectionVerified,
       completedAt: new Date(),
-      notes: `Commission source: ${financial.commissionSource}${
-        financial.commissionSourceId ? ` (${financial.commissionSourceId})` : ""
-      }`,
+      notes,
     },
   });
 }

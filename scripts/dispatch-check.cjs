@@ -45,15 +45,25 @@ assert.equal(validateDispatchCheckout({ booking, payment, session: { ...session,
 assert.equal(validateDispatchCheckout({ booking, payment, session: { ...session, metadata: { ...session.metadata, bookingId: "other" } }, eventCreatedAt: expirySecond - 1 }), "BOOKING_BINDING");
 assert.equal(validateDispatchCheckout({ booking, payment: { ...payment, status: "FAILED" }, session, eventCreatedAt: expirySecond - 1 }), "PAYMENT_STATE");
 const paymentLinkRoute = fs.readFileSync("app/api/dispatch/bookings/[id]/payment-link/route.ts", "utf8");
+const checkoutService = fs.readFileSync("lib/payment-checkout.ts", "utf8");
+const paymentOperations = fs.readFileSync("lib/payment-operations.ts", "utf8");
 const stripeSource = fs.readFileSync("lib/stripe.ts", "utf8");
 const webhookSource = fs.readFileSync("app/api/payments/webhook/route.ts", "utf8");
 const invariantSource = fs.readFileSync("lib/dispatch-invariants.ts", "utf8");
-assert.ok(paymentLinkRoute.includes("scopeDispatchPaymentLinkIdempotencyKey(auth.actor.id, booking.id, parsed.data.idempotencyKey)"));
-assert.ok(paymentLinkRoute.includes("isDispatchPaymentLinkOwnedBy"));
-assert.ok(paymentLinkRoute.includes("expiresAt: Math.floor(expiresAt.getTime() / 1000)"));
+assert.ok(paymentLinkRoute.includes("createOrReusePaymentCheckout") && paymentLinkRoute.includes('channel: "PHONE_DISPATCH"'));
+assert.ok(paymentLinkRoute.includes("inspectLegacyPaymentLink"), "legacy Dispatcher Session is verified before replacement");
+assert.ok(checkoutService.includes("idempotencyKey: operation.providerRequestKey"));
+assert.ok(checkoutService.includes("expiresAt: Math.floor(operation.providerExpiresAt!.getTime() / 1000)"));
+assert.ok(paymentOperations.includes("leaseOwnerToken: input.leaseToken") &&
+  paymentOperations.includes("activeOperationId: operation.id") &&
+  paymentOperations.includes("generation: operation.generation"), "publication requires a fenced active lease");
+assert.ok(paymentOperations.includes("PROVIDER_RETRY_LIMIT_MS") &&
+  paymentOperations.includes('status: "RECONCILIATION_REQUIRED"'), "uncertain provider outcomes block a new payable Session");
 assert.ok(stripeSource.includes("{ expires_at: params.expiresAt }"), "Stripe receives the same 30-minute provider expiry");
 assert.ok(webhookSource.includes("PHONE_DISPATCH_PAYMENT_RECORD_MISSING"), "missing Dispatch payment records fail closed with a safe code");
-assert.ok(webhookSource.includes("updatedBooking = await handleCheckoutCompleted(object)"), "legacy checkout settlement remains available for genuine public bookings");
+assert.ok(webhookSource.includes("updatedBooking = await handleCheckoutCompleted(object, receipt!.id, event.created)") &&
+  webhookSource.includes("const confirmedBooking = await prisma.$transaction(async (tx) =>"),
+"public Checkout settlement remains available and binds its receipt in the confirmation transaction");
 assert.ok(webhookSource.includes('dispatchStatus: "NOT_STARTED"') && webhookSource.includes('driverId: null'), "duplicate dispatch recovery requires an untouched unassigned booking");
 assert.ok(invariantSource.includes("eventCreatedAt >= session.expires_at") && webhookSource.includes("paidAt: new Date(eventCreatedAt * 1000)"));
 assert.ok(!webhookSource.includes('expiresAt: { gt: new Date() } }, data: { status: "PAID"'), "webhook arrival time is not the payment-completion gate");
@@ -63,13 +73,19 @@ const dispatchOperatorAdminSource = fs.readFileSync("app/api/admin/dispatch-oper
 assert.ok(dispatchDeskSource.includes('"/api/dispatch/bookings?mine=true&page=0"'), "My Recent Bookings requests the authenticated operator-only endpoint");
 assert.ok(dispatchDeskSource.includes("setMyRecent((data.bookings || []).slice(0, 10))"), "My Recent Bookings is a separate list bounded to ten items");
 assert.ok(dispatchDeskSource.includes("const requestedPage = reset ? 0 : pageRef.current + 1"), "Load More advances from a ref-backed page value");
-assert.ok(dispatchDeskSource.includes("}, [search, status, t])") && !dispatchDeskSource.includes("}, [page, search, status, t])"), "loading callback does not depend on page and cannot reset after Load More");
+assert.ok(dispatchDeskSource.includes("const requestedPage = reset ? 0 : pageRef.current + 1") &&
+  dispatchDeskSource.includes("pageRef.current = requestedPage") &&
+  /\}, \[search, status\]\)/.test(dispatchDeskSource) &&
+  !/\}, \[[^\]]*\bpage\b[^\]]*\]\)/.test(dispatchDeskSource),
+  "loading callback advances from pageRef and does not depend on page state after Load More");
 assert.ok(dispatchDeskSource.includes("setInterval(() =>") && dispatchDeskSource.includes("}, 60_000)"), "operational and personal lists refresh every 60 seconds");
 assert.ok(!dispatchDeskSource.includes("throw newError(") && dispatchDeskSource.includes("throw new Error("), "Dispatch load errors use the Error constructor");
 assert.ok(dispatchDeskSource.includes("return [...prior, ...nextRows.filter((item) => !ids.has(item.id))]"), "pagination appends without duplicate booking rows");
 assert.ok(dispatchDeskSource.includes('if (booking.paymentMethod === "CASH") return t("dispatch.payOnRide"') && dispatchDeskSource.includes('if (booking.paymentMethod === "INVOICE") return t("dispatch.invoice"'), "Dispatch cards present cash as Pay on Ride and invoice as Invoice");
 assert.ok(dispatchDetailSource.includes('booking.paymentMethod === "CASH"') && dispatchDetailSource.includes('t("dispatch.payOnRide"') && dispatchDetailSource.includes('booking.paymentMethod === "INVOICE"') && dispatchDetailSource.includes('t("dispatch.invoice"'), "Booking Detail presents cash and invoice with operator-facing labels");
-assert.ok(dispatchDetailSource.includes('t(`dispatch.payment.${paymentStatus}`'), "Booking Detail presents CARD using the current payment status");
+assert.ok(dispatchDetailSource.includes('const paymentStatus = link?.payment?.status || booking.payment?.[0]?.status || "PENDING"') &&
+  dispatchDetailSource.includes('presentStatus("payment", paymentStatus, locale)'),
+  "Booking Detail presents CARD using the current localized payment status");
 assert.ok(dispatchDetailSource.indexOf("setLink(data);") < dispatchDetailSource.indexOf("navigator.clipboard.writeText(data.url)"), "successful link result is preserved before attempting clipboard access");
 assert.ok(dispatchDetailSource.includes("catch { copied = false; }"), "clipboard failure is contained and does not enter the payment-creation error handler");
 assert.ok(dispatchDetailSource.includes('"linkCreatedCopyBlocked"') && dispatchDetailSource.includes('"linkCreatedEmailCopyBlocked"'), "clipboard failures report copy-specific messages, retaining email result");

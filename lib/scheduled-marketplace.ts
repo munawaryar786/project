@@ -5,6 +5,7 @@ import { driverCompatibility } from "@/lib/dispatch-matching";
 import { isLocationFresh } from "@/lib/driver-state";
 import { createNotification } from "@/lib/notifications";
 import { writeOutboxEvent } from "@/lib/outbox";
+import { authoritativeAssignmentEligibility, bookingAssignmentPrerequisites } from "@/lib/booking-eligibility";
 import { createScheduledRideJobPlan, createScheduledRideJobPlanWithRecentMilestones, isCurrentScheduledRideJob, isScheduledReminderSuperseded, SCHEDULED_JOB_INELIGIBLE_STATUSES, scheduledReminderDedupeKey, scheduledRideJobId, type ScheduledRideJobKind } from "@/lib/scheduled-reminders";
 
 export const SCHEDULED_ERROR_CODES = {
@@ -113,6 +114,7 @@ const marketplaceStates = ["PENDING", "CONFIRMED", "SEARCHING_DRIVER"] as const;
 const terminalStates = ["CANCELLED", "COMPLETED", "NO_SHOW"] as const;
 
 export function scheduledMarketplaceEligibility(booking: any, now = new Date()) {
+  if (!bookingAssignmentPrerequisites(booking).eligible) return { eligible: false as const, code: SCHEDULED_ERROR_CODES.SCHEDULED_RIDE_NOT_CLAIMABLE };
   if (!booking || !isScheduledBooking(booking, now)) return { eligible: false as const, code: SCHEDULED_ERROR_CODES.SCHEDULED_RIDE_NOT_CLAIMABLE };
   if (!marketplaceStates.includes(booking.status)) return { eligible: false as const, code: SCHEDULED_ERROR_CODES.SCHEDULED_RIDE_NOT_CLAIMABLE };
   if ((terminalStates as readonly string[]).includes(booking.status) || booking.driverId) return { eligible: false as const, code: SCHEDULED_ERROR_CODES.SCHEDULED_RIDE_ALREADY_CLAIMED };
@@ -179,7 +181,7 @@ export async function assertScheduledRouteFeasible(input: { db: ScheduleDb; driv
       driverId: input.driver.id,
       id: { not: input.booking.id },
       status: { notIn: terminalStates },
-      pickupAt: { not: null },
+      OR: [{ pickupAt: { gt: now } }, { pickupAt: null }, { pickupAt: { isSet: false } }],
     },
     select: {
       id: true, status: true, pickupAt: true, scheduledRide: true,
@@ -192,6 +194,7 @@ export async function assertScheduledRouteFeasible(input: { db: ScheduleDb; driv
     .map((row: any) => ({ ...row, pickup: bookingPickupAt(row) }))
     .filter((row: any) => row.pickup && row.pickup.getTime() > now.getTime())
     .sort((a: any, b: any) => a.pickup.getTime() - b.pickup.getTime());
+  if (ordered.some((row: any) => row.pickup.getTime() === candidatePickup.getTime())) throw new Error(SCHEDULED_ERROR_CODES.DRIVER_SCHEDULE_CONFLICT);
   const previous = [...ordered].reverse().find((row: any) => row.pickup.getTime() < candidatePickup.getTime());
   const next = ordered.find((row: any) => row.pickup.getTime() > candidatePickup.getTime());
 
@@ -313,12 +316,20 @@ export async function claimScheduledRide(bookingId: string, driverId: string) {
       if (current.driverId) return { ok: false as const, code: SCHEDULED_ERROR_CODES.SCHEDULED_RIDE_ALREADY_CLAIMED };
       const currentEligible = scheduledMarketplaceEligibility(current, new Date());
       if (!currentEligible.eligible) return { ok: false as const, code: SCHEDULED_ERROR_CODES.CLAIM_STATE_CONFLICT };
+      if (!(await authoritativeAssignmentEligibility(current, tx)).eligible) return { ok: false as const, code: SCHEDULED_ERROR_CODES.CLAIM_STATE_CONFLICT };
+      const currentDriver = await tx.driver.findUnique({ where: { id: driverId }, include: { vehicle: true } });
+      if (!scheduledDriverCompatibility(current, currentDriver, new Date()).eligible) return { ok: false as const, code: SCHEDULED_ERROR_CODES.DRIVER_INELIGIBLE };
+      // Serialize concurrent schedule reservations on the shared Driver row;
+      // do not mark a future marketplace assignment as an active trip.
+      const locked = await tx.driver.updateMany({ where: { id: driverId, status: "ACTIVE", ...(currentDriver.updatedAt ? { updatedAt: currentDriver.updatedAt } : {}) }, data: { updatedAt: new Date(Math.max(Date.now(), Number(currentDriver.updatedAt || 0) + 1)) } });
+      if (locked.count !== 1) throw new Error(SCHEDULED_ERROR_CODES.CLAIM_STATE_CONFLICT);
+      await assertScheduledRouteFeasible({ db: tx, driver: currentDriver, booking: current });
       const acceptedAt = new Date();
       const changed = await tx.booking.updateMany({
-        where: { id: bookingId, driverId: null, status: { in: [...marketplaceStates] } },
-        data: { driverId, dispatchStatus: "SCHEDULED_CLAIMED", acceptedAt },
+        where: { id: bookingId, OR: [{ driverId: null }, { driverId: { isSet: false } }], status: { in: [...marketplaceStates] } },
+        data: { driverId, status: "ASSIGNED", dispatchStatus: "SCHEDULED_CLAIMED", acceptedAt },
       });
-      if (changed.count !== 1) return { ok: false as const, code: SCHEDULED_ERROR_CODES.CLAIM_STATE_CONFLICT };
+      if (changed.count !== 1) throw new Error(SCHEDULED_ERROR_CODES.CLAIM_STATE_CONFLICT);
       await writeOutboxEvent(tx, {
         eventType: "SCHEDULED_RIDE_CLAIMED",
         aggregateType: "Booking",
@@ -326,7 +337,7 @@ export async function claimScheduledRide(bookingId: string, driverId: string) {
         idempotencyKey: "scheduled-claimed:" + bookingId + ":" + driverId + ":" + acceptedAt.getTime(),
         payload: { bookingId, driverId, assignedAtMs: acceptedAt.getTime() },
       });
-      await writeBookingAssignedEmail(tx, bookingId, driverId, acceptedAt);
+      await writeBookingAssignedEmail(tx, bookingId, driverId, acceptedAt, current.languagePref);
       return { ok: true as const, alreadyClaimed: false };
     });
     if (result.ok && !result.alreadyClaimed) {

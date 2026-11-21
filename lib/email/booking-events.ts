@@ -34,14 +34,16 @@ const defaultDependencies: BookingEmailDependencies = {
   adminRecipient: getAdminEmail,
 };
 export async function processBookingEmailEvent(event: { eventType: string; aggregateId: string; payload: unknown }, dependencies = defaultDependencies) {
-  const payload = event.payload as { driverId?: string; assignedAtMs?: number; paymentId?: string; amount?: number };
+  const payload = event.payload as { driverId?: string; assignedAtMs?: number; paymentId?: string; amount?: number; locale?: unknown };
   const booking = await dependencies.findBooking(event.aggregateId);
   if (!booking) return;
   if (event.eventType === "BOOKING_EMAIL_ASSIGNED" && !isCurrentEmailAssignment(booking, payload)) return;
   const pickup = bookingPickupAt(booking);
   if (!pickup) throw new EmailError("EMAIL_PICKUP_INVALID");
   const data: BookingMail = { bookingRef: booking.bookingRef, pickupAt: pickup.toISOString(), marketTimezone: booking.marketTimezone || "Europe/Bratislava", pickupAddress: booking.pickupAddress, destination: booking.dropoffAddress, serviceType: booking.serviceType, amount: booking.fareTotalFare ?? booking.estimatedPrice, paymentMethod: booking.paymentMethod };
-  const locale = emailLocale(booking.languagePref);
+  // Old events have no snapshot and keep their previous booking-language fallback.
+  const locale = typeof payload.locale === "string" && ["sk", "de", "uk", "en"].includes(payload.locale)
+    ? emailLocale(payload.locale) : emailLocale(booking.languagePref);
   let customerEmail: string | undefined;
   if (booking.customerEmail) {
     try { customerEmail = emailAddress(booking.customerEmail); }

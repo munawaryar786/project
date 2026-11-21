@@ -64,9 +64,17 @@ check("email-only Forgot Password", files.reset.includes("password-reset/email")
 let dispatchSchemaDiff = "";
 let dispatchSchemaDiffSource = "working-tree diff";
 let dispatchSchemaDiffError = null;
+let currentSchemaDiff = "";
 try {
-  dispatchSchemaDiff = cp.execFileSync("git", ["diff", "--", "prisma/schema.prisma"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  if (!dispatchSchemaDiff.trim()) {
+  const workingDiff = cp.execFileSync("git", ["diff", "--", "prisma/schema.prisma"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const stagedDiff = cp.execFileSync("git", ["diff", "--cached", "--", "prisma/schema.prisma"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  currentSchemaDiff = workingDiff + stagedDiff;
+  dispatchSchemaDiff = currentSchemaDiff;
+  // Later additive schema work need not repeat the original Dispatch models.
+  // In that case inspect the schema-changing commit that introduced them.
+  if (!dispatchSchemaDiff.includes("+model DispatchOperator") ||
+      !dispatchSchemaDiff.includes("+model BookingPayment") ||
+      !dispatchSchemaDiff.includes("+model DispatchAuditEvent")) {
     dispatchSchemaDiffSource = "latest committed schema change";
     const schemaCommit = cp.execFileSync("git", ["log", "-1", "--format=%H", "--", "prisma/schema.prisma"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
     if (!schemaCommit) throw new Error("Git history contains no commit for prisma/schema.prisma");
@@ -84,9 +92,12 @@ const dispatchSchemaDiffIsAdditive = !dispatchSchemaDiffError &&
   dispatchSchemaDiff.includes("+model BookingPayment") &&
   dispatchSchemaDiff.includes("+model DispatchAuditEvent") &&
   !dispatchSchemaDiff.split("\n").some(line => line.startsWith("-") && !line.startsWith("---"));
+const currentSchemaDiffIsAdditive = !dispatchSchemaDiffError &&
+  !currentSchemaDiff.split("\n").some(line => line.startsWith("-") && !line.startsWith("---"));
 if (dispatchSchemaDiffError) console.error(`Prisma schema assertion detail: ${dispatchSchemaDiffError}`);
 else if (!dispatchSchemaDiffIsAdditive) console.error(`Prisma schema assertion detail: ${dispatchSchemaDiffSource} must add all three Dispatch models and contain no schema deletions.`);
 check("Prisma change is additive Dispatch schema only", dispatchSchemaDiffIsAdditive);
+check("current Prisma schema changes are additive", currentSchemaDiffIsAdditive);
 check("Redis namespace isolated", files.limiter.includes("drivo:auth:rate:v1") && !files.limiter.includes("bull:") && !files.limiter.includes("socket.io"));
 check("secrets not client-side", !files.limiter.includes("NEXT_PUBLIC_") && !files.env.includes("NEXT_PUBLIC_AUTH_RATE"));
 check("no raw Redis credential logging", files.limiter.includes("category") && !files.limiter.includes("REDIS_URL"));

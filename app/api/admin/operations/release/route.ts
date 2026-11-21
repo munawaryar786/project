@@ -1,6 +1,6 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { authorizeAdmin } from "@/lib/security/authorization";
+import { authorizeBookingOperationsAdmin } from "@/lib/security/authorization";
 import { releaseAdminScheduledAssignment, requireReason } from "@/lib/admin-operations";
 
 const Schema = z.object({
@@ -10,7 +10,7 @@ const Schema = z.object({
 }).strict();
 
 export async function POST(request: NextRequest) {
-  const auth = await authorizeAdmin(request);
+  const auth = await authorizeBookingOperationsAdmin(request);
   if (!auth.ok) return auth.response;
   const parsed = Schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success || !requireReason(parsed.data?.reason)) return NextResponse.json({ success: false, error: "A bounded operational reason is required", code: "AUDIT_REASON_REQUIRED" }, { status: 400 });

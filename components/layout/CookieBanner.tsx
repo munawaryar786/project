@@ -1,7 +1,9 @@
 "use client";
 import { useState, useEffect } from 'react';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 export default function CookieBanner() {
+  const { t } = useLanguage();
   const [visible, setVisible] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [preferences, setPreferences] = useState({
@@ -40,29 +42,28 @@ export default function CookieBanner() {
         <div className="flex items-start gap-4">
           <span className="text-2xl shrink-0">🍪</span>
           <div className="flex-1">
-            <h3 className="text-[16px] font-bold text-drivo-text mb-1">We value your privacy</h3>
+            <h3 className="text-[16px] font-bold text-drivo-text mb-1">{t('cookie.title')}</h3>
             <p className="text-[13px] text-drivo-text-secondary mb-4">
-              We use cookies to improve your experience. By clicking "Accept All", you consent to all cookies. 
-              You can also choose specific categories or read our Privacy Policy.
+              {t('cookie.description')}
             </p>
             
             {showDetails && (
               <div className="mb-4 p-4 bg-gray-50 rounded-2xl space-y-3 animate-fade-in">
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className="text-[14px] font-semibold text-drivo-text">Necessary Cookies</p>
-                    <p className="text-[12px] text-drivo-text-secondary">Required for website functionality, security, and booking system.</p>
+                    <p className="text-[14px] font-semibold text-drivo-text">{t('cookie.necessary')}</p>
+                    <p className="text-[12px] text-drivo-text-secondary">{t('cookie.necessaryDescription')}</p>
                   </div>
-                  <span className="text-[11px] text-gray-500 bg-gray-200 px-2 py-1 rounded-full">Always Active</span>
+                  <span className="text-[11px] text-gray-500 bg-gray-200 px-2 py-1 rounded-full">{t('cookie.alwaysActive')}</span>
                 </div>
                 
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className="text-[14px] font-semibold text-drivo-text">Analytics Cookies</p>
-                    <p className="text-[12px] text-drivo-text-secondary">Help us understand how visitors interact with our website.</p>
+                    <p className="text-[14px] font-semibold text-drivo-text">{t('cookie.analytics')}</p>
+                    <p className="text-[12px] text-drivo-text-secondary">{t('cookie.analyticsDescription')}</p>
                   </div>
                   <label className="relative inline-flex cursor-pointer">
-                    <input 
+                    <input aria-label={t('cookie.analytics')}
                       type="checkbox" 
                       checked={preferences.analytics} 
                       onChange={(e) => setPreferences(prev => ({ ...prev, analytics: e.target.checked }))}
@@ -74,11 +75,11 @@ export default function CookieBanner() {
                 
                 <div className="flex items-start justify-between">
                   <div>
-                    <p className="text-[14px] font-semibold text-drivo-text">Marketing Cookies</p>
-                    <p className="text-[12px] text-drivo-text-secondary">Used to deliver relevant advertisements and measure ad performance.</p>
+                    <p className="text-[14px] font-semibold text-drivo-text">{t('cookie.marketing')}</p>
+                    <p className="text-[12px] text-drivo-text-secondary">{t('cookie.marketingDescription')}</p>
                   </div>
                   <label className="relative inline-flex cursor-pointer">
-                    <input 
+                    <input aria-label={t('cookie.marketing')}
                       type="checkbox" 
                       checked={preferences.marketing} 
                       onChange={(e) => setPreferences(prev => ({ ...prev, marketing: e.target.checked }))}
@@ -93,22 +94,22 @@ export default function CookieBanner() {
         </div>
         
         <div className="flex flex-col sm:flex-row gap-3 mt-5">
-          <button onClick={acceptAll} className="btn-primary text-[13px] py-3">Accept All</button>
+          <button onClick={acceptAll} className="btn-primary text-[13px] py-3">{t('cookie.acceptAll')}</button>
           <button onClick={() => setShowDetails(!showDetails)} className="btn-outline text-[13px] py-3">
-            {showDetails ? 'Hide Details' : 'Customize'}
+            {showDetails ? t('cookie.hideDetails') : t('cookie.customize')}
           </button>
           {showDetails && (
             <button onClick={saveConsent} className="btn-outline text-[13px] py-3">
-              Save Preferences
+              {t('cookie.save')}
             </button>
           )}
           <a href="/privacy" className="text-[13px] text-drivo-text-secondary underline py-3 text-center">
-            Privacy Policy
+            {t('footer.privacy')}
           </a>
         </div>
         
         <p className="text-[11px] text-drivo-text-muted mt-4 text-center">
-          You can change your cookie preferences at any time via our Privacy Policy page.
+          {t('cookie.preferencesHelp')}
         </p>
       </div>
     </div>

@@ -131,6 +131,9 @@ model Booking {
 
   otps    OTP[]
   earning DriverEarning?
+  cashCollection CashCollection?
+  paymentOperations PaymentOperation[]
+  publicOperations PublicBookingOperation[]
   ledgerEntries DriverLedgerEntry[]
   rideRequests RideRequest[]
 
@@ -144,6 +147,34 @@ model Booking {
   @@index([pickupAt])
   @@index([bookingSource, createdAt])
   @@index([createdByDispatchOperatorId, createdAt])
+}
+
+// A public booking intent is issued before submission. Its unique string _id is
+// the idempotency key; it is not an access credential. Expiry is checked by the
+// application. A MongoDB TTL index on cleanupAt is a separate release step.
+model PublicBookingOperation {
+  id String @id @map("_id")
+  scope String
+  passengerId String? @db.ObjectId
+  guestCredentialHash String?
+  requestFingerprint String?
+  state String @default("RESERVED")
+  leaseToken String @default("")
+  leaseUntil DateTime?
+  accessVersion Int @default(0)
+  bookingId String? @db.ObjectId
+  booking Booking? @relation(fields: [bookingId], references: [id])
+  issuedAt DateTime @default(now())
+  recoveryExpiresAt DateTime
+  cleanupAt DateTime
+  revokedAt DateTime?
+  updatedAt DateTime @updatedAt
+
+  @@index([passengerId, state, recoveryExpiresAt])
+  @@index([state, leaseUntil])
+  // TTL on cleanupAt is managed as an explicit MongoDB index in the approved
+  // future rollout; a regular Prisma index here would conflict with it.
+  @@map("public_booking_operations")
 }
 
 // ============================================
@@ -316,6 +347,7 @@ model Driver {
   bookings        Booking[]
   locationHistory DriverLocation[]
   earnings        DriverEarning[]
+  cashCollections CashCollection[]
   ledgerEntries   DriverLedgerEntry[]
   rideRequests    RideRequest[]
 
@@ -366,6 +398,33 @@ model DriverEarning {
   @@index([paymentStatus])
   @@index([completedAt])
   @@map("driver_earnings")
+}
+
+// Authoritative evidence that the assigned Driver confirmed receipt of the
+// full server-priced CASH fare when starting a trip. Customer cashAgreed is
+// only pre-dispatch consent and is intentionally not financial evidence.
+model CashCollection {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  bookingId String @unique @db.ObjectId
+  driverId  String @db.ObjectId
+
+  booking Booking @relation(fields: [bookingId], references: [id])
+  driver  Driver  @relation(fields: [driverId], references: [id])
+
+  amountMinor Int
+  currency    String @default("EUR")
+  status      String @default("COLLECTED")
+  source      String @default("DRIVER_TRIP_START")
+
+  assignmentAcceptedAt DateTime?
+  confirmedAt           DateTime
+  operationKey          String   @unique
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([driverId, confirmedAt])
+  @@map("cash_collections")
 }
 
 // ============================================
@@ -569,11 +628,13 @@ model BookingPayment {
   cancelledAt                DateTime?
   createdByDispatchOperatorId String  @db.ObjectId
   idempotencyKey             String   @unique
+  operationId                String?  @db.ObjectId
   createdAt                  DateTime @default(now())
   updatedAt                  DateTime @updatedAt
 
   @@index([bookingId, status, createdAt])
   @@index([status, expiresAt])
+  @@index([operationId])
   @@map("booking_payments")
 }
 
@@ -583,9 +644,46 @@ model BookingPaymentSlot {
   bookingId   String   @unique @db.ObjectId
   sessionId   String   @default("")
   leaseKey    String   @default("")
+  activeOperationId String? @db.ObjectId
+  generation Int @default(0)
+  leaseOwnerToken String?
+  leaseExpiresAt DateTime?
   updatedAt   DateTime @updatedAt
 
   @@map("booking_payment_slots")
+}
+
+// Shared durable Stripe Checkout creation record. providerSessionKey begins
+// with a unique operation placeholder and becomes the Stripe Session ID; a
+// nullable unique providerSessionId would be unsafe for MongoDB indexes.
+model PaymentOperation {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+  bookingId String @db.ObjectId
+  booking Booking @relation(fields: [bookingId], references: [id])
+  actorId String @db.ObjectId
+  channel String
+  status String @default("RESERVED")
+  generation Int
+  requestScopeKey String @unique
+  providerRequestKey String @unique
+  providerSessionKey String @unique
+  providerSessionId String?
+  providerPaymentId String?
+  bookingRef String
+  amountMinor Int
+  currency String @default("EUR")
+  fareSnapshotHash String
+  providerRequestAt DateTime?
+  providerExpiresAt DateTime?
+  settledAt DateTime?
+  reconciliationCode String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([bookingId, generation])
+  @@index([bookingId, status, createdAt])
+  @@index([status, updatedAt])
+  @@map("payment_operations")
 }
 
 model PaymentWebhookEvent {
@@ -595,6 +693,12 @@ model PaymentWebhookEvent {
   eventType          String
   bookingId          String?  @db.ObjectId
   paymentId          String?  @db.ObjectId
+  operationId        String?  @db.ObjectId
+  providerSessionId  String?
+  providerPaymentId  String?
+  amountMinor        Int?
+  currency           String?
+  paidAt             DateTime?
   processingStatus   String   @default("RECEIVED")
   safeFailureCode    String?
   createdAt          DateTime @default(now())
@@ -602,6 +706,7 @@ model PaymentWebhookEvent {
 
   @@index([processingStatus, createdAt])
   @@index([bookingId, createdAt])
+  @@index([operationId])
   @@map("payment_webhook_events")
 }
 

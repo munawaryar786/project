@@ -13,6 +13,8 @@ import { io } from "socket.io-client";
 import { DriverNavigationPanel } from "@/components/driver/DriverNavigation";
 import { DriverEarningsPanel } from "@/components/driver/DriverEarningsPanel";
 import { ScheduledMarketplace } from "@/components/driver/ScheduledMarketplace";
+import { formatMarketDateTime, formatMarketWallDateTime, formatNumber } from "@/lib/i18n/format";
+import { presentNotification } from "@/lib/i18n/notification-catalog";
 
 interface Booking {
   id: string;
@@ -119,6 +121,7 @@ export default function DriverDashboard() {
   const [upcomingBookings, setUpcomingBookings] = useState<Booking[]>([]);
   const [completedBookings, setCompletedBookings] = useState<Booking[]>([]);
   const [scheduledReminders, setScheduledReminders] = useState<Array<{ id: string; data: { bookingId: string; pickupAt: string; reminderMinutes?: number } }>>([]);
+  const [offerNotifications, setOfferNotifications] = useState<Array<{ id: string; type: string }>>([]);
 
   const [rideRequests, setRideRequests] = useState<RideRequest[]>([]);
   const [requestUpdating, setRequestUpdating] = useState<string | null>(null);
@@ -357,7 +360,8 @@ export default function DriverDashboard() {
           if (!response.ok) throw new Error("notification_refresh_failed");
           const data = await response.json();
           setScheduledReminders((data.notifications || []).filter((item: any) => item.type === "SCHEDULED_RIDE_REMINDER" && !item.readAt).slice(0, 3));
-        }).catch(() => { setScheduledReminders([]); setRefreshError("driverPortal.refreshFailed"); }),
+          setOfferNotifications((data.notifications || []).filter((item: any) => item.type === "DRIVER_OFFER_UPDATED" && !item.readAt).slice(0, 3));
+        }).catch(() => { setScheduledReminders([]); setOfferNotifications([]); setRefreshError("driverPortal.refreshFailed"); }),
       ]);
     } catch (err: any) {
       const message = "driverPortal.refreshFailed";
@@ -625,19 +629,21 @@ export default function DriverDashboard() {
         <div className="col-span-2 rounded-2xl border border-gray-200 bg-white p-3">
           <div className="text-xs font-bold text-gray-500">{t("driverPortal.feedback")}</div>
           <div className="mt-1 text-sm font-semibold text-gray-800">
-            {financial.feedbackSummary || t("driverPortal.noFeedback")}
+            {t("driverPortal.noFeedback")}
           </div>
         </div>
       </div>
 
       <DriverEarningsPanel />
 
+      {offerNotifications.length > 0 && <section aria-label={t("m5.notifications.title")} className="mb-4 space-y-2">{offerNotifications.map((notice) => <p key={notice.id} role="status" className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">{presentNotification(notice.type, locale)}</p>)}</section>}
+
       <div aria-live="polite" aria-atomic="true">
         {scheduledReminders.map((reminder) => {
           const ride = [...todayBookings, ...upcomingBookings].find((item) => item.id === reminder.data.bookingId);
           if (!ride || ["CANCELLED", "COMPLETED", "NO_SHOW"].includes(ride.status) || new Date(reminder.data.pickupAt).getTime() <= Date.now()) return null;
           return <p key={reminder.id} role="status" className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-            {driverScheduledReminderMessage(locale, reminder.data.reminderMinutes)} {ride.bookingRef} · {new Date(reminder.data.pickupAt).toLocaleString(locale)}
+            {driverScheduledReminderMessage(locale, reminder.data.reminderMinutes)} {ride.bookingRef} · {formatMarketDateTime(reminder.data.pickupAt, locale)}
           </p>;
         })}
       </div>
@@ -1104,9 +1110,8 @@ function BookingCard({
         </div>
 
         <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-gray-500">
-          <span>📅 {booking.scheduledDate}</span>
-          <span>⏰ {booking.scheduledTime}</span>
-          <span>👥 {booking.passengerCount}</span>
+          <span>📅 {formatMarketWallDateTime(booking.scheduledDate, booking.scheduledTime, locale) || t("driverPortal.notAvailable")}</span>
+          <span>👥 {formatNumber(booking.passengerCount, locale)}</span>
           {booking.wheelchairNeeded && <span>♿</span>}
           {booking.paymentMethod === "CASH" && (
             <span className="text-amber-600 font-bold">{t("driverPortal.paymentCash")}</span>
@@ -1303,7 +1308,7 @@ function ChildrenTransportSummary({
   booking?: Booking;
   dark?: boolean;
 }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   if (!booking || (booking.serviceType !== "CHILDREN" && !booking.scheduledRide)) return null;
 
   const childrenRows = getChildrenRows(booking).map((child, index) => [
@@ -1319,8 +1324,8 @@ function ChildrenTransportSummary({
     [t("driverPortal.emergencyPhone"), booking.guardianEmergencyPhone || booking.parentEmergencyPhone || t("driverPortal.notAvailable")],
     [t("driverPortal.institution"), booking.institutionName || booking.educationalInstitutionName || t("driverPortal.notAvailable")],
     [t("driverPortal.institutionAddress"), booking.institutionAddress || booking.dropoffAddress || t("driverPortal.notAvailable")],
-    [t("driverPortal.pickup"), `${booking.pickupDate || booking.scheduledDate || ""} ${booking.pickupTime || booking.scheduledTime || ""}`.trim()],
-    [t("driverPortal.return"), `${booking.returnDate || ""} ${booking.returnTime || ""}`.trim() || t("driverPortal.notAvailable")],
+    [t("driverPortal.pickup"), formatMarketWallDateTime(booking.pickupDate || booking.scheduledDate || "", booking.pickupTime || booking.scheduledTime || "", locale) || t("driverPortal.notAvailable")],
+    [t("driverPortal.return"), formatMarketWallDateTime(booking.returnDate || "", booking.returnTime || "", locale) || t("driverPortal.notAvailable")],
     [t("driverPortal.returnPickupTime"), booking.returnTime || t("driverPortal.notAvailable")],
     [t("driverPortal.recurrence"), formatEnum(booking.recurrenceType || booking.recurrence, t)],
   ].filter(Boolean) as string[][];
@@ -1381,7 +1386,7 @@ function AssistanceSummary({
   booking?: Booking;
   dark?: boolean;
 }) {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   if (!booking) return null;
 
   const rows = [
@@ -1402,7 +1407,7 @@ function AssistanceSummary({
     booking.hospitalName && [t("driverPortal.hospital"), booking.hospitalName],
     (booking.appointmentDate || booking.appointmentTime) && [
       t("driverPortal.appointment"),
-      `${booking.appointmentDate || ""} ${booking.appointmentTime || ""}`.trim(),
+      formatMarketWallDateTime(booking.appointmentDate || "", booking.appointmentTime || "", locale) || t("driverPortal.notAvailable"),
     ],
     (booking.waitingDuration || booking.customWaitingDuration) && [
       t("driverPortal.waiting"),
@@ -1410,7 +1415,7 @@ function AssistanceSummary({
     ],
     (booking.returnDate || booking.returnTime) && [
       t("driverPortal.return"),
-      `${booking.returnDate || ""} ${booking.returnTime || ""}`.trim(),
+      formatMarketWallDateTime(booking.returnDate || "", booking.returnTime || "", locale) || t("driverPortal.notAvailable"),
     ],
   ].filter(Boolean) as string[][];
 
@@ -1443,7 +1448,7 @@ type Translate = ReturnType<typeof useLanguage>["t"];
 
 function formatEnum(value: string | null | undefined, t: Translate) {
   if (!value) return t("driverPortal.notAvailable");
-  return t(`driverPortal.enum.${value}`, value.replaceAll("_", " "));
+  return t(`driverPortal.enum.${value}`, t("driverPortal.notAvailable"));
 }
 
 function getNextAction(booking: Booking, t: Translate) {

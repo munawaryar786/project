@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { createPaymentSession, formatAmountForStripe } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
 import { authorizePassenger } from "@/lib/passenger-auth";
 import { hasAuthoritativeBookingPrice } from "@/lib/security/booking-price";
+import { createOrReusePaymentCheckout } from "@/lib/payment-checkout";
 
 const CheckoutSchema = z.object({
   bookingId: z.string().regex(/^[a-f0-9]{24}$/i),
   currency: z.literal("EUR").default("EUR"),
   amount: z.number().optional(),
+  requestKey: z.string().uuid().optional(),
 }).strict();
+
+const NO_STORE = { headers: { "Cache-Control": "private, no-store" } };
 
 export async function POST(request: NextRequest) {
   const auth = await authorizePassenger(request);
@@ -32,25 +35,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Booking price requires review before payment" }, { status: 409 });
     }
 
-    const result = await createPaymentSession({
-      amount: formatAmountForStripe(booking.estimatedPrice!),
-      currency: "EUR",
-      bookingId: booking.id,
-      bookingRef: booking.bookingRef,
-      customerEmail: booking.customerEmail || "",
-      customerName: booking.customerName,
-      description: `Booking ${booking.bookingRef} - ${booking.serviceType}`,
+    const result = await createOrReusePaymentCheckout({
+      bookingId: booking.id, actorId: auth.actor.id, channel: "PUBLIC",
+      requestKey: parsed.data.requestKey,
     });
-
+    if (result.state === "READY") return NextResponse.json({
+      success: true, sessionId: result.sessionId, sessionUrl: result.sessionUrl, reused: result.reused,
+    }, NO_STORE);
+    if (result.state === "PROCESSING") return NextResponse.json({
+      success: false, paymentStatus: "PROCESSING",
+    }, { status: 202, ...NO_STORE });
     return NextResponse.json({
-      success: true,
-      sessionId: result.sessionId,
-      sessionUrl: result.sessionUrl,
-    });
+      success: false, paymentStatus: result.state,
+      error: result.state === "RECONCILIATION_REQUIRED" || result.state === "LEGACY_ACTIVE"
+        ? "Payment state requires review before another checkout"
+        : "Payment session is not available",
+    }, { status: 409, ...NO_STORE });
   } catch {
     return NextResponse.json(
-      { error: "Failed to create payment session. Please try again." },
-      { status: 500 }
+      { error: "Payment checkout is temporarily unavailable" },
+      { status: 503, ...NO_STORE }
     );
   }
 }

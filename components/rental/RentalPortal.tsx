@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { presentMessage } from "@/lib/i18n/message-catalog";
+import { formatEuro } from "@/lib/i18n/format";
 
 type RentalVehicle = {
   id: string;
@@ -35,13 +37,14 @@ const fallbackVehicles: RentalVehicle[] = [
 ];
 
 export default function RentalPortal() {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const [vehicles, setVehicles] = useState<RentalVehicle[]>([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState("");
   const [mode, setMode] = useState<"signin" | "register">("register");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{ key?: string; code?: string } | null>(null);
+  const errorText = error?.code ? presentMessage(error.code, locale) : error?.key ? t(error.key) : "";
   const [form, setForm] = useState({
     fullName: "",
     phone: "",
@@ -93,16 +96,16 @@ export default function RentalPortal() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
+    setError(null);
     setSubmitted(false);
 
     if (!selectedVehicle) {
-      setError(t("rental.validationVehicle", "Please select a vehicle."));
+      setError({ key: "rental.validationVehicle" });
       return;
     }
 
     if (form.password !== form.confirmPassword) {
-      setError(t("rental.passwordMismatch", "Passwords do not match."));
+      setError({ key: "rental.passwordMismatch" });
       return;
     }
 
@@ -128,13 +131,11 @@ export default function RentalPortal() {
       });
 
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data?.error || t("rental.submitError", "Failed to submit rental request."));
-      }
+      if (!res.ok) { setError({ code: res.status === 429 ? 'RATE_LIMITED_GENERIC' : typeof data?.code === 'string' ? data.code : 'RENTAL_REQUEST_FAILED' }); return; }
 
       setSubmitted(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("rental.submitError", "Failed to submit rental request."));
+    } catch {
+      setError({ code: 'RENTAL_REQUEST_FAILED' });
     } finally {
       setSubmitting(false);
     }
@@ -143,7 +144,7 @@ export default function RentalPortal() {
   function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
     setSubmitted(false);
-    setError(t("rental.signInUnavailable", "Rental sign in is not available yet."));
+    setError({ key: "rental.signInUnavailable" });
   }
 
   return (
@@ -180,7 +181,7 @@ export default function RentalPortal() {
                 {t("rental.weeklyModel", "Weekly rental model")}
               </div>
               <div className="mt-1 text-2xl font-black">
-                {weeklyPrice ? `EUR ${Number(weeklyPrice).toFixed(0)}` : t("rental.quote", "Quote")}
+                {weeklyPrice ? formatEuro(Number(weeklyPrice), locale) : t("rental.quote", "Quote")}
               </div>
               <div className="text-[12px] text-white/60">
                 {t("rental.perWeek", "per week")}
@@ -199,6 +200,7 @@ export default function RentalPortal() {
                   className="input"
                   required
                   type="email"
+                  aria-label={t('rental.email')}
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                   placeholder={`${t("rental.email", "Email")} *`}
@@ -207,6 +209,7 @@ export default function RentalPortal() {
                   className="input"
                   required
                   type="password"
+                  aria-label={t('rental.password')}
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   placeholder={`${t("rental.password", "Password")} *`}
@@ -215,7 +218,7 @@ export default function RentalPortal() {
 
               {error && (
                 <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
-                  {error}
+                  {errorText}
                 </div>
               )}
 
@@ -254,7 +257,7 @@ export default function RentalPortal() {
                         {vehicle.maxPassengers || 4} {t("rental.seats", "seats")}
                       </div>
                       <div className="mt-3 text-[13px] font-bold text-drivo-green">
-                        {price ? `EUR ${Number(price).toFixed(0)} / ${t("rental.week", "week")}` : t("rental.quote", "Quote")}
+                        {price ? `${formatEuro(Number(price), locale)} / ${t("rental.week", "week")}` : t("rental.quote", "Quote")}
                       </div>
                     </button>
                   );
@@ -268,15 +271,15 @@ export default function RentalPortal() {
                   {t("rental.driverInfo", "Driver Info")}
                 </h2>
                 <div className="space-y-4">
-                  <input className="input" required value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} placeholder={`${t("rental.fullName", "Full Name")} *`} />
-                  <input className="input" required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder={`${t("rental.phone", "Phone")} *`} />
-                  <input className="input" required type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={`${t("rental.email", "Email")} *`} />
-                  <input className="input" required type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={`${t("rental.password", "Password")} *`} />
-                  <input className="input" required type="password" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} placeholder={`${t("rental.confirmPassword", "Confirm Password")} *`} />
-                  <input className="input" required value={form.licenseNumber} onChange={(e) => setForm({ ...form, licenseNumber: e.target.value })} placeholder={`${t("rental.licenseNumber", "License Number")} *`} />
-                  <select className="input" value={form.workPlatform} onChange={(e) => setForm({ ...form, workPlatform: e.target.value })}>
+                  <input className="input" aria-label={t('rental.fullName')} required value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} placeholder={`${t("rental.fullName", "Full Name")} *`} />
+                  <input className="input" aria-label={t('rental.phone')} required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder={`${t("rental.phone", "Phone")} *`} />
+                  <input className="input" aria-label={t('rental.email')} required type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={`${t("rental.email", "Email")} *`} />
+                  <input className="input" aria-label={t('rental.password')} required type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder={`${t("rental.password", "Password")} *`} />
+                  <input className="input" aria-label={t('rental.confirmPassword')} required type="password" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} placeholder={`${t("rental.confirmPassword", "Confirm Password")} *`} />
+                  <input className="input" aria-label={t('rental.licenseNumber')} required value={form.licenseNumber} onChange={(e) => setForm({ ...form, licenseNumber: e.target.value })} placeholder={`${t("rental.licenseNumber", "License Number")} *`} />
+                  <select className="input" aria-label={t('rental.workPlatform')} value={form.workPlatform} onChange={(e) => setForm({ ...form, workPlatform: e.target.value })}>
                     {["Bolt", "Wolt", "Foodora", "Taxi", "Other"].map((platform) => (
-                      <option key={platform} value={platform}>{platform}</option>
+                      <option key={platform} value={platform}>{platform === "Other" ? t('rental.otherPlatform') : platform}</option>
                     ))}
                   </select>
                 </div>
@@ -287,9 +290,9 @@ export default function RentalPortal() {
                   {t("rental.rentalInfo", "Rental Info")}
                 </h2>
                 <div className="space-y-4">
-                  <input className="input" value={vehicleLabel} readOnly />
-                  <input className="input" required type="date" value={form.rentalStartDate} onChange={(e) => setForm({ ...form, rentalStartDate: e.target.value })} />
-                  <select className="input" value={form.rentalDuration} onChange={(e) => setForm({ ...form, rentalDuration: e.target.value })}>
+                  <input className="input" aria-label={t('rental.vehicleSelection')} value={vehicleLabel} readOnly />
+                  <input className="input" aria-label={t('rental.startDate')} required type="date" value={form.rentalStartDate} onChange={(e) => setForm({ ...form, rentalStartDate: e.target.value })} />
+                  <select className="input" aria-label={t('rental.durationLabel')} value={form.rentalDuration} onChange={(e) => setForm({ ...form, rentalDuration: e.target.value })}>
                     {["1 week", "2 weeks", "1 month", "Custom"].map((duration) => (
                       <option key={duration} value={duration}>{t(`rental.duration.${duration}`, duration)}</option>
                     ))}
@@ -300,7 +303,7 @@ export default function RentalPortal() {
 
             {error && (
               <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
-                {error}
+                {errorText}
               </div>
             )}
 

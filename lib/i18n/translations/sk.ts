@@ -1,3 +1,5 @@
+import { foundation } from "./foundation";
+
 const sk = {
   // Navigation
   "nav.home": "Domov",
@@ -276,6 +278,15 @@ const sk = {
   "contact.sent": "Správa bola odoslaná. Odpovieme do 24 hodín.",
   "contact.sending": "Odosielam...",
   "payment.successTitle": "Platba úspešná!",
+  "payment.status.paidTitle": "Platba overená",
+  "payment.status.pendingTitle": "Overujeme platbu",
+  "payment.status.AWAITING_PAYMENT": "Platba ešte nebola dokončená. Môžete sa vrátiť k platbe.",
+  "payment.status.PROCESSING": "Overujeme vašu platbu. Objednávka sa aktualizuje po potvrdení.",
+  "payment.status.PAID": "Platba je overená a objednávka potvrdená.",
+  "payment.status.EXPIRED": "Platobná relácia vypršala. Pre tú istú objednávku môžete požiadať o novú platbu.",
+  "payment.status.FAILED": "Platba nebola dokončená. Môžete to skúsiť znova.",
+  "payment.status.RECONCILIATION_REQUIRED": "Platbu zatiaľ nevieme potvrdiť. Pred ďalšou platbou kontaktujte podporu Drivo.",
+  "payment.status.noDispatchBeforeVerification": "Vodiča hľadáme až po overení platby alebo v plánovanom čase.",
   "payment.successMessage":
     "Vaša objednávka bola potvrdená a zaplatená. Čoskoro vám pošleme potvrdzovací email.",
   "payment.driverSoon": "Čoskoro dostanete WhatsApp správu s detailmi vodiča.",
@@ -701,6 +712,9 @@ const sk = {
   "booking.driverAssistanceRequired": "Vyziada sa asistencia vodica",
   "driverPortal.scheduledMarketplace": "Ponuka plánovaných jázd",
   "driverPortal.scheduledMarketplaceHelp": "Naplánujte si vhodné nadchádzajúce jazdy.",
+  "driverPortal.loadMoreScheduledRides": "Načítať ďalšie plánované jazdy",
+  "adminOperations.paymentReview": "Platby vyžadujúce preverenie",
+  "adminOperations.paymentReviewHelp": "Pred vytvorením ďalšieho platobného odkazu alebo zmenou objednávky overte výsledok u poskytovateľa platby.",
   "driverPortal.noScheduledRides": "Nie sú k dispozícii žiadne plánované jazdy.",
   "driverPortal.claimRide": "Prevziať jazdu",
   "driverPortal.claiming": "Preberá sa…",
@@ -917,7 +931,7 @@ const sk = {
   "dispatchAdmin.title": "Dispečerský tím", "dispatchAdmin.subtitle": "Vytvárajte a spravujte účty dispečerov.", "dispatchAdmin.create": "Vytvoriť účet dispečera", "dispatchAdmin.edit": "Upraviť dispečera", "dispatchAdmin.name": "Celé meno", "dispatchAdmin.email": "E-mail", "dispatchAdmin.phone": "Telefón (medzinárodný formát)", "dispatchAdmin.temporaryPassword": "Dočasné heslo (aspoň 12 znakov)", "dispatchAdmin.resetPassword": "Obnovenie dočasného hesla (nepovinné)", "dispatchAdmin.operators": "Dispečeri", "dispatchAdmin.status": "Stav", "dispatchAdmin.lastLogin": "Posledné prihlásenie", "dispatchAdmin.createdAt": "Vytvorené", "dispatchAdmin.mustChange": "Vyžaduje sa zmena hesla", "dispatchAdmin.disable": "Deaktivovať", "dispatchAdmin.enable": "Aktivovať", "dispatchAdmin.empty": "Zatiaľ tu nie sú žiadni dispečeri.", "dispatchAdmin.loadError": "Dispečerov sa nepodarilo načítať.", "dispatchAdmin.saveError": "Údaje dispečera sa nepodarilo uložiť.", "dispatchAdmin.saved": "Údaje dispečera boli uložené.", "dispatchAdmin.active": "Aktívny", "dispatchAdmin.disabled": "Deaktivovaný",
 };
 
-export default { ...sk, "dispatchAdmin.createdBy": "Vytvoril správca", "dispatch.form.processing": "Objednávka sa ešte spracúva. Skúste to o chvíľu znova; rovnaký kľúč požiadavky zabráni duplicite.", "dispatch.detail.linkCreatedCopyBlocked": "Platobný odkaz bol vytvorený, ale automatické kopírovanie bolo zablokované. Použite tlačidlo „Kopírovať platobný odkaz“.", "dispatch.detail.linkCreatedEmailCopyBlocked": "Platobný odkaz bol vytvorený a odoslaný e-mailom, ale automatické kopírovanie bolo zablokované. Použite tlačidlo „Kopírovať platobný odkaz“.", "dispatch.detail.linkCreatedEmailFailed": "Platobný odkaz bol vytvorený a skopírovaný, ale e-mail sa nepodarilo odoslať.", "dispatch.detail.linkCreatedEmailFailedCopyBlocked": "Platobný odkaz bol vytvorený, e-mail sa nepodarilo odoslať a automatické kopírovanie bolo zablokované. Použite tlačidlo „Kopírovať platobný odkaz“.", "dispatch.detail.linkCreatedEmailNotProvided": "Platobný odkaz bol vytvorený a skopírovaný. E-mail zákazníka nie je k dispozícii.", "dispatch.detail.linkCreatedEmailNotProvidedCopyBlocked": "Platobný odkaz bol vytvorený, e-mail zákazníka nie je k dispozícii a automatické kopírovanie bolo zablokované. Použite tlačidlo „Kopírovať platobný odkaz“.",
+export default { ...sk, ...foundation.sk, "dispatchAdmin.createdBy": "Vytvoril správca", "dispatch.form.processing": "Objednávka sa ešte spracúva. Skúste to o chvíľu znova; rovnaký kľúč požiadavky zabráni duplicite.", "dispatch.detail.linkCreatedCopyBlocked": "Platobný odkaz bol vytvorený, ale automatické kopírovanie bolo zablokované. Použite tlačidlo „Kopírovať platobný odkaz“.", "dispatch.detail.linkCreatedEmailCopyBlocked": "Platobný odkaz bol vytvorený a odoslaný e-mailom, ale automatické kopírovanie bolo zablokované. Použite tlačidlo „Kopírovať platobný odkaz“.", "dispatch.detail.linkCreatedEmailFailed": "Platobný odkaz bol vytvorený a skopírovaný, ale e-mail sa nepodarilo odoslať.", "dispatch.detail.linkCreatedEmailFailedCopyBlocked": "Platobný odkaz bol vytvorený, e-mail sa nepodarilo odoslať a automatické kopírovanie bolo zablokované. Použite tlačidlo „Kopírovať platobný odkaz“.", "dispatch.detail.linkCreatedEmailNotProvided": "Platobný odkaz bol vytvorený a skopírovaný. E-mail zákazníka nie je k dispozícii.", "dispatch.detail.linkCreatedEmailNotProvidedCopyBlocked": "Platobný odkaz bol vytvorený, e-mail zákazníka nie je k dispozícii a automatické kopírovanie bolo zablokované. Použite tlačidlo „Kopírovať platobný odkaz“.",
   // Transactional email registry (all supported locales).
   "email.reference": "Číslo rezervácie",
   "email.pickupTime": "Dátum a čas vyzdvihnutia",

@@ -8,7 +8,16 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { usePathname } from "next/navigation";
 import { type Locale, getTranslation } from "./index";
+import { isPublicMetadataRoute, openGraphLocales, publicMetadataCopy, rootMetadataCopy } from "./metadata";
+import { FEATURE_FLAGS } from "../feature-flags";
+import {
+  isUiLocale,
+  LOCALE_STORAGE_KEY,
+  localeCookieValue,
+  resolveClientLocale,
+} from "./locale-resolution";
 
 interface LanguageContextType {
   locale: Locale;
@@ -16,73 +25,110 @@ interface LanguageContextType {
   t: (key: string, fallback?: string) => string;
 }
 
-const supportedLocales: Locale[] = ["sk", "de", "uk", "en"];
-
 const LanguageContext = createContext<LanguageContextType>({
   locale: "sk",
   setLocale: () => {},
   t: (key) => key,
 });
 
-function isSupportedLocale(value: string | null): value is Locale {
-  return supportedLocales.includes(value as Locale);
-}
+let selectedInThisTab: Locale | null = null;
 
 function getClientLocale(): Locale {
   if (typeof window === "undefined") return "sk";
-
+  if (selectedInThisTab) return selectedInThisTab;
+  let saved: string | null = null;
   try {
-    const saved = window.localStorage.getItem("drivo-language");
-    if (isSupportedLocale(saved)) return saved;
-  } catch {
-    return "sk";
-  }
-
-  const browserLocales = window.navigator.languages?.length
-    ? window.navigator.languages
-    : [window.navigator.language];
-
-  for (const browserLocale of browserLocales) {
-    const language = browserLocale.toLowerCase().split("-")[0];
-    if (language === "cs") return "sk";
-    if (isSupportedLocale(language)) return language;
-  }
-
-  return "sk";
+    saved = window.localStorage.getItem(LOCALE_STORAGE_KEY);
+  } catch {}
+  // The cookie wins because it is the server-visible presentation preference.
+  // localStorage remains a fallback for browsers that predate the cookie.
+  return resolveClientLocale({
+    selected: saved,
+    cookie: document.cookie,
+    browserLanguages: window.navigator.languages?.length
+      ? window.navigator.languages : [window.navigator.language],
+  });
 }
 
 function subscribeToLocale(callback: () => void) {
-  window.addEventListener("storage", callback);
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === LOCALE_STORAGE_KEY || event.key === null) {
+      selectedInThisTab = null;
+      callback();
+    }
+  };
+  window.addEventListener("storage", onStorage);
   window.addEventListener("drivo-language-change", callback);
 
   return () => {
-    window.removeEventListener("storage", callback);
+    window.removeEventListener("storage", onStorage);
     window.removeEventListener("drivo-language-change", callback);
   };
 }
 
-function getServerLocale(): Locale {
-  return "sk";
-}
-
-export function LanguageProvider({ children }: { children: ReactNode }) {
+export function LanguageProvider({ children, initialLocale }: { children: ReactNode; initialLocale: Locale }) {
+  const pathname = usePathname();
   const locale = useSyncExternalStore(
     subscribeToLocale,
     getClientLocale,
-    getServerLocale
+    () => initialLocale
   );
 
-  // First visit follows supported browser language, then manual selection is saved.
+  // Reconcile a legacy localStorage-only preference after hydration. Never
+  // persist the server snapshot before the client has selected its winner.
   useEffect(() => {
+    const preferred = getClientLocale();
+    if (preferred !== locale) {
+      selectedInThisTab = preferred;
+      window.dispatchEvent(new Event("drivo-language-change"));
+      return;
+    }
     document.documentElement.lang = locale;
     try {
-      localStorage.setItem("drivo-language", locale);
+      localStorage.setItem(LOCALE_STORAGE_KEY, locale);
+    } catch {}
+    try {
+      document.cookie = localeCookieValue(locale, window.location.protocol === "https:");
     } catch {}
   }, [locale]);
 
+  // Keep the current head in sync without remounting an in-progress booking.
+  // Next may apply a prefetched metadata payload after this effect; repair that
+  // stale locale too, without refreshing the route or changing form state.
+  useEffect(() => {
+    if (pathname === "/children" && !FEATURE_FLAGS.childrenTransport) return;
+    const content = isPublicMetadataRoute(pathname)
+      ? pathname === "/" ? rootMetadataCopy(locale, FEATURE_FLAGS.childrenTransport) : publicMetadataCopy(pathname, locale)
+      : rootMetadataCopy(locale, FEATURE_FLAGS.childrenTransport);
+    const title = pathname === "/" || !isPublicMetadataRoute(pathname)
+      ? content.title : `${content.title} | Drivo Bratislava`;
+    const update = () => {
+      const setContent = (selector: string, value: string) => {
+        const element = document.head.querySelector<HTMLMetaElement>(selector);
+        if (element && element.content !== value) element.content = value;
+      };
+      if (document.title !== title) document.title = title;
+      setContent('meta[name="description"]', content.description);
+      setContent('meta[property="og:title"]', content.title);
+      setContent('meta[property="og:description"]', content.description);
+      setContent('meta[property="og:locale"]', openGraphLocales[locale]);
+      setContent('meta[name="twitter:title"]', content.title);
+      setContent('meta[name="twitter:description"]', content.description);
+    };
+    update();
+    const observer = new MutationObserver(update);
+    observer.observe(document.head, { childList: true, subtree: true, attributes: true, attributeFilter: ["content"] });
+    return () => observer.disconnect();
+  }, [locale, pathname]);
+
   const setLocale = useCallback((newLocale: Locale) => {
+    if (!isUiLocale(newLocale)) return;
+    selectedInThisTab = newLocale;
     try {
-      localStorage.setItem("drivo-language", newLocale);
+      localStorage.setItem(LOCALE_STORAGE_KEY, newLocale);
+    } catch {}
+    try {
+      document.cookie = localeCookieValue(newLocale, window.location.protocol === "https:");
     } catch {}
     window.dispatchEvent(new Event("drivo-language-change"));
   }, []);

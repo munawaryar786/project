@@ -10,6 +10,7 @@ import BookingForm from '@/components/booking/BookingForm';
 import RouteMap from '@/components/booking/RouteMap';
 import { WHATSAPP_URL, PHONE_RAW } from '@/lib/constants';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { formatEuro, formatNumber } from '@/lib/i18n/format';
 import { isCustomerServiceEnabled } from '@/lib/feature-flags';
 
 function normalizeBookingService(value: string | null) {
@@ -20,7 +21,7 @@ function normalizeBookingService(value: string | null) {
 }
 
 function BookPageContent() {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const searchParams = useSearchParams();
   const initialServiceType = normalizeBookingService(searchParams.get("service"));
   const [pickupAddress, setPickupAddress] = useState("");
@@ -125,16 +126,16 @@ function BookPageContent() {
               <div className="card">
                 <h4 className="text-[15px] font-bold text-drivo-text mb-4">📍 {t('booking.popularRoutes', 'Popular routes')}</h4>
                 {[
-                  { from: 'BTS Airport', to: 'City Center', price: '~€15', time: '~20 min' },
-                  { from: 'Main Station', to: 'Petržalka', price: '~€8', time: '~12 min' },
-                  { from: 'Old Town', to: 'Vienna Airport', price: '~€55', time: '~55 min' },
+                  { from: 'BTS Airport', to: t('booking.cityCenter'), price: 15, time: 20 },
+                  { from: t('booking.mainStation'), to: 'Petržalka', price: 8, time: 12 },
+                  { from: t('booking.oldTown'), to: t('booking.viennaAirport'), price: 55, time: 55 },
                 ].map((r) => (
                   <div key={r.from} className="flex items-center justify-between py-3 border-b border-drivo-border-light last:border-0">
                     <div>
                       <p className="text-[13px] font-medium text-drivo-text">{r.from} → {r.to}</p>
-                      <p className="text-[11px] text-drivo-text-muted">{r.time}</p>
+                      <p className="text-[11px] text-drivo-text-muted">~{formatNumber(r.time, locale)} {t('common.minuteShort')}</p>
                     </div>
-                    <span className="text-[14px] font-bold text-drivo-green">{r.price}</span>
+                    <span className="text-[14px] font-bold text-drivo-green">~{formatEuro(r.price, locale)}</span>
                   </div>
                 ))}
               </div>
@@ -173,10 +174,10 @@ function BookPageContent() {
                   </div>
                   <div>
                     <div className="flex gap-0.5">{[...Array(5)].map((_, j) => (<span key={j} className="text-amber-400 text-[12px]">★</span>))}</div>
-                    <p className="text-[11px] text-drivo-text-muted">2,400+ happy riders</p>
+                    <p className="text-[11px] text-drivo-text-muted">{formatNumber(2400, locale)}+ {t('home.stats.riders')}</p>
                   </div>
                 </div>
-                <p className="text-[12px] text-drivo-text-secondary italic">&ldquo;Best accessible transport in Bratislava!&rdquo;</p>
+                <p className="text-[12px] text-drivo-text-secondary italic">&ldquo;{t('booking.socialQuote')}&rdquo;</p>
               </div>
             </div>
           </div>
@@ -190,8 +191,13 @@ function BookPageContent() {
 
 export default function BookPage() {
   return (
-    <Suspense fallback={<div>Loading booking form...</div>}>
+    <Suspense fallback={<BookPageLoading />}>
       <BookPageContent />
     </Suspense>
   );
+}
+
+function BookPageLoading() {
+  const { t } = useLanguage();
+  return <div role="status">{t('booking.loadingForm')}</div>;
 }

@@ -1,5 +1,6 @@
 ﻿import twilio from "twilio";
 import { maskPhone } from "./utils";
+import { isUiLocale, type UiLocale } from "./i18n/locale-resolution";
 
 let twilioClient: any = null;
 
@@ -24,7 +25,7 @@ export type TwilioVerifyResult =
   | { success: false; error: string; providerCode?: string };
 
 /** Send the first-registration challenge through Twilio Verify WhatsApp. */
-export async function sendWhatsAppVerification(phone: string): Promise<TwilioVerifyResult> {
+export async function sendWhatsAppVerification(phone: string, locale?: UiLocale): Promise<TwilioVerifyResult> {
   const service = getVerifyService();
   if (!service) {
     console.error("Twilio Verify is not configured for passenger verification");
@@ -32,7 +33,15 @@ export async function sendWhatsAppVerification(phone: string): Promise<TwilioVer
   }
 
   try {
-    const verification = await service.verifications.create({ to: phone, channel: "whatsapp" });
+    let verification;
+    try {
+      verification = await service.verifications.create({ to: phone, channel: "whatsapp", ...(isUiLocale(locale) ? { locale } : {}) });
+    } catch (error: any) {
+      // An unsupported Verify template locale is a definitive request rejection.
+      // Retry once with Twilio's existing phone-country/default language behavior.
+      if (!locale || error?.status !== 404) throw error;
+      verification = await service.verifications.create({ to: phone, channel: "whatsapp" });
+    }
     console.info("Twilio Verify WhatsApp challenge requested", {
       phone: maskPhone(phone),
       status: verification.status,

@@ -27,7 +27,9 @@ must("app/api/bookings/[id]/route.ts", "Use an authorized booking action endpoin
 must("app/api/dispatch/start/route.ts", "authorizeAdmin");
 must("app/api/dispatch/start/route.ts", "authorizePassenger");
 must("app/api/payments/checkout/route.ts", "authorizePassenger");
-must("app/api/payments/checkout/route.ts", "booking.estimatedPrice");
+must("app/api/payments/checkout/route.ts", "createOrReusePaymentCheckout");
+must("lib/payment-operations.ts", "booking.estimatedPrice");
+must("lib/payment-operations.ts", "hasAuthoritativeBookingPrice(booking)");
 must("app/api/payments/checkout/route.ts", "hasAuthoritativeBookingPrice(booking)");
 must("app/api/payments/verify/route.ts", "hasAuthoritativeBookingPrice(booking)");
 must("app/api/payments/webhook/route.ts", "hasAuthoritativeBookingPrice(booking)");

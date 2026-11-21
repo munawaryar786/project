@@ -215,7 +215,8 @@ async function main() {
   await writeBookingCreatedEmail(tx, id); await writeBookingAssignedEmail(tx, id, driverB, new Date(now + 1)); await writeBookingPaymentEmail(tx, id, "payment-fixture", 12.5);
   check(() => assert.deepEqual(intents.map((x) => x.eventType), ["BOOKING_EMAIL_CREATED", "BOOKING_EMAIL_ASSIGNED", "BOOKING_EMAIL_PAYMENT"]));
   check(() => assert.ok(!JSON.stringify(intents).includes("customer@example.invalid") && !JSON.stringify(intents).includes("PRIVATE_")));
-  for (const file of ["lib/driver-operations.ts", "lib/scheduled-marketplace.ts", "lib/admin-operations.ts", "app/api/admin/bookings/route.ts"]) check(() => assert.ok(readFileSync(file, "utf8").includes("await writeBookingAssignedEmail(tx,")));
+  for (const file of ["lib/driver-operations.ts", "lib/scheduled-marketplace.ts", "lib/admin-operations.ts"]) check(() => assert.ok(readFileSync(file, "utf8").includes("await writeBookingAssignedEmail(tx,")));
+  check(() => assert.ok(readFileSync("app/api/admin/bookings/route.ts", "utf8").includes("await assignAdminDriver(") && readFileSync("lib/admin-operations.ts", "utf8").includes("await writeBookingAssignedEmail(tx,")));
   const transport = readFileSync("lib/email/client.ts", "utf8");
   check(() => assert.ok(transport.includes("EMAIL_TLS_REQUIRED") && !transport.includes("rejectUnauthorized: false") && transport.includes("AbortSignal.timeout(60_000)") && transport.includes("EMAIL_CONNECTION_TIMEOUT")));
   check(() => assert.ok(readFileSync("lib/realtime/queues.ts", "utf8").includes('type: "exponential"')));
