@@ -112,7 +112,7 @@ for db in "$activation_db" "$outbox_db" "$payment_db" "$phase1_db"; do
 done
 
 # Commit MongoDB intent first. Stop only this run's disposable Redis instance.
-ci_node "$activation_db" node node_modules/tsx/dist/cli.mjs scripts/phase2-activation-live-integration.ts prepare-outage
+ci_node "$activation_db" node node_modules/tsx/dist/cli.mjs scripts/phase2-activation-live-integration.mts prepare-outage
 docker stop "$redis" >/dev/null
 created_redis=0
 for _ in $(seq 1 30); do
@@ -120,10 +120,10 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 ! docker container inspect "$redis" >/dev/null 2>&1
-ci_node "$activation_db" node node_modules/tsx/dist/cli.mjs scripts/phase2-activation-live-integration.ts assert-outage
+ci_node "$activation_db" node node_modules/tsx/dist/cli.mjs scripts/phase2-activation-live-integration.mts assert-outage
 start_redis
-ci_node "$activation_db" node node_modules/tsx/dist/cli.mjs scripts/phase2-activation-live-integration.ts recover-outage
-ci_node "$activation_db" node node_modules/tsx/dist/cli.mjs scripts/phase2-activation-live-integration.ts suite
+ci_node "$activation_db" node node_modules/tsx/dist/cli.mjs scripts/phase2-activation-live-integration.mts recover-outage
+ci_node "$activation_db" node node_modules/tsx/dist/cli.mjs scripts/phase2-activation-live-integration.mts suite
 
 # Existing real relay and fake-provider payment suites use separate test DBs.
 ci_node "$outbox_db" node node_modules/tsx/dist/cli.mjs scripts/outbox-live-integration.ts
