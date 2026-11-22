@@ -181,9 +181,10 @@ export async function publishPaymentSession(input: {
         idempotencyKey: operation.requestScopeKey, operationId: operation.id,
       } });
     }
-    await tx.bookingPaymentSlot.updateMany({ where: { id: slot.id, activeOperationId: operation.id, generation: operation.generation, leaseOwnerToken: input.leaseToken }, data: {
+    const slotChanged = await tx.bookingPaymentSlot.updateMany({ where: { id: slot.id, activeOperationId: operation.id, generation: operation.generation, leaseOwnerToken: input.leaseToken }, data: {
       sessionId: input.sessionId, leaseKey: input.sessionId, leaseOwnerToken: null, leaseExpiresAt: null,
     } });
+    if (slotChanged.count !== 1) throw new Error("PAYMENT_SESSION_SLOT_PUBLISH_CONFLICT");
     return { published: true as const };
   });
 }

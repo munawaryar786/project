@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { authRateLimitResponse, enforceAuthRateLimit, resolveClientIp } from "@/lib/rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -18,6 +19,11 @@ async function bookingForOperator(id: string) {
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const limit = await enforceAuthRateLimit({
+    domain: "dispatch-payment-link",
+    identities: [{ dimension: "ip", value: resolveClientIp(request), max: 20, windowMs: 5 * 60 * 1000 }],
+  });
+  if (!limit.allowed) return authRateLimitResponse(limit, "Too many payment-link requests. Please try again later.");
   const auth = await authorizeDispatchOperator(request);
   if (!auth.ok) return auth.response;
   const { id } = await params;
@@ -52,6 +58,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const limit = await enforceAuthRateLimit({
+    domain: "dispatch-payment-link",
+    identities: [{ dimension: "ip", value: resolveClientIp(request), max: 20, windowMs: 5 * 60 * 1000 }],
+  });
+  if (!limit.allowed) return authRateLimitResponse(limit, "Too many payment-link requests. Please try again later.");
   const auth = await authorizeDispatchOperator(request);
   if (!auth.ok) return auth.response;
   const { id } = await params;

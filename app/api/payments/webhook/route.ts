@@ -108,7 +108,16 @@ export async function POST(request: NextRequest) {
       if (payment?.status === "PENDING") {
         const nextStatus = event.type === "checkout.session.expired" ? "EXPIRED" : "FAILED";
         await prisma.$transaction(async (tx) => {
-          await tx.bookingPayment.updateMany({ where: { id: payment.id, status: "PENDING" }, data: { status: nextStatus, ...(nextStatus === "EXPIRED" ? {} : { failedAt: new Date() }) } });
+          const paymentChanged = await tx.bookingPayment.updateMany({
+            where: { id: payment.id, status: "PENDING" },
+            data: { status: nextStatus, ...(nextStatus === "EXPIRED" ? {} : { failedAt: new Date() }) },
+          });
+          if (paymentChanged.count !== 1) {
+            const current = await tx.bookingPayment.findUnique({ where: { id: payment.id } });
+            if (!current || current.status !== nextStatus) {
+              throw new SafeWebhookFailure("PAYMENT_EXPIRY_STATE_CONFLICT");
+            }
+          }
           await tx.bookingPaymentSlot.updateMany({ where: { bookingId: payment.bookingId, sessionId: payment.providerSessionId }, data: { sessionId: "", leaseKey: "" } });
           await tx.paymentWebhookEvent.update({ where: { id: receipt!.id }, data: { bookingId: payment.bookingId, paymentId: payment.id, processingStatus: "PROCESSED", processedAt: new Date() } });
         });
@@ -327,9 +336,23 @@ async function handleOperationCheckoutCompleted(session: any, operationId: strin
         paidAt: evidence.paidAt, createdByDispatchOperatorId: operation.actorId,
         idempotencyKey: operation.requestScopeKey, operationId: operation.id,
       } });
-      else await tx.bookingPayment.updateMany({ where: { id: payment.id, status: "PENDING" }, data: {
-        status: "PAID", paidAt: evidence.paidAt, providerPaymentId: paymentIntentId,
-      } });
+      else {
+        const paymentChanged = await tx.bookingPayment.updateMany({
+          where: { id: payment.id, status: "PENDING" },
+          data: { status: "PAID", paidAt: evidence.paidAt, providerPaymentId: paymentIntentId },
+        });
+        if (paymentChanged.count !== 1) {
+          const current = await tx.bookingPayment.findUnique({ where: { id: payment.id } });
+          if (!current || current.status !== "PAID" ||
+              current.bookingId !== booking.id ||
+              (current.operationId && current.operationId !== operation.id) ||
+              current.amountMinor !== operation.amountMinor ||
+              current.currency !== "EUR" ||
+              current.providerPaymentId !== paymentIntentId) {
+            throw new SafeWebhookFailure("PAYMENT_RECORD_STATE_CONFLICT");
+          }
+        }
+      }
       paymentId = payment.id;
     }
     const confirmed = await tx.booking.updateMany({ where: {

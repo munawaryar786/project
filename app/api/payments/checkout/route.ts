@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { authRateLimitResponse, enforceAuthRateLimit, resolveClientIp } from "@/lib/rate-limit";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { authorizePassenger } from "@/lib/passenger-auth";
@@ -15,6 +16,11 @@ const CheckoutSchema = z.object({
 const NO_STORE = { headers: { "Cache-Control": "private, no-store" } };
 
 export async function POST(request: NextRequest) {
+  const limit = await enforceAuthRateLimit({
+    domain: "payment-checkout",
+    identities: [{ dimension: "ip", value: resolveClientIp(request), max: 10, windowMs: 5 * 60 * 1000 }],
+  });
+  if (!limit.allowed) return authRateLimitResponse(limit, "Too many checkout attempts. Please try again later.");
   const auth = await authorizePassenger(request);
   if (!auth.ok) return auth.response;
   try {

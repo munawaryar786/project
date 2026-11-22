@@ -123,7 +123,10 @@ export async function createOrReusePaymentCheckout(input: {
       operation, leaseToken, sessionId: provider.sessionId,
       dispatcherOperatorId: input.channel === "PHONE_DISPATCH" ? operation.actorId : undefined,
     });
-    if (!published.published) return { state: "PROCESSING" };
+    if (!published.published) {
+      await markPaymentCreationUncertain(operation, leaseToken, knownSessionId).catch(() => undefined);
+      return { state: "PROCESSING" };
+    }
     return { state: "READY", sessionId: provider.sessionId, sessionUrl: provider.sessionUrl, operationId: operation.id, reused: false };
   } catch {
     // Provider outcome may be unknown. Preserve any known Session ID for a
