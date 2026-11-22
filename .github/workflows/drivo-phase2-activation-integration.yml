@@ -1,0 +1,64 @@
+name: Drivo Phase 2 Disposable Activation Integration
+
+# Manual-only. A feature-branch copy is not automatically executable: GitHub
+# requires a workflow_dispatch definition on the default branch.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: drivo-phase2-activation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  isolated-activation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+      GITHUB_ACTIONS: 'true'
+    steps:
+      - name: Check out the reviewed commit without persisting Git credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Configure Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Install locked dependencies before network isolation
+        env:
+          DATABASE_URL: mongodb://127.0.0.1:1/ci_generate_only
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify local TypeScript and existing source-only checks
+        env:
+          DATABASE_URL: mongodb://127.0.0.1:1/ci_generate_only
+        run: |
+          npx tsc --noEmit
+          node scripts/phase3d-check.cjs
+          node scripts/scheduled-driver-runtime-check.cjs
+
+      - name: Run sealed MongoDB Redis and real BullMQ integration
+        shell: bash
+        run: bash scripts/phase2-ci-run.sh
+
+      - name: Show only disposable-service diagnostics on failure
+        if: failure()
+        shell: bash
+        run: |
+          suffix="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker logs --tail 60 "drivo-phase2-mongo-${suffix}" 2>&1 || true
+          docker logs --tail 60 "drivo-phase2-redis-${suffix}" 2>&1 || true
+
+      - name: Remove only this run's disposable resources
+        if: always()
+        shell: bash
+        run: |
+          suffix="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker rm -f "drivo-phase2-redis-${suffix}" "drivo-phase2-mongo-${suffix}" 2>/dev/null || true
+          docker network rm "drivo-phase2-ci-${suffix}" 2>/dev/null || true
